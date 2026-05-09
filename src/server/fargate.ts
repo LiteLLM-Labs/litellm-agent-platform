@@ -38,6 +38,7 @@ import { fetch } from "undici";
 import { env } from "@/server/env";
 import {
   TAG_AGENT_ID,
+  TAG_DEPLOY_ID,
   TAG_SESSION_ID,
   TAG_WARM_TASK_ID,
   type RunTaskOpts,
@@ -124,7 +125,13 @@ export async function runTask(
     );
   }
 
-  const tags: Tag[] = [{ key: TAG_AGENT_ID, value: agent.agent_id }];
+  const tags: Tag[] = [
+    { key: TAG_AGENT_ID, value: agent.agent_id },
+    // Scoping tag — the reconciler only kills tasks whose deploy_id
+    // matches its own. Keeps a misconfigured laptop / CI / second prod
+    // replica from reconciling a different deploy's tasks.
+    { key: TAG_DEPLOY_ID, value: env.DEPLOY_ID },
+  ];
   if (session_id) tags.push({ key: TAG_SESSION_ID, value: session_id });
   if (warm_task_id)
     tags.push({ key: TAG_WARM_TASK_ID, value: warm_task_id });
@@ -362,6 +369,7 @@ export async function listTaggedTasks(): Promise<TaggedTask[]> {
         session_id: tagValue(task.tags, TAG_SESSION_ID),
         agent_id: tagValue(task.tags, TAG_AGENT_ID),
         warm_task_id: tagValue(task.tags, TAG_WARM_TASK_ID),
+        deploy_id: tagValue(task.tags, TAG_DEPLOY_ID),
         last_status: task.lastStatus ?? "UNKNOWN",
         created_at: task.createdAt ?? null,
         started_at: task.startedAt ?? null,
