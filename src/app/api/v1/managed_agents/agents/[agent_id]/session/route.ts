@@ -25,8 +25,9 @@ import { prisma } from "@/server/db";
 import {
   runTask,
   waitHttpReady,
-  waitRunningGetIp,
-} from "@/server/fargate";
+  waitRunningGetUrl,
+} from "@/server/sandbox";
+import { putCachedSession } from "@/server/sessionCache";
 import {
   expandMessage,
   harnessCreateSession,
@@ -86,8 +87,7 @@ async function coldBringUp(
     where: { session_id },
     data: { task_arn },
   });
-  const ip = await waitRunningGetIp(task_arn);
-  const sandbox_url = `http://${ip}:${agent.container_port}`;
+  const sandbox_url = await waitRunningGetUrl(task_arn, agent);
   await waitHttpReady(sandbox_url);
   return finishBringUp(agent, session_id, body, sandbox_url);
 }
@@ -156,6 +156,16 @@ async function finishBringUp(
         ? (response as unknown as Prisma.InputJsonValue)
         : undefined,
     },
+  });
+  // Pre-warm the message-route cache so the first POST after create skips
+  // the hydrate round-trip.
+  putCachedSession({
+    session_id,
+    agent_id: agent.agent_id,
+    agent_model: agent.model,
+    sandbox_url,
+    harness_session_id,
+    status: "ready",
   });
   return { updated, response };
 }

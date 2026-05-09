@@ -48,6 +48,10 @@ interface LocalMessage {
   parts?: HarnessMessagePart[];
   status: "in_progress" | "completed" | "failed";
   error?: string;
+  // Wall-clock ms from the user pressing send to the assistant reply
+  // landing in the UI (sendMessage POST + refreshThread GET combined).
+  // Set only on the most recent assistant message after a successful send.
+  latency_ms?: number;
 }
 
 // Map opencode's `[{info, parts}, ...]` thread into the local message
@@ -272,12 +276,28 @@ export default function SessionThreadView() {
     ]);
     setDraft("");
 
+    const sendStartMs = performance.now();
     try {
       // POST returns only the final assistant message; refresh from the
       // harness afterwards so tool/reasoning parts that came from earlier
       // iterations of the agent loop also render.
       await sendMessage(sessionId, { text: content });
       await refreshThread();
+      const elapsedMs = Math.round(performance.now() - sendStartMs);
+      // Stamp the freshly-arrived assistant message (the last one in the
+      // thread) with the round-trip latency. refreshThread has already
+      // replaced the optimistic in_progress placeholder, so we mutate the
+      // mapped row in-place. Skip if the thread is somehow empty.
+      setMessages((prev) => {
+        for (let i = prev.length - 1; i >= 0; i--) {
+          if (prev[i].role === "assistant") {
+            const next = prev.slice();
+            next[i] = { ...next[i], latency_ms: elapsedMs };
+            return next;
+          }
+        }
+        return prev;
+      });
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : (e as Error).message;
       setError(msg);
@@ -620,8 +640,21 @@ function AssistantBlock({ msg }: { msg: LocalMessage }) {
       {failed && msg.error && (
         <div className="mono text-[11px] text-red-700">{msg.error}</div>
       )}
+
+      {!inProgress && !failed && typeof msg.latency_ms === "number" && (
+        <div className="mono text-[11px] text-gray-400">
+          {formatLatency(msg.latency_ms)}
+        </div>
+      )}
     </div>
   );
+}
+
+// Render the round-trip duration in the smallest unit that keeps it
+// readable: ms under 1s, seconds with one decimal otherwise.
+function formatLatency(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 }
 
 function PartBlock({ part }: { part: HarnessMessagePart }) {

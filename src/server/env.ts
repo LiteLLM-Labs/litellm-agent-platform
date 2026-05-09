@@ -14,32 +14,42 @@ import type { ServerEnv } from "@/server/types";
 
 const CONTAINER_ENV_PREFIX = "CONTAINER_ENV_";
 
+// AWS_* fields are required only when SANDBOX_BACKEND=fargate. The k8s
+// backend ignores them entirely; making them optional here lets a k8s-only
+// setup boot without ECS plumbing in scope. We reapply the "required when
+// fargate" check via superRefine below.
 const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   UI_USERNAME: z.string().min(1),
   MASTER_KEY: z.string().min(8),
-  AWS_REGION: z.string().min(1),
-  AWS_CLUSTER: z.string().min(1),
+  SANDBOX_BACKEND: z.enum(["fargate", "k8s"]).default("fargate"),
+  AWS_REGION: z.string().optional().default(""),
+  AWS_CLUSTER: z.string().optional().default(""),
   // Credentials are resolved by the SDK's default provider chain at runtime,
   // not parsed here. Set whatever the chain understands: env vars,
   // AWS_PROFILE + ~/.aws/credentials, SSO, instance role.
   AWS_ACCESS_KEY_ID: z.string().optional(),
   AWS_SECRET_ACCESS_KEY: z.string().optional(),
   AWS_PROFILE: z.string().optional(),
-  AWS_TASK_DEFINITION_ARN: z.string().min(1),
+  AWS_TASK_DEFINITION_ARN: z.string().optional().default(""),
   AWS_SUBNETS: z
     .string()
-    .min(1)
+    .optional()
+    .default("")
     .transform((s) =>
       s
         .split(",")
         .map((v) => v.trim())
         .filter((v) => v.length > 0),
-    )
-    .refine((arr) => arr.length > 0, {
-      message: "AWS_SUBNETS must contain at least one subnet id",
-    }),
-  AWS_SECURITY_GROUP: z.string().min(1),
+    ),
+  AWS_SECURITY_GROUP: z.string().optional().default(""),
+  K8S_NAMESPACE: z.string().min(1).default("default"),
+  K8S_NODE_HOST: z.string().optional().default("host.docker.internal"),
+  K8S_NODEPORT_MIN: z.coerce.number().int().min(30000).max(32767).default(30000),
+  K8S_NODEPORT_MAX: z.coerce.number().int().min(30000).max(32767).default(30099),
+  K8S_IMAGE_PULL_POLICY: z.enum(["Never", "IfNotPresent", "Always"]).default("Never"),
+  K8S_HARNESS_IMAGE: z.string().min(1).default("opencode-sandbox:dev"),
+  K8S_API_SERVER: z.string().optional().default(""),
   PREINSTALLED_GITHUB_REPO: z.string().min(1),
   LITELLM_API_BASE: z.string().min(1),
   LITELLM_API_KEY: z.string().min(1),
@@ -76,6 +86,13 @@ function collectContainerEnvPassthrough(
   return out;
 }
 
+const FARGATE_REQUIRED_FIELDS = [
+  "AWS_REGION",
+  "AWS_CLUSTER",
+  "AWS_TASK_DEFINITION_ARN",
+  "AWS_SECURITY_GROUP",
+] as const;
+
 function parseEnv(): ServerEnv {
   // During `next build` most hosting platforms (Render, Fly, Railway, etc.)
   // don't expose runtime env vars to the build container, so collecting page
@@ -95,8 +112,31 @@ function parseEnv(): ServerEnv {
         `See .env.example for the required keys.`,
     );
   }
+  const data = parsed.data;
+  // Backend-conditional required fields. Fargate path needs AWS_* + subnets;
+  // K8s path needs none of those.
+  if (data.SANDBOX_BACKEND === "fargate") {
+    const missing: string[] = [];
+    for (const f of FARGATE_REQUIRED_FIELDS) {
+      if (!data[f] || (typeof data[f] === "string" && data[f].length === 0)) {
+        missing.push(f);
+      }
+    }
+    if (data.AWS_SUBNETS.length === 0) missing.push("AWS_SUBNETS");
+    if (missing.length > 0) {
+      throw new Error(
+        `SANDBOX_BACKEND=fargate requires: ${missing.join(", ")}. ` +
+          `Set SANDBOX_BACKEND=k8s to use the Kubernetes backend instead.`,
+      );
+    }
+  }
+  if (data.K8S_NODEPORT_MIN > data.K8S_NODEPORT_MAX) {
+    throw new Error(
+      `K8S_NODEPORT_MIN (${data.K8S_NODEPORT_MIN}) > K8S_NODEPORT_MAX (${data.K8S_NODEPORT_MAX})`,
+    );
+  }
   return {
-    ...parsed.data,
+    ...data,
     containerEnvPassthrough: collectContainerEnvPassthrough(process.env),
   };
 }

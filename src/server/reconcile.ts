@@ -20,7 +20,7 @@
  */
 
 import { prisma } from "@/server/db";
-import { listTaggedTasks, stopTask } from "@/server/fargate";
+import { listTaggedTasks, stopTask } from "@/server/sandbox";
 import {
   RECONCILE_NEW_TASK_GRACE_MS,
   SESSION_CREATING_TIMEOUT_MS,

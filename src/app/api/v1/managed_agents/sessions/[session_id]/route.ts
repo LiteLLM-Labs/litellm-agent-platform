@@ -13,7 +13,8 @@ import { ZodError } from "zod";
 
 import { assertAuth } from "@/server/auth";
 import { prisma } from "@/server/db";
-import { stopTask } from "@/server/fargate";
+import { stopTask } from "@/server/sandbox";
+import { invalidateSession } from "@/server/sessionCache";
 import { HttpError, httpError, toApiSession } from "@/server/types";
 
 export const runtime = "nodejs";
@@ -61,6 +62,10 @@ export async function DELETE(req: Request, ctx: RouteContext) {
       where: { session_id },
       data: { status: "dead", stopped_at: new Date() },
     });
+
+    // Drop the hot-path cache entry so the next message attempt observes the
+    // dead state instead of forwarding to a torn-down sandbox.
+    invalidateSession(session_id);
 
     return Response.json({ id: session_id, status: "deleted" });
   } catch (e) {

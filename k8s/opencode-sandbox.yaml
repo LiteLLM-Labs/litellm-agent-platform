@@ -1,0 +1,37 @@
+apiVersion: agents.x-k8s.io/v1alpha1
+kind: Sandbox
+metadata:
+  name: opencode-test
+  namespace: default
+spec:
+  podTemplate:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: harness
+          image: opencode-sandbox:dev
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 4096
+          env:
+            - name: PORT
+              value: "4096"
+            - name: LITELLM_API_BASE
+              value: "http://localhost:9999"
+            - name: LITELLM_API_KEY
+              value: "stub"
+            - name: LITELLM_DEFAULT_MODEL
+              value: "gpt-4o-mini"
+            - name: BRANCH
+              value: "master"
+            - name: REPO_URL
+              value: "https://github.com/octocat/Hello-World.git"
+            - name: AGENT_PROMPT
+              value: "you are a sandbox"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1"
+              memory: "1Gi"

@@ -26,8 +26,8 @@ import {
   runTask,
   stopTask,
   waitHttpReady,
-  waitRunningGetIp,
-} from "@/server/fargate";
+  waitRunningGetUrl,
+} from "@/server/sandbox";
 import type { AgentRow, WarmTaskRow } from "@/server/types";
 
 // Per-agent target. Today we always keep 1 warm task per recently-active
@@ -139,8 +139,7 @@ export async function provisionWarmTask(agent: AgentRow): Promise<void> {
       data: { task_arn },
     });
 
-    const ip = await waitRunningGetIp(task_arn);
-    const sandbox_url = `http://${ip}:${agent.container_port}`;
+    const sandbox_url = await waitRunningGetUrl(task_arn, agent);
     await waitHttpReady(sandbox_url);
 
     await prisma.warmTask.update({

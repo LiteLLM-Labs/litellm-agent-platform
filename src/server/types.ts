@@ -237,10 +237,16 @@ export interface HarnessMessage {
 // ============================================================================
 
 // ---- src/server/env.ts ----
+export type SandboxBackend = "fargate" | "k8s";
+
 export interface ServerEnv {
   DATABASE_URL: string;
   UI_USERNAME: string;
   MASTER_KEY: string;
+  // Selects sandbox runtime. `fargate` keeps the AWS path; `k8s` runs against
+  // a Kubernetes cluster via the agent-sandbox CRD. AWS_* fields below are
+  // ignored when backend=k8s.
+  SANDBOX_BACKEND: SandboxBackend;
   AWS_REGION: string;
   AWS_CLUSTER: string;
   AWS_ACCESS_KEY_ID?: string;
@@ -249,6 +255,29 @@ export interface ServerEnv {
   AWS_TASK_DEFINITION_ARN: string;
   AWS_SUBNETS: string[]; // parsed from comma-separated env
   AWS_SECURITY_GROUP: string;
+  // Kubernetes backend config — used only when SANDBOX_BACKEND=k8s.
+  K8S_NAMESPACE: string; // default "default"
+  // Hostname the web container reaches the kind/k8s node on. For local dev
+  // with kind + docker-compose this is "host.docker.internal" (mapped via
+  // extra_hosts). For in-cluster deployments leave blank to use Pod IP.
+  K8S_NODE_HOST: string;
+  // NodePort range that's exposed on the host. Must match the kind cluster's
+  // extraPortMappings (see bin/kind-up.sh). Comma-separated "min,max".
+  K8S_NODEPORT_MIN: number; // default 30000
+  K8S_NODEPORT_MAX: number; // default 30099
+  // Image pull policy for Sandbox pods. "Never" for local kind-loaded images,
+  // "IfNotPresent" or "Always" for registry-backed images.
+  K8S_IMAGE_PULL_POLICY: "Never" | "IfNotPresent" | "Always";
+  // The opencode harness image for the Sandbox podTemplate. K8s has no task
+  // definition; the image is supplied per-Sandbox at create time.
+  K8S_HARNESS_IMAGE: string;
+  // Optional override for the kubeconfig cluster server URL. Use when the
+  // active kubeconfig points at a host the running process can't reach
+  // (e.g. kubeconfig has 127.0.0.1 but the web container needs to dial
+  // host.docker.internal). Empty = use kubeconfig as-is. When set, TLS
+  // verification is skipped because the kind apiserver cert SAN won't cover
+  // the override hostname.
+  K8S_API_SERVER: string;
   PREINSTALLED_GITHUB_REPO: string;
   LITELLM_API_BASE: string;
   LITELLM_API_KEY: string;

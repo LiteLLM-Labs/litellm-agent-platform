@@ -40,6 +40,7 @@ import {
   TAG_AGENT_ID,
   TAG_SESSION_ID,
   TAG_WARM_TASK_ID,
+  type AgentRow,
   type RunTaskOpts,
   type TaggedTask,
 } from "@/server/types";
@@ -267,6 +268,21 @@ export async function waitRunningGetIp(
   throw new Error(
     `task ${task_arn} never reached RUNNING with public IP within ${timeout_ms}ms`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// waitRunningGetUrl — convenience wrapper used by the cross-backend dispatcher.
+// Resolves the public IP and folds in `agent.container_port` so callers don't
+// duplicate the URL template.
+// ---------------------------------------------------------------------------
+
+export async function waitRunningGetUrl(
+  task_arn: string,
+  agent: AgentRow,
+  timeout_ms: number = DEFAULT_RUNNING_TIMEOUT_MS,
+): Promise<string> {
+  const ip = await waitRunningGetIp(task_arn, timeout_ms);
+  return `http://${ip}:${agent.container_port}`;
 }
 
 // ---------------------------------------------------------------------------

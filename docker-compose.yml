@@ -42,6 +42,24 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://litellm:litellm@postgres:5432/litellm_agents
+      # Inside the container, kubeconfig server URLs that point at 127.0.0.1
+      # (kind's default) need to be rewritten to host.docker.internal so the
+      # web process can reach the kind API server on the host. The KUBECONFIG
+      # var below points at the rewritten copy produced at startup; if absent,
+      # client-node falls back to ~/.kube/config which the host's IP won't be
+      # reachable from inside compose.
+      KUBECONFIG: /root/.kube/config
+    # host.docker.internal is automatic on Docker Desktop but needs the
+    # explicit gateway alias on Linux (and is harmless on macOS/Windows).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Read-only mount of the host kubeconfig so @kubernetes/client-node can
+      # find a cluster when SANDBOX_BACKEND=k8s. For kind clusters created by
+      # bin/kind-up.sh, the kubeconfig server points at host.docker.internal
+      # so this works from inside the compose network. Ignored entirely when
+      # SANDBOX_BACKEND=fargate.
+      - ${HOME}/.kube:/root/.kube:ro
     depends_on:
       db-migrate:
         condition: service_completed_successfully
@@ -53,6 +71,11 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql://litellm:litellm@postgres:5432/litellm_agents
+      KUBECONFIG: /root/.kube/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ${HOME}/.kube:/root/.kube:ro
     depends_on:
       db-migrate:
         condition: service_completed_successfully

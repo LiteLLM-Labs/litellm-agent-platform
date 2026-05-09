@@ -34,8 +34,9 @@ import {
   runTask,
   stopTask,
   waitHttpReady,
-  waitRunningGetIp,
-} from "@/server/fargate";
+  waitRunningGetUrl,
+} from "@/server/sandbox";
+import { invalidateSession, putCachedSession } from "@/server/sessionCache";
 import {
   expandMessage,
   formatHistoryAsText,
@@ -114,6 +115,10 @@ export async function POST(req: Request, ctx: RouteContext) {
         last_seen_at: new Date(),
       },
     });
+    // Drop the hot-path cache so any in-flight message routed at the old
+    // sandbox_url falls through to the 404 path instead of dialing a stopped
+    // pod. The new entry is re-installed below once the restart succeeds.
+    invalidateSession(session_id);
 
     let new_task_arn: string | null = null;
     try {
@@ -124,8 +129,7 @@ export async function POST(req: Request, ctx: RouteContext) {
         data: { task_arn },
       });
 
-      const ip = await waitRunningGetIp(task_arn);
-      const sandbox_url = `http://${ip}:${agent.container_port}`;
+      const sandbox_url = await waitRunningGetUrl(task_arn, agent);
       await prisma.session.update({
         where: { session_id },
         data: { sandbox_url },
@@ -166,6 +170,16 @@ export async function POST(req: Request, ctx: RouteContext) {
             ? (response as unknown as Prisma.InputJsonValue)
             : undefined,
         },
+      });
+      // Re-warm the cache with the post-restart state so the first message
+      // after restart skips DB hydration.
+      putCachedSession({
+        session_id,
+        agent_id: agent.agent_id,
+        agent_model: agent.model,
+        sandbox_url,
+        harness_session_id,
+        status: "ready",
       });
 
       return Response.json(toApiSession(updated, response));
