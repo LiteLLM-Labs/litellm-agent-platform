@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { ChevronDown, ChevronRight, Plus, Settings } from "lucide-react";
 
 import { AgentAvatar } from "@/components/agent-avatar";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -399,6 +399,23 @@ export function Sidebar() {
       {/* Sticky footer */}
       <div className="sticky bottom-0 flex items-center gap-0.5 border-t border-sidebar-border bg-sidebar px-2 py-1.5">
         <ThemeToggle />
+        <Link
+          href="/settings"
+          aria-label="Settings"
+          aria-current={
+            pathname === "/settings" || pathname.startsWith("/settings/")
+              ? "page"
+              : undefined
+          }
+          className={cn(
+            "inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            pathname === "/settings" || pathname.startsWith("/settings/")
+              ? "bg-sidebar-accent text-foreground"
+              : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+          )}
+        >
+          <Settings className="size-3.5" aria-hidden />
+        </Link>
         <a
           href={REPO_URL}
           target="_blank"
