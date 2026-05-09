@@ -81,40 +81,27 @@ EOF
 fi
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-REPO=litellm-agents-opencode
 TAG=$(git rev-parse --short HEAD)
-IMAGE_URI="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$REPO:$TAG"
 ROLE=litellm-agents-task-exec
 LOG_GROUP=/ecs/litellm-agents
 SG=litellm-agents-sg
-FAMILY=litellm-agents-opencode
 
-# 1. ECR repo
-aws ecr describe-repositories --repository-names "$REPO" --region "$AWS_REGION" 2>/dev/null \
-  || aws ecr create-repository --repository-name "$REPO" --region "$AWS_REGION"
-
-# 2. Docker build + push
-aws ecr get-login-password --region "$AWS_REGION" \
-  | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
-docker build --platform linux/amd64 -f harnesses/opencode/Dockerfile -t "$IMAGE_URI" harnesses/opencode
-docker push "$IMAGE_URI"
-
-# 3. IAM exec role (idempotent)
+# 1. IAM exec role (idempotent) — shared across both task def families
 aws iam get-role --role-name "$ROLE" 2>/dev/null || aws iam create-role \
   --role-name "$ROLE" --assume-role-policy-document file://setup/trust-policy.json
 aws iam attach-role-policy --role-name "$ROLE" \
   --policy-arn arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
 
-# 4. Log group
+# 2. Log group (shared)
 aws logs describe-log-groups --log-group-name-prefix "$LOG_GROUP" --region "$AWS_REGION" \
   | grep -q "$LOG_GROUP" || aws logs create-log-group --log-group-name "$LOG_GROUP" --region "$AWS_REGION"
 
-# 5. ECS cluster
+# 3. ECS cluster (shared)
 aws ecs describe-clusters --clusters "$AWS_CLUSTER" --region "$AWS_REGION" \
   --query "clusters[?status=='ACTIVE']" --output text | grep -q . \
   || aws ecs create-cluster --cluster-name "$AWS_CLUSTER" --region "$AWS_REGION"
 
-# 6. Default VPC + public subnet + SG
+# 4. Default VPC + public subnet + SG (shared)
 VPC_ID=$(aws ec2 describe-vpcs --filters Name=is-default,Values=true \
   --query "Vpcs[0].VpcId" --region "$AWS_REGION" --output text)
 SUBNET_ID=$(aws ec2 describe-subnets --filters Name=vpc-id,Values=$VPC_ID Name=map-public-ip-on-launch,Values=true \
@@ -127,31 +114,75 @@ if [ -z "$SG_ID" ] || [ "$SG_ID" = "None" ]; then
   aws ec2 authorize-security-group-ingress --group-id "$SG_ID" --protocol tcp --port 4096 --cidr 0.0.0.0/0 --region "$AWS_REGION"
 fi
 
-# 7. Register task def
-TASK_DEF_ARN=$(aws ecs register-task-definition --region "$AWS_REGION" \
-  --family "$FAMILY" --network-mode awsvpc --requires-compatibilities FARGATE \
-  --cpu 512 --memory 1024 \
-  --execution-role-arn "arn:aws:iam::$ACCOUNT_ID:role/$ROLE" \
-  --runtime-platform '{"cpuArchitecture":"X86_64","operatingSystemFamily":"LINUX"}' \
-  --container-definitions "$(cat <<JSON
-[{"name":"harness","image":"$IMAGE_URI","essential":true,
+# 5. ECR login (shared) — once for the registry, both repos sit under it.
+aws ecr get-login-password --region "$AWS_REGION" \
+  | docker login --username AWS --password-stdin "$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+
+# 6. Build / push / register each harness. New harness = one extra row here
+# plus a matching env var on the platform.
+#   field 1: harness id (also the family + repo + dir name)
+#   field 2: env var to populate with the resulting task def ARN
+HARNESSES=(
+  "opencode|AWS_TASK_DEFINITION_ARN_OPENCODE"
+  "claude-agent-sdk|AWS_TASK_DEFINITION_ARN_CLAUDE_SDK"
+)
+
+build_and_register() {
+  local harness="$1" env_key="$2"
+  local repo="litellm-agents-${harness}"
+  local family="litellm-agents-${harness}"
+  local image_uri="$ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$repo:$TAG"
+
+  echo
+  echo "=== ${harness} ==="
+
+  aws ecr describe-repositories --repository-names "$repo" --region "$AWS_REGION" 2>/dev/null \
+    || aws ecr create-repository --repository-name "$repo" --region "$AWS_REGION" >/dev/null
+
+  docker build --platform linux/amd64 \
+    -f "harnesses/${harness}/Dockerfile" \
+    -t "$image_uri" \
+    "harnesses/${harness}"
+  docker push "$image_uri"
+
+  local arn
+  arn=$(aws ecs register-task-definition --region "$AWS_REGION" \
+    --family "$family" --network-mode awsvpc --requires-compatibilities FARGATE \
+    --cpu 512 --memory 1024 \
+    --execution-role-arn "arn:aws:iam::$ACCOUNT_ID:role/$ROLE" \
+    --runtime-platform '{"cpuArchitecture":"X86_64","operatingSystemFamily":"LINUX"}' \
+    --container-definitions "$(cat <<JSON
+[{"name":"harness","image":"$image_uri","essential":true,
   "portMappings":[{"containerPort":4096,"protocol":"tcp"}],
   "logConfiguration":{"logDriver":"awslogs","options":{
     "awslogs-group":"$LOG_GROUP","awslogs-region":"$AWS_REGION","awslogs-stream-prefix":"harness"}}}]
 JSON
 )" --query "taskDefinition.taskDefinitionArn" --output text)
 
-# 8. Write provisioned values back into .env (replace if present, append if not).
-update_env AWS_TASK_DEFINITION_ARN "$TASK_DEF_ARN"
-update_env AWS_SUBNETS              "$SUBNET_ID"
-update_env AWS_SECURITY_GROUP       "$SG_ID"
-update_env OPENCODE_IMAGE_URI       "$IMAGE_URI"
+  update_env "$env_key" "$arn"
+  echo "  ✓ ${env_key}=${arn}"
+}
+
+for entry in "${HARNESSES[@]}"; do
+  build_and_register "${entry%%|*}" "${entry##*|}"
+done
+
+# 7. Legacy single-arn alias. The platform falls back to AWS_TASK_DEFINITION_ARN
+# when a per-harness override is missing — point it at opencode so existing
+# rows that were created before per-harness routing landed keep working.
+LEGACY_ARN=$(grep -E '^AWS_TASK_DEFINITION_ARN_OPENCODE=' .env | head -1 | cut -d= -f2-)
+update_env AWS_TASK_DEFINITION_ARN "$LEGACY_ARN"
+
+# 8. Networking values (shared across harnesses).
+update_env AWS_SUBNETS        "$SUBNET_ID"
+update_env AWS_SECURITY_GROUP "$SG_ID"
 
 cat <<EOF
 
 ✓ wrote into .env:
-  AWS_TASK_DEFINITION_ARN=$TASK_DEF_ARN
+  AWS_TASK_DEFINITION_ARN=<opencode (legacy alias)>
+  AWS_TASK_DEFINITION_ARN_OPENCODE=<set>
+  AWS_TASK_DEFINITION_ARN_CLAUDE_SDK=<set>
   AWS_SUBNETS=$SUBNET_ID
   AWS_SECURITY_GROUP=$SG_ID
-  OPENCODE_IMAGE_URI=$IMAGE_URI
 EOF
