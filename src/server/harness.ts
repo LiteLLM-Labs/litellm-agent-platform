@@ -160,3 +160,72 @@ export async function harnessSendMessage(
   );
   return data as HarnessMessageResponse;
 }
+
+/**
+ * Fire the prompt asynchronously — the harness returns 204 immediately and
+ * publishes progress on its event bus. Pair with `harnessOpenEventStream` to
+ * stream tokens to the client without holding a request open for the entire
+ * agent loop. See opencode `routes/instance/httpapi/groups/session.ts`.
+ */
+export async function harnessPromptAsync(
+  opts: HarnessSendMessageOpts,
+): Promise<void> {
+  const {
+    sandbox_url,
+    harness_session_id,
+    model,
+    parts,
+    timeout_ms = DEFAULT_CREATE_TIMEOUT_MS,
+  } = opts;
+  const url = `${sandbox_url}/session/${harness_session_id}/prompt_async`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      model: { providerID: "litellm", modelID: model },
+      parts,
+    }),
+    signal: AbortSignal.timeout(timeout_ms),
+  });
+  if (!res.ok && res.status !== 204) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `harness request failed: POST ${url} -> ${res.status} ${res.statusText}: ${text}`,
+    );
+  }
+}
+
+/**
+ * Subscribe to the harness's instance-wide bus stream. The stream is
+ * `text/event-stream` with one JSON message per SSE event:
+ *   `{ id, type, properties }`
+ * The first event is `server.connected`. Heartbeats arrive every 10s as
+ * `server.heartbeat`.
+ *
+ * The Response is returned without parsing so the caller can pipe the body
+ * through their own filter+forward path. The caller is responsible for
+ * canceling via the signal when done — without that, the stream stays open
+ * (10s heartbeats keep undici from idling it shut).
+ */
+export async function harnessOpenEventStream(opts: {
+  sandbox_url: string;
+  signal?: AbortSignal;
+}): Promise<Response> {
+  const { sandbox_url, signal } = opts;
+  const url = `${sandbox_url}/event`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { accept: "text/event-stream" },
+    signal,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `harness request failed: GET ${url} -> ${res.status} ${res.statusText}: ${text}`,
+    );
+  }
+  if (!res.body) {
+    throw new Error(`harness ${url} returned no body`);
+  }
+  return res as unknown as Response;
+}

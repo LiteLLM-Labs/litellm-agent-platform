@@ -32,7 +32,7 @@ import {
   getAgent,
   getSession,
   listSessionMessages,
-  sendMessage,
+  sendMessageStream,
 } from "@/lib/api";
 import { AgentAvatar } from "@/components/agent-avatar";
 
@@ -129,6 +129,10 @@ export default function SessionThreadView() {
   // `messages` changes, including when the drain mutates a row, so without a
   // ref we'd race ourselves.
   const drainingRef = useRef<boolean>(false);
+  // Holds the AbortController for the in-flight streaming send so the
+  // unmount cleanup can tear down both the client fetch and the upstream
+  // SSE subscription instead of letting them outlive the route.
+  const sendAbortRef = useRef<AbortController | null>(null);
 
   const hasInProgress = useMemo(
     () => messages.some((m) => m.status === "in_progress"),
@@ -304,11 +308,13 @@ export default function SessionThreadView() {
     setDraft("");
   }, [draft, sessionId, session]);
 
-  // Queue drain: at most one in-flight POST per session. When the in-flight
-  // turn resolves and there's a `queued` assistant row waiting, kick the next.
-  // FIFO ordering carries through `messages` ordering — no separate queue
-  // structure to keep in sync. After a successful send we re-fetch the full
-  // thread so tool/reasoning parts from the agent loop render correctly.
+  // Queue drain: at most one in-flight stream per session. When the
+  // in-flight turn resolves and there's a `queued` assistant row waiting,
+  // kick the next. FIFO ordering carries through `messages` ordering — no
+  // separate queue structure to keep in sync. After a successful stream we
+  // re-fetch the full thread so tool/reasoning parts from the agent loop
+  // render correctly (bus events alone don't reconstruct earlier loop
+  // iterations).
   useEffect(() => {
     if (drainingRef.current) return;
     if (!sessionId || session?.status !== "ready") return;
@@ -343,11 +349,60 @@ export default function SessionThreadView() {
         ),
       );
 
+      const ctl = new AbortController();
+      sendAbortRef.current = ctl;
+
       try {
-        await sendMessage(sessionId, { text: userText });
-        // Refresh from the harness so tool/reasoning parts render. The
-        // refresh logic preserves any still-queued local rows that came in
-        // mid-flight, so the next loop iteration picks them up.
+        // Stream token deltas live. `message.part.delta` carries text
+        // chunks per partID; we render the running concat into the
+        // in-progress bubble. After `done` we refreshThread() to pull
+        // canonical state (tool/reasoning parts from earlier loop
+        // iterations that the bus events don't reconstruct).
+        const partTexts: Map<string, string> = new Map();
+        const renderStreaming = () => {
+          const text = Array.from(partTexts.values()).join("");
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.id === assistantId
+                ? { ...m, text, parts: undefined, status: "in_progress" }
+                : m,
+            ),
+          );
+        };
+        await sendMessageStream(
+          sessionId,
+          { text: userText },
+          (frame) => {
+            if (frame.type !== "harness_event" || !frame.event) return;
+            const ev = frame.event;
+            const props = ev.properties ?? {};
+            if (ev.type === "message.part.delta") {
+              const partID = props.partID as string | undefined;
+              const delta = props.delta as string | undefined;
+              const field = props.field as string | undefined;
+              // `field === "text"` is the assistant's user-visible
+              // output; ignore reasoning so we don't leak
+              // chain-of-thought into the bubble.
+              if (!partID || !delta || field !== "text") return;
+              partTexts.set(partID, (partTexts.get(partID) ?? "") + delta);
+              renderStreaming();
+            } else if (ev.type === "message.part.updated") {
+              // Authoritative replacement when we missed earlier deltas.
+              const part = props.part as
+                | { id?: string; type?: string; text?: string }
+                | undefined;
+              if (
+                part?.id &&
+                part.type === "text" &&
+                typeof part.text === "string"
+              ) {
+                partTexts.set(part.id, part.text);
+                renderStreaming();
+              }
+            }
+          },
+          { signal: ctl.signal },
+        );
         await refreshThread();
       } catch (e) {
         const msg = e instanceof ApiError ? e.message : (e as Error).message;
@@ -360,10 +415,19 @@ export default function SessionThreadView() {
           ),
         );
       } finally {
+        sendAbortRef.current = null;
         drainingRef.current = false;
       }
     })();
   }, [messages, sessionId, session?.status, refreshThread]);
+
+  // Abort any in-flight stream when the route unmounts so the underlying
+  // fetch and the upstream SSE subscription both tear down cleanly.
+  useEffect(() => {
+    return () => {
+      sendAbortRef.current?.abort();
+    };
+  }, []);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {

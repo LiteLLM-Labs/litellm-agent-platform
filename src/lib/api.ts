@@ -515,6 +515,90 @@ export function sendMessage(
 }
 
 /**
+ * Streaming variant — opens an SSE connection to /message_stream and yields
+ * harness bus events as they arrive. The promise resolves on the `done`
+ * frame (server saw `session.idle`). On `error` it rejects.
+ *
+ * Each `harness_event` payload is an opencode bus event of shape
+ * `{ id, type, properties }`; relevant types for token streaming:
+ *   - "message.part.delta"   — token-level delta on `properties.delta`
+ *   - "message.part.updated" — full part replacement (use as authoritative
+ *     state if you missed deltas)
+ *   - "message.updated"      — message-level metadata refresh
+ *   - "session.idle"         — agent loop returned (server closes after this)
+ */
+export interface MessageStreamFrame {
+  type: "ready" | "harness_event" | "done" | "error";
+  event?: { id?: string; type: string; properties?: Record<string, unknown> };
+  message?: string;
+}
+
+export async function sendMessageStream(
+  sessionId: string,
+  req: SendMessageRequest,
+  onFrame: (frame: MessageStreamFrame) => void,
+  init?: ApiInit,
+): Promise<void> {
+  const auth = authHeader();
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    accept: "text/event-stream",
+  };
+  if (auth) headers.authorization = auth;
+  const res = await fetch(
+    `${PROXY_PREFIX}/v1/managed_agents/sessions/${encodeURIComponent(
+      sessionId,
+    )}/message_stream`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(req),
+      signal: init?.signal,
+    },
+  );
+  if (!res.ok) {
+    if (res.status === 401) clearStoredMasterKey();
+    const text = await res.text().catch(() => "");
+    const msg = text || res.statusText;
+    throw new ApiError(res.status, msg, msg);
+  }
+  if (!res.body) {
+    throw new ApiError(0, "stream body missing", "stream body missing");
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    pending += decoder.decode(value, { stream: true });
+    for (;;) {
+      const idx = pending.indexOf("\n\n");
+      if (idx < 0) break;
+      const frame = pending.slice(0, idx);
+      pending = pending.slice(idx + 2);
+      for (const line of frame.split(/\r?\n/)) {
+        if (!line.startsWith("data:")) continue;
+        const raw = line.slice(5).trimStart();
+        if (!raw) continue;
+        let parsed: MessageStreamFrame;
+        try {
+          parsed = JSON.parse(raw) as MessageStreamFrame;
+        } catch {
+          continue;
+        }
+        onFrame(parsed);
+        if (parsed.type === "done") return;
+        if (parsed.type === "error") {
+          const msg = parsed.message ?? "stream error";
+          throw new ApiError(502, msg, msg);
+        }
+      }
+    }
+  }
+}
+
+/**
  * Full thread for a session — proxies opencode's `GET /session/:id/message`.
  * Use this instead of relying on `sendMessage`'s return value when the UI
  * needs to render tool calls and reasoning parts: those live in earlier
