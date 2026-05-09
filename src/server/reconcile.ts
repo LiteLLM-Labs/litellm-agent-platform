@@ -41,9 +41,60 @@ async function safeStopTask(task_arn: string, reason: string): Promise<void> {
   }
 }
 
+const WARM_DEAD_STATUSES = new Set(["dead", "claimed"]);
+
+/**
+ * Stop any Fargate task tagged as a warm pool task whose `WarmTask` row is
+ * missing or in a terminal state. Mirrors the session-orphan sweep below
+ * for warm-tagged tasks. Brand-new tasks inside the grace window are left
+ * alone — the provisioner may not have committed the row yet.
+ */
+async function sweepWarmOrphans(
+  warm_tagged: Array<{
+    task_arn: string;
+    warm_task_id: string | null;
+    started_at: Date | null;
+  }>,
+  now: number,
+): Promise<number> {
+  if (warm_tagged.length === 0) return 0;
+  const ids = warm_tagged
+    .map((t) => t.warm_task_id)
+    .filter((v): v is string => typeof v === "string" && v.length > 0);
+  const rows = ids.length
+    ? await prisma.warmTask.findMany({
+        where: { warm_task_id: { in: ids } },
+      })
+    : [];
+  const byId = new Map(rows.map((r) => [r.warm_task_id, r]));
+
+  let stopped = 0;
+  for (const task of warm_tagged) {
+    const wid = task.warm_task_id;
+    if (!wid) continue;
+    const row = byId.get(wid);
+    if (!row) {
+      // Row missing — but respect the grace window so a freshly launched
+      // task isn't killed before its row is committed.
+      const startedAt = task.started_at ? task.started_at.getTime() : null;
+      const ageMs = startedAt !== null ? now - startedAt : null;
+      if (ageMs !== null && ageMs < RECONCILE_NEW_TASK_GRACE_MS) continue;
+      await safeStopTask(task.task_arn, "reconciler: warm orphan");
+      stopped += 1;
+      continue;
+    }
+    if (WARM_DEAD_STATUSES.has(row.status)) {
+      await safeStopTask(task.task_arn, "reconciler: warm dead");
+      stopped += 1;
+    }
+  }
+  return stopped;
+}
+
 export async function reconcileOrphans(): Promise<ReconcileResult> {
   const tasks = await listTaggedTasks();
   const managed = tasks.filter((t) => t.session_id);
+  const warm_tagged = tasks.filter((t) => t.warm_task_id && !t.session_id);
   const inspected = managed.length;
 
   let stopped = 0;
@@ -148,7 +199,15 @@ export async function reconcileOrphans(): Promise<ReconcileResult> {
     }
   }
 
-  return { inspected, stopped, failed_creating, idle_killed };
+  const warm_orphans_stopped = await sweepWarmOrphans(warm_tagged, now);
+
+  return {
+    inspected,
+    stopped,
+    failed_creating,
+    idle_killed,
+    warm_orphans_stopped,
+  };
 }
 
 export async function stopSessionsForAgent(agent_id: string): Promise<number> {
