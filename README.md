@@ -84,54 +84,61 @@ Drop a Dockerfile in `harnesses/<id>/`, re-run `./setup.sh`. Container must expo
 Auth: `Authorization: Bearer <MASTER_KEY>` on every request.
 
 ```bash
-KEY=$MASTER_KEY
 BASE=http://localhost:3000/api/v1/managed_agents
+H_AUTH="authorization: bearer $MASTER_KEY"
+H_JSON="content-type: application/json"
 
-AGENT=$(curl -sX POST $BASE/agents \
-  -H "Authorization: Bearer $KEY" -H "content-type: application/json" \
-  -d '{
-    "name":"code-reviewer",
-    "model":"anthropic/claude-sonnet-4-6",
-    "prompt":"Senior engineer reviewing for clarity and security.",
-    "repo_url":"https://github.com/BerriAI/litellm"
-  }' | jq -r .id)
+# create
+AGENT=$(curl -sfX POST "$BASE/agents" -H "$H_AUTH" -H "$H_JSON" -d '{
+  "name":     "code-reviewer",
+  "model":    "anthropic/claude-sonnet-4-6",
+  "prompt":   "Review for clarity and security.",
+  "repo_url": "https://github.com/BerriAI/litellm"
+}' | jq -r .id)
 
-SESSION=$(curl -sX POST $BASE/agents/$AGENT/session \
-  -H "Authorization: Bearer $KEY" -H "content-type: application/json" \
-  -d '{"title":"smoke"}' | jq -r .id)   # ~50–120s cold
+# spawn  (~60s cold)
+SESSION=$(curl -sfX POST "$BASE/agents/$AGENT/session" -H "$H_AUTH" -H "$H_JSON" \
+  -d '{"title":"smoke"}' | jq -r .id)
 
-curl -sX POST $BASE/sessions/$SESSION/message \
-  -H "Authorization: Bearer $KEY" -H "content-type: application/json" \
-  -d '{"text":"What does this repo do? One sentence."}'
+# message
+curl -sfX POST "$BASE/sessions/$SESSION/message" -H "$H_AUTH" -H "$H_JSON" \
+  -d '{"text":"What does this repo do?"}'
 
-curl -sX DELETE $BASE/sessions/$SESSION -H "Authorization: Bearer $KEY"
+# stop
+curl -sfX DELETE "$BASE/sessions/$SESSION" -H "$H_AUTH"
 ```
 
-TypeScript:
-
 ```ts
-const KEY = process.env.MASTER_KEY!;
 const BASE = "http://localhost:3000/api/v1/managed_agents";
-const h = { "Authorization": `Bearer ${KEY}`, "content-type": "application/json" };
+const H = {
+  authorization:  `bearer ${process.env.MASTER_KEY}`,
+  "content-type": "application/json",
+};
 
-const agent = await fetch(`${BASE}/agents`, {
-  method: "POST", headers: h,
-  body: JSON.stringify({
-    model: "anthropic/claude-sonnet-4-6",
-    repo_url: "https://github.com/BerriAI/litellm",
-  }),
-}).then(r => r.json());
+async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const r = await fetch(`${BASE}${path}`, {
+    method,
+    headers: H,
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`${method} ${path} → ${r.status}`);
+  return r.json() as Promise<T>;
+}
 
-const session = await fetch(`${BASE}/agents/${agent.id}/session`, {
-  method: "POST", headers: h, body: "{}",
-}).then(r => r.json());
+const { id: agentId } = await call<{ id: string }>("POST", "/agents", {
+  model:    "anthropic/claude-sonnet-4-6",
+  repo_url: "https://github.com/BerriAI/litellm",
+});
 
-const reply = await fetch(`${BASE}/sessions/${session.id}/message`, {
-  method: "POST", headers: h,
-  body: JSON.stringify({ text: "List the top-level directories." }),
-}).then(r => r.json());
+const { id: sessionId } = await call<{ id: string }>(
+  "POST", `/agents/${agentId}/session`, { title: "smoke" },
+);
 
-await fetch(`${BASE}/sessions/${session.id}`, { method: "DELETE", headers: h });
+const reply = await call<unknown>(
+  "POST", `/sessions/${sessionId}/message`, { text: "List the top-level directories." },
+);
+
+await call("DELETE", `/sessions/${sessionId}`);
 ```
 
 Body + response on `/sessions/{id}/message` are the [opencode HTTP API](https://github.com/sst/opencode) verbatim. Reuse a session across messages — `POST /agents/{id}/session` is the slow path.
