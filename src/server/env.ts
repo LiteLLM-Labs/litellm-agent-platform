@@ -18,6 +18,21 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   UI_USERNAME: z.string().min(1),
   MASTER_KEY: z.string().min(8),
+  // Stable identifier for this running instance. Stamped onto every
+  // Fargate task as a tag (see TAG_DEPLOY_ID). The reconciler uses it to
+  // scope kills to tasks the same deploy launched. Required: a missing
+  // DEPLOY_ID is exactly the foot-gun that caused the 2026-05-09
+  // incident. Set once per environment and treat as essentially
+  // constant (Render persists env vars across deploys). Suggested
+  // values: `render-prod`, `laptop-{user}-{YYYYMM}`, `ci-{run-id}`.
+  DEPLOY_ID: z
+    .string()
+    .min(1, "DEPLOY_ID must be set; see src/server/env.ts")
+    .max(120)
+    .regex(
+      /^[A-Za-z0-9._-]+$/,
+      "DEPLOY_ID must contain only [A-Za-z0-9._-] (used as an ECS tag value)",
+    ),
   AWS_REGION: z.string().min(1),
   AWS_CLUSTER: z.string().min(1),
   // Credentials are resolved by the SDK's default provider chain at runtime,
