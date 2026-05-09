@@ -289,6 +289,15 @@ export async function POST(req: Request, ctx: RouteContext) {
           }
         } finally {
           clearTimeout(deadlineTimer);
+          // Release the body reader's lock before aborting the controller
+          // so undici tears the upstream socket down cleanly. Without this
+          // the ReadableStream stays locked on every normal session.idle
+          // exit and the connection sits open until GC.
+          try {
+            await reader.cancel();
+          } catch {
+            /* already cancelled or upstream errored */
+          }
           upstreamCtl.abort();
           done();
         }
