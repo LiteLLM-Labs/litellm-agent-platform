@@ -363,6 +363,7 @@ export async function listTaggedTasks(): Promise<TaggedTask[]> {
         agent_id: tagValue(task.tags, TAG_AGENT_ID),
         warm_task_id: tagValue(task.tags, TAG_WARM_TASK_ID),
         last_status: task.lastStatus ?? "UNKNOWN",
+        created_at: task.createdAt ?? null,
         started_at: task.startedAt ?? null,
       });
     }

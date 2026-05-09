@@ -58,10 +58,24 @@ const WARM_DEAD_STATUSES = new Set(["dead", "claimed"]);
  * Brand-new tasks inside the `RECONCILE_NEW_TASK_GRACE_MS` window are also
  * left alone — the provisioner may not have committed the row yet.
  */
+// Returns the most recent timestamp ECS gave us for the task. PENDING /
+// PROVISIONING tasks have null `started_at` (ECS only sets it on RUNNING),
+// so we fall back to `created_at`. Returning null only when both are null
+// means a task that ECS hasn't reported any timestamp for is treated as
+// "age unknown" — callers handle that by skipping the kill.
+function taskAgeMs(
+  task: { created_at: Date | null; started_at: Date | null },
+  now: number,
+): number | null {
+  const ts = task.started_at ?? task.created_at;
+  return ts ? now - ts.getTime() : null;
+}
+
 async function sweepWarmOrphans(
   warm_tagged: Array<{
     task_arn: string;
     warm_task_id: string | null;
+    created_at: Date | null;
     started_at: Date | null;
   }>,
   now: number,
@@ -107,10 +121,11 @@ async function sweepWarmOrphans(
 
     if (!row) {
       // Row missing — but respect the grace window so a freshly launched
-      // task isn't killed before its row is committed.
-      const startedAt = task.started_at ? task.started_at.getTime() : null;
-      const ageMs = startedAt !== null ? now - startedAt : null;
-      if (ageMs !== null && ageMs < RECONCILE_NEW_TASK_GRACE_MS) continue;
+      // task isn't killed before its row is committed. PENDING tasks have
+      // null started_at, so taskAgeMs falls back to created_at; if both
+      // are null (age unknown), skip rather than kill.
+      const ageMs = taskAgeMs(task, now);
+      if (ageMs === null || ageMs < RECONCILE_NEW_TASK_GRACE_MS) continue;
       await safeStopTask(task.task_arn, "reconciler: warm orphan");
       stopped += 1;
       continue;
@@ -149,9 +164,13 @@ export async function reconcileOrphans(): Promise<ReconcileResult> {
 
     if (!row) {
       // Row missing: only stop if the task is older than the grace window.
-      const startedAt = task.started_at ? task.started_at.getTime() : null;
-      const ageMs = startedAt !== null ? now - startedAt : null;
-      if (ageMs !== null && ageMs < RECONCILE_NEW_TASK_GRACE_MS) {
+      // PENDING tasks have null started_at (ECS only sets it on RUNNING);
+      // fall back to created_at so brand-new PENDING tasks aren't insta-
+      // killed when a misconfigured worker is pointed at the wrong DB. If
+      // both timestamps are null (rare — task too new for ECS to have
+      // reported anything), skip the kill.
+      const ageMs = taskAgeMs(task, now);
+      if (ageMs === null || ageMs < RECONCILE_NEW_TASK_GRACE_MS) {
         continue;
       }
       await safeStopTask(task.task_arn, "reconciler: orphan");

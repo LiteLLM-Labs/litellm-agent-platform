@@ -284,6 +284,11 @@ export interface TaggedTask {
   agent_id: string | null;
   warm_task_id: string | null;
   last_status: string; // RUNNING | STOPPED | PROVISIONING | etc
+  // ECS sets `startedAt` only when the task transitions to RUNNING. PENDING /
+  // PROVISIONING tasks have a non-null `createdAt` but null `startedAt`. The
+  // grace-window check needs a non-null age for new tasks regardless of
+  // status, so reconcile falls back to created_at when started_at is null.
+  created_at: Date | null;
   started_at: Date | null;
 }
 
