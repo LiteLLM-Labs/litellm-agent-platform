@@ -25,6 +25,15 @@ const EnvSchema = z.object({
   K8S_IMAGE_PULL_POLICY: z.enum(["Never", "IfNotPresent", "Always"]).default("Never"),
   K8S_HARNESS_IMAGE: z.string().min(1).default("opencode-sandbox:dev"),
   K8S_API_SERVER: z.string().optional().default(""),
+  // Explicit opt-in to skip TLS verification when K8S_API_SERVER is
+  // overridden. Required for kind/local-dev because the kind apiserver
+  // cert SAN won't cover host.docker.internal. Must remain false for any
+  // production cluster — see src/server/k8s.ts loadKubeConfig().
+  K8S_SKIP_TLS_VERIFY: z
+    .enum(["true", "false"])
+    .optional()
+    .default("false")
+    .transform((v) => v === "true"),
   PREINSTALLED_GITHUB_REPO: z.string().min(1),
   LITELLM_API_BASE: z.string().min(1),
   LITELLM_API_KEY: z.string().min(1),

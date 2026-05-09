@@ -69,6 +69,7 @@ Idempotent. Creates a kind cluster `agent-sbx` with:
 | `K8S_NODEPORT_MAX` | `30099` | high end of NodePort window |
 | `K8S_NODE_HOST` | `host.docker.internal` | host the URL points at; use `127.0.0.1` for `next dev` |
 | `K8S_API_SERVER` | `https://host.docker.internal:6444` | override apiserver URL in-process (compose only) |
+| `K8S_SKIP_TLS_VERIFY` | `false` | explicit opt-in to skip cert validation when `K8S_API_SERVER` is set; required for kind, NEVER for prod |
 
 Tear down:
 
@@ -80,7 +81,7 @@ kind delete cluster --name agent-sbx
 
 `docker-compose.yml` mounts `~/.kube` read-only into web/worker and adds `host.docker.internal` to `extra_hosts` (Docker Desktop adds this automatically; Linux compose needs the alias). `KUBECONFIG=/root/.kube/config` inside the container points at the mounted kubeconfig.
 
-When the kubeconfig server URL is unreachable from the container (kind writes `127.0.0.1` which inside compose loops back to the container itself), `K8S_API_SERVER` overrides the cluster server URL in-process via `KubeConfig.loadFromOptions`. TLS is `skipTLSVerify=true` for the override because the kind apiserver cert SAN won't cover an arbitrary override hostname. **Never enable `K8S_API_SERVER` against a prod cluster.**
+When the kubeconfig server URL is unreachable from the container (kind writes `127.0.0.1` which inside compose loops back to the container itself), `K8S_API_SERVER` overrides the cluster server URL in-process via `KubeConfig.loadFromOptions`. Cert validation against the override URL is **only** disabled when `K8S_SKIP_TLS_VERIFY=true` is also set — required for kind because the apiserver cert SAN won't cover an arbitrary override hostname. **Never set `K8S_SKIP_TLS_VERIFY=true` against a prod cluster.**
 
 ## Hot-path cache
 
@@ -153,7 +154,7 @@ Sandbox CRs don't track a separate started-at timestamp, so `started_at = creati
 - **gVisor / Kata not wired up.** The agent-sandbox CRD supports a runtime class field; we don't set it today. Adding it is a small podSpec patch when needed.
 - **NodePort range capped at 100** by `bin/kind-up.sh`. For higher fan-out, switch to ClusterIP + an ingress controller and use hostname-based routing. Code in `k8s.ts` would change `Service.spec.type` and the URL construction.
 - **No persistent storage.** Sandbox CRD supports persistent volumes; we don't use them. opencode session state is ephemeral by design today.
-- **`K8S_API_SERVER` skips TLS verify.** Acceptable for local kind, never set against a real cluster.
+- **`K8S_SKIP_TLS_VERIFY=true` skips TLS verify** on the patched cluster URL. Acceptable for local kind, never set against a real cluster. Defaults to `false` so an override-only `K8S_API_SERVER` keeps full cert validation.
 - **Cache is process-local.** Multi-replica deployments converge at flush time, not instantly. Acceptable while idle-sweep granularity is hours; revisit if it ever becomes seconds.
 
 ## Files

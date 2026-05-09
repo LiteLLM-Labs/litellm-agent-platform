@@ -259,10 +259,15 @@ export interface ServerEnv {
   // Optional override for the kubeconfig cluster server URL. Use when the
   // active kubeconfig points at a host the running process can't reach
   // (e.g. kubeconfig has 127.0.0.1 but the web container needs to dial
-  // host.docker.internal). Empty = use kubeconfig as-is. When set, TLS
-  // verification is skipped because the kind apiserver cert SAN won't cover
-  // the override hostname.
+  // host.docker.internal). Empty = use kubeconfig as-is.
   K8S_API_SERVER: string;
+  // Explicit opt-in (truthy "true") to skip TLS verification on the
+  // patched kubeconfig cluster entry. Only takes effect when K8S_API_SERVER
+  // is non-empty. Required for kind/local-dev because the kind apiserver
+  // cert SAN won't cover host.docker.internal. Defaults to false so a
+  // production deploy that overrides the API server URL still validates
+  // certs.
+  K8S_SKIP_TLS_VERIFY: boolean;
   PREINSTALLED_GITHUB_REPO: string;
   LITELLM_API_BASE: string;
   LITELLM_API_KEY: string;

@@ -132,8 +132,10 @@ export async function flushLastSeen(): Promise<number> {
     );
     return drained.length;
   } catch (err) {
-    // Re-stage so the next tick retries. A persistent failure (DB down) will
-    // grow the map; the MAX_ENTRIES cap prevents unbounded growth.
+    // Re-stage so the next tick retries. The map is keyed by session_id and
+    // markSessionSeen keeps the highest-watermark timestamp per key, so size
+    // is bounded by the number of distinct active session ids — not by call
+    // volume. MAX_ENTRIES caps the read cache, not pendingLastSeen.
     for (const [sid, ts] of drained) markSessionSeen(sid, ts);
     console.warn(`flushLastSeen failed (${drained.length} entries):`, err);
     return 0;

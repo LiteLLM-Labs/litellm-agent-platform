@@ -1,3 +1,19 @@
+# =============================================================================
+# EXAMPLE ONLY — DO NOT APPLY DIRECTLY
+# =============================================================================
+# This is a hand-written reference manifest used to exercise the agent-sandbox
+# CRD by hand during local development. The values below (LITELLM_API_BASE
+# pointing at localhost:9999, LITELLM_API_KEY="stub", a public Hello-World
+# repo) are stubs — the harness container will start but every LLM call
+# will fail against a non-existent server.
+#
+# The platform never applies this file. `bin/kind-up.sh` does not reference
+# it; runtime Sandbox CRs are produced by `src/server/k8s.ts::runTask`.
+#
+# If you want to smoke-test the controller in a kind cluster, replace the
+# LITELLM_* values with a real endpoint + key first, or use the platform's
+# /sessions API which fills them from .env.
+# =============================================================================
 apiVersion: agents.x-k8s.io/v1alpha1
 kind: Sandbox
 metadata:

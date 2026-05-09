@@ -135,6 +135,9 @@ Set in your .env:
   # for docker-compose web/worker:
   K8S_NODE_HOST=host.docker.internal
   K8S_API_SERVER=https://host.docker.internal:$API_PORT
+  # required when overriding K8S_API_SERVER against kind — the kind apiserver
+  # cert SAN won't cover host.docker.internal. NEVER set this against prod.
+  K8S_SKIP_TLS_VERIFY=true
 
 Tear down with:
   kind delete cluster --name $CLUSTER_NAME

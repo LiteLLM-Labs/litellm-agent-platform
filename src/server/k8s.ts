@@ -98,8 +98,13 @@ function loadKubeConfig(): k8s.KubeConfig {
   // Optional server override — used when the active kubeconfig points at a
   // host this process can't reach (e.g. compose container needs to dial
   // host.docker.internal but kubeconfig has 127.0.0.1). Patch the cluster
-  // entry in place. TLS verification is disabled because the kind apiserver
-  // cert SAN won't cover the override hostname.
+  // entry in place.
+  //
+  // TLS verification is *not* implicitly disabled — that's an explicit
+  // opt-in via K8S_SKIP_TLS_VERIFY=true. The kind/local-dev case sets both
+  // K8S_API_SERVER and K8S_SKIP_TLS_VERIFY together (the apiserver cert SAN
+  // won't cover the override hostname). A production deploy that overrides
+  // the server URL but leaves the flag unset keeps full cert validation.
   const override = env.K8S_API_SERVER;
   if (override && override.length > 0) {
     const ctx = kc.getCurrentContext();
@@ -110,12 +115,16 @@ function loadKubeConfig(): k8s.KubeConfig {
         // The Cluster type is declared readonly by client-node. We rebuild
         // the kubeconfig with a patched cluster entry rather than mutating
         // in place, which the public type forbids.
+        const skipTLS = env.K8S_SKIP_TLS_VERIFY;
         const patched: k8s.Cluster = {
           ...cluster,
           server: override,
-          skipTLSVerify: true,
-          caData: undefined,
-          caFile: undefined,
+          // Only flip skipTLSVerify / drop CA data when the operator has
+          // explicitly opted in. Otherwise preserve the kubeconfig's
+          // existing cert trust for the new server URL.
+          ...(skipTLS
+            ? { skipTLSVerify: true, caData: undefined, caFile: undefined }
+            : {}),
         };
         kc.loadFromOptions({
           clusters: [
@@ -442,6 +451,24 @@ async function readNodePort(name: string): Promise<number | null> {
   }
 }
 
+/**
+ * Read the phase of the pod owned by the Sandbox CR `name`.
+ *
+ * Pod naming contract (kubernetes-sigs/agent-sandbox v0.4.x):
+ *   Pod.Name == Sandbox.Name unless the Sandbox carries the
+ *   `agents.x-k8s.io/pod-name` annotation. We don't set that annotation
+ *   anywhere in this codebase (search `agents.x-k8s.io/pod-name`), so the
+ *   Sandbox CR name is the pod name.
+ *
+ * Source:
+ *   https://github.com/kubernetes-sigs/agent-sandbox/blob/main/controllers/sandbox_controller.go
+ *   - resolvePodName(sandbox): returns sandbox.Name when the annotation is unset
+ *   - createPodForSandbox: pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: sandbox.Name, ...}}
+ *
+ * If a future controller version breaks this contract, every spawn would
+ * spin until DEFAULT_RUNNING_TIMEOUT_MS. The contract is verified by the
+ * spawn smoke test ("First spawn lands a Sandbox + Service, reaches ready").
+ */
 async function readPodPhase(
   name: string,
 ): Promise<{ phase: string | undefined; reason: string | undefined }> {
