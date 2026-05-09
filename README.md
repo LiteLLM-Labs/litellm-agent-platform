@@ -2,7 +2,8 @@
 
 Self-hosted control plane for sandboxed agents on AWS Fargate. Each agent binds `(harness, repo, model, prompt)`. Spawning a session launches a Fargate task running the [opencode](https://opencode.ai) harness, cloned to the repo, talking to a [LiteLLM](https://github.com/BerriAI/litellm) gateway for model traffic.
 
-<img width="1056" height="720" alt="d3" src="https://github.com/user-attachments/assets/63fbeed7-b3be-4f9a-9e79-6b8170b74f90" />
+<img width="1248" height="720" alt="d4" src="https://github.com/user-attachments/assets/efba8e79-b671-4c5f-b72e-b98de4a6fbee" />
+
 
 
 
