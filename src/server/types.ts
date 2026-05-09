@@ -241,6 +241,15 @@ export interface ServerEnv {
   DATABASE_URL: string;
   UI_USERNAME: string;
   MASTER_KEY: string;
+  /**
+   * Unique identifier for this running instance — stamped onto every
+   * Fargate task as a tag and used by the reconciler to scope what it can
+   * see and stop. Required: a missing or wrong DEPLOY_ID lets one process
+   * (laptop, CI, second prod replica) reconcile tasks launched by another,
+   * which is how the 2026-05-09 incident happened. Suggested values:
+   * `render-prod`, `laptop-{user}-{YYYYMM}`, `ci-{run-id}`.
+   */
+  DEPLOY_ID: string;
   AWS_REGION: string;
   AWS_CLUSTER: string;
   AWS_ACCESS_KEY_ID?: string;
@@ -334,6 +343,13 @@ export interface TaggedTask {
   session_id: string | null;
   agent_id: string | null;
   warm_task_id: string | null;
+  /**
+   * Stamped by `runTask` from `env.DEPLOY_ID`. The reconciler uses this to
+   * scope kills: a process only stops tasks whose deploy_id matches its
+   * own. Null for legacy tasks launched before the tag existed — those are
+   * treated as "not mine" by every reconciler (safe default).
+   */
+  deploy_id: string | null;
   last_status: string; // RUNNING | STOPPED | PROVISIONING | etc
   // ECS sets `startedAt` only when the task transitions to RUNNING. PENDING /
   // PROVISIONING tasks have a non-null `createdAt` but null `startedAt`. The
@@ -435,6 +451,10 @@ export function toApiSession(
 export const TAG_SESSION_ID = "litellm_session_id";
 export const TAG_AGENT_ID = "litellm_agent_id";
 export const TAG_WARM_TASK_ID = "litellm_warm_task_id";
+// Stamped on every Fargate task at RunTask time so the reconciler can scope
+// kills to its own deploy. See ServerEnv.DEPLOY_ID and the 2026-05-09
+// incident write-up for context.
+export const TAG_DEPLOY_ID = "litellm_deploy_id";
 export const HARNESS_OPENCODE = "opencode";
 export const SESSION_CREATING_TIMEOUT_MS = 600_000;
 // Ready sessions with no message activity (last_seen_at) older than this are
