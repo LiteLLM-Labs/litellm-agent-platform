@@ -163,6 +163,16 @@ function toName(prefix: "s" | "w", id: string): string {
   return `${prefix}-${compact.slice(0, 50)}`;
 }
 
+/**
+ * NodePort Service name. agent-sandbox controller auto-creates a headless
+ * Service named after the Sandbox itself for stable DNS, so our NodePort
+ * Service has to live at a different name. `-np` keeps it within the 63-
+ * char DNS-1123 limit (53 + 3 = 56).
+ */
+function svcName(taskArn: string): string {
+  return `${taskArn}-np`;
+}
+
 interface RunTaskMeta {
   name: string;
   labels: Record<string, string>;
@@ -317,7 +327,7 @@ export async function runTask(
     const service: k8s.V1Service = {
       apiVersion: "v1",
       kind: "Service",
-      metadata: { name, namespace: ns, labels },
+      metadata: { name: svcName(name), namespace: ns, labels },
       spec: {
         type: "NodePort",
         selector: { [LABEL_SANDBOX_NAME]: name },
@@ -368,9 +378,12 @@ async function deleteSandbox(name: string): Promise<void> {
 }
 
 async function deleteService(name: string): Promise<void> {
+  // We only delete our own NodePort Service. The headless Service the
+  // agent-sandbox controller stamps alongside the Sandbox is owned by
+  // the CR and gets garbage-collected when the Sandbox is deleted.
   try {
     await coreApi().deleteNamespacedService({
-      name,
+      name: svcName(name),
       namespace: env.K8S_NAMESPACE,
     });
   } catch (err) {
@@ -414,7 +427,7 @@ export async function stopTask(
 async function readNodePort(name: string): Promise<number | null> {
   try {
     const svc = await coreApi().readNamespacedService({
-      name,
+      name: svcName(name),
       namespace: env.K8S_NAMESPACE,
     });
     // Newer client returns the V1Service directly; older versions wrapped in
