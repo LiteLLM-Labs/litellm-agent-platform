@@ -2,14 +2,19 @@
 # deploy/render/README.md.
 #
 # What this provisions:
-#   - litellm-proxy   web service, model gateway
+#   - postgres        managed Postgres
 #   - web             web service, this repo
 #   - worker          background worker, this repo
-#   - postgres        managed Postgres
 #
-# Sandbox cluster is OUT OF SCOPE — Render does not host k8s. Bring your
-# own EKS / GKE / DigitalOcean Kubernetes / on-prem and paste the
-# kubeconfig as KUBE_CONFIG_B64 on first deploy. See deploy/render/README.md.
+# You bring:
+#   - LITELLM_API_BASE, LITELLM_API_KEY  (any OpenAI-compatible
+#                                          /chat/completions endpoint)
+#   - KUBE_CONFIG_B64, K8S_NODE_HOST, K8S_HARNESS_IMAGE
+#                                        (your sandbox cluster — run
+#                                          bin/eks-up.sh or bin/gke-up.sh)
+#
+# Sandbox cluster is OUT OF SCOPE — Render does not host k8s. See
+# deploy/render/README.md.
 
 databases:
   - name: litellm-agents-postgres
@@ -17,21 +22,6 @@ databases:
     postgresMajorVersion: 16
 
 services:
-  - type: web
-    name: litellm-proxy
-    runtime: image
-    image:
-      url: ghcr.io/berriai/litellm:main-stable
-    plan: starter           # paid: free tier sleeps and breaks first-call latency
-    healthCheckPath: /health
-    envVars:
-      - key: ANTHROPIC_API_KEY
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: LITELLM_MASTER_KEY
-        generateValue: true
-
   - type: web
     name: litellm-agents-web
     runtime: node
@@ -57,34 +47,32 @@ services:
         generateValue: true
       - key: UI_USERNAME
         value: admin
+      # OpenAI-compatible /chat/completions endpoint and key. LiteLLM
+      # Cloud, your own LiteLLM proxy, OpenRouter, or any compatible
+      # gateway works.
       - key: LITELLM_API_BASE
-        fromService:
-          type: web
-          name: litellm-proxy
-          property: hostport
+        sync: false
       - key: LITELLM_API_KEY
-        fromService:
-          type: web
-          name: litellm-proxy
-          envVarKey: LITELLM_MASTER_KEY
+        sync: false
       - key: LITELLM_DEFAULT_MODEL
         value: anthropic/claude-sonnet-4-6
       - key: PREINSTALLED_GITHUB_REPO
         value: https://github.com/BerriAI/litellm
+      # Sandbox cluster — see bin/eks-up.sh / bin/gke-up.sh.
       - key: KUBE_CONFIG_B64
-        sync: false                       # paste manually
+        sync: false
+      - key: K8S_NODE_HOST
+        sync: false
+      - key: K8S_HARNESS_IMAGE
+        sync: false
       - key: K8S_NAMESPACE
         value: default
-      - key: K8S_NODE_HOST
-        sync: false                       # node IP / LB hostname for your cluster
       - key: K8S_NODEPORT_MIN
         value: "30000"
       - key: K8S_NODEPORT_MAX
         value: "30099"
       - key: K8S_IMAGE_PULL_POLICY
         value: IfNotPresent
-      - key: K8S_HARNESS_IMAGE
-        sync: false                       # registry path of opencode-sandbox
       - key: WARM_POOL_SIZE
         value: "2"
 
@@ -115,32 +103,26 @@ services:
       - key: UI_USERNAME
         value: admin
       - key: LITELLM_API_BASE
-        fromService:
-          type: web
-          name: litellm-proxy
-          property: hostport
+        sync: false
       - key: LITELLM_API_KEY
-        fromService:
-          type: web
-          name: litellm-proxy
-          envVarKey: LITELLM_MASTER_KEY
+        sync: false
       - key: LITELLM_DEFAULT_MODEL
         value: anthropic/claude-sonnet-4-6
       - key: PREINSTALLED_GITHUB_REPO
         value: https://github.com/BerriAI/litellm
       - key: KUBE_CONFIG_B64
         sync: false
-      - key: K8S_NAMESPACE
-        value: default
       - key: K8S_NODE_HOST
         sync: false
+      - key: K8S_HARNESS_IMAGE
+        sync: false
+      - key: K8S_NAMESPACE
+        value: default
       - key: K8S_NODEPORT_MIN
         value: "30000"
       - key: K8S_NODEPORT_MAX
         value: "30099"
       - key: K8S_IMAGE_PULL_POLICY
         value: IfNotPresent
-      - key: K8S_HARNESS_IMAGE
-        sync: false
       - key: WARM_POOL_SIZE
         value: "2"

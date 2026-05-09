@@ -1,119 +1,52 @@
 # Render
 
-Web + worker on Render. Sandbox cluster is external (Render does not
-host k8s) — point at EKS or GKE. Kubeconfig ships as a base64 env var,
-written to disk on container start.
-
-## One-click
-
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/BerriAI/litellm-agent-platform)
 
-Provisions Postgres + LiteLLM proxy + web + worker from
-[`render.yaml`](../../render.yaml). After the blueprint applies, fill in
-the `sync: false` env vars on the dashboard:
+One click. Render reads [`render.yaml`](../../render.yaml) and creates:
 
-| Var                  | Value                                                  |
-|----------------------|--------------------------------------------------------|
-| `ANTHROPIC_API_KEY`  | (litellm-proxy service)                                |
-| `OPENAI_API_KEY`     | (litellm-proxy service, optional)                      |
-| `KUBE_CONFIG_B64`    | base64 of stripped kubeconfig (web + worker)           |
-| `K8S_NODE_HOST`      | node IP / LB hostname reachable from Render egress     |
-| `K8S_HARNESS_IMAGE`  | registry path of `opencode-sandbox:<tag>`              |
+| Resource         | Type                        |
+|------------------|-----------------------------|
+| Postgres         | Render managed Postgres     |
+| `litellm-agents-web`    | Render Web Service   |
+| `litellm-agents-worker` | Render Background Worker |
 
-For manual setup or self-hosted Render, see [§Manual setup](#manual-setup).
+`MASTER_KEY` is auto-generated. `DATABASE_URL` is wired automatically.
 
-## Manual setup
+## You provide
 
-## Stack
+After Render finishes provisioning, fill these on the dashboard
+(`Environment` tab, both web + worker — or use Render env groups):
 
-| Component        | Service                                                  |
-|------------------|----------------------------------------------------------|
-| `web`            | Render Web Service, this repo                            |
-| `worker`         | Render Background Worker, this repo                      |
-| `postgres`       | Render Postgres (or external Neon / Supabase)            |
-| `litellm-proxy`  | Render Web Service, `ghcr.io/berriai/litellm:main-stable` |
-| `sandbox-runtime`| External EKS or GKE — see [`../aws/`](../aws/) or [`../gcp/`](../gcp/) |
+| Var                  | Source                                                      |
+|----------------------|-------------------------------------------------------------|
+| `LITELLM_API_BASE`   | OpenAI-compatible `/chat/completions` endpoint (LiteLLM Cloud, your own LiteLLM proxy, OpenRouter — anything that speaks OpenAI's wire format) |
+| `LITELLM_API_KEY`    | API key for the above                                       |
+| `KUBE_CONFIG_B64`    | base64-encoded kubeconfig for your sandbox cluster          |
+| `K8S_NODE_HOST`      | node IP / LB hostname Render egress can reach               |
+| `K8S_HARNESS_IMAGE`  | registry path of `opencode-sandbox:<tag>` your cluster pulls |
 
-Prereqs: Render account, a running EKS/GKE cluster with the
-agent-sandbox controller (see [shared notes](../README.md#cluster-prerequisites-every-target)),
-a kubeconfig that authenticates to it.
+The platform never proxies the model itself — it just forwards
+`/chat/completions` calls through `LITELLM_API_BASE`. Use `litellm.ai`
+hosted, or run `ghcr.io/berriai/litellm:main-stable` anywhere.
 
-## Steps
+## Sandbox cluster
 
-1. **Provision Postgres.** Render dashboard → New → Postgres. Copy the
-   *internal* connection string into `DATABASE_URL`.
+Render does not host Kubernetes. Provision one elsewhere and bring the
+kubeconfig:
 
-2. **Provision LiteLLM proxy.** New Web Service from
-   `ghcr.io/berriai/litellm:main-stable`. Starter plan or higher
-   (free tier sleeps). Set `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`.
-   Note the public URL → `LITELLM_API_BASE`.
-
-3. **Encode kubeconfig.** Strip the kubeconfig down to the one cluster
-   web/worker need, then base64 it:
-   ```bash
-   kubectl config view --minify --flatten --context <ctx> | base64 | tr -d '\n'
-   ```
-   Paste into `KUBE_CONFIG_B64` on both web and worker.
-
-4. **Create web service.** New Web Service from this repo.
-   ```
-   Build:  npm ci && npx prisma generate && npm run build
-   Pre-deploy: npx prisma migrate deploy
-   Start:  echo "$KUBE_CONFIG_B64" | base64 -d > /tmp/kubeconfig && KUBECONFIG=/tmp/kubeconfig npm start
-   Health: /api/health
-   ```
-   Env: see [§Env](#env). `PORT` is set by Render.
-
-5. **Create worker.** New Background Worker, same repo.
-   ```
-   Build:  npm ci && npx prisma generate
-   Start:  echo "$KUBE_CONFIG_B64" | base64 -d > /tmp/kubeconfig && KUBECONFIG=/tmp/kubeconfig npm run worker
-   ```
-   Same env as web.
-
-6. **Verify.** Tail web logs after first deploy:
-   ```bash
-   render logs --service <web-service-id> --tail
-   ```
-   First sandbox spawn produces a `Sandbox` CR — confirm with
-   `kubectl get sandbox -A`.
-
-## Env
-
-```ini
-DATABASE_URL=
-MASTER_KEY=
-UI_USERNAME=admin
-LITELLM_API_BASE=https://<your-litellm>.onrender.com
-LITELLM_API_KEY=
-LITELLM_DEFAULT_MODEL=anthropic/claude-sonnet-4-6
-
-KUBE_CONFIG_B64=                  # base64 of stripped kubeconfig
-K8S_NAMESPACE=default
-K8S_NODE_HOST=                    # public IP/host of a cluster node or LB
-K8S_API_SERVER=                   # leave blank — kubeconfig has it
-K8S_NODEPORT_MIN=30000
-K8S_NODEPORT_MAX=30099
-K8S_IMAGE_PULL_POLICY=IfNotPresent
-K8S_HARNESS_IMAGE=<registry>/opencode-sandbox:<tag>
-
-PREINSTALLED_GITHUB_REPO=
-WARM_POOL_SIZE=2
-```
+| Cloud | Script                                              |
+|-------|-----------------------------------------------------|
+| AWS   | [`bin/eks-up.sh`](../../bin/eks-up.sh) — see [`../aws/`](../aws/) |
+| GCP   | (similar GKE script — see [`../gcp/`](../gcp/))     |
+| Other | install [agent-sandbox](https://github.com/kubernetes-sigs/agent-sandbox) on any cluster, then `kubectl config view --minify --flatten | base64` |
 
 ## Gotchas
 
-- **Free tier kills the proxy.** Sleeping LiteLLM blows first-call
-  latency. Use Starter or higher for the proxy service.
-- **Render Background Workers can't accept HTTP.** Don't try to expose
-  the worker — it's outbound-only.
-- **Egress IP is unpinned.** If the cluster's apiserver / NodePort range
-  is behind a strict allowlist, buy Render's static-egress add-on or
-  front the cluster with a public LB.
-- **Kubeconfig token rotation.** Short-lived tokens (e.g. `aws eks
-  get-token`) won't work — bake a static service-account token into the
-  kubeconfig, or use Render's secret rotation.
-- **NodePort reachability.** Web/worker hit `K8S_NODE_HOST:<port>` for
-  every sandbox URL. That host needs the NodePort range open from
-  Render's egress. Use a public LB targeting node ports if nodes are
-  private.
+- **Egress is unpinned.** If your cluster apiserver / NodePort range is
+  IP-allowlisted, buy Render's static-egress add-on or front the cluster
+  with a public LB.
+- **Kubeconfig token rotation.** Short-lived tokens (`aws eks get-token`)
+  won't work — bake a static service-account token into the kubeconfig
+  before encoding.
+- **First deploy will fail until you fill the `sync: false` vars.** That's
+  expected — Render kicks off a build immediately, redeploy after pasting.
