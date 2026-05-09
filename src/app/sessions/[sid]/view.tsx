@@ -772,10 +772,20 @@ function AssistantBlock({ msg }: { msg: LocalMessage }) {
           queued — will send when current finishes
         </div>
       ) : inProgress && visibleParts.length === 0 ? (
-        <div className="flex items-center gap-2 text-[14px] text-gray-400 leading-relaxed">
-          <Loader2 className="w-3 h-3 animate-spin" />
-          thinking…
-        </div>
+        // Streamed deltas land on `msg.text` (parts only get populated after
+        // refreshThread() runs on `done`). Render the running text live so
+        // tokens show as they arrive; fall back to a thinking spinner only
+        // when we have nothing to display yet.
+        msg.text ? (
+          <div className="sessions-md text-[14px] text-gray-800 leading-relaxed">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.text}</ReactMarkdown>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-[14px] text-gray-400 leading-relaxed">
+            <Loader2 className="w-3 h-3 animate-spin" />
+            thinking…
+          </div>
+        )
       ) : (
         visibleParts.map((p, i) => (
           <PartBlock key={i} part={p} />
