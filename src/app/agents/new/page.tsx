@@ -38,10 +38,29 @@ interface ServerToolsState {
 
 const DEFAULT_MODEL = "anthropic/claude-haiku-4-5";
 const NAME_MAX = 64;
-// The local backend hard-codes the harness to "opencode" — no template
-// picker. We surface the harness id as a static label so users still see
-// what they're getting.
-const HARNESS_ID = "opencode";
+
+// Each option below maps 1:1 to a registered ECS task-definition family.
+// Adding a third harness = one extra row + matching env var on the server.
+type HarnessOption = {
+  id: string;
+  label: string;
+  description: string;
+};
+const HARNESS_OPTIONS: HarnessOption[] = [
+  {
+    id: "opencode",
+    label: "opencode",
+    description:
+      "Multi-provider via LiteLLM. Default — used by every existing agent.",
+  },
+  {
+    id: "claude-agent-sdk",
+    label: "claude-agent-sdk",
+    description:
+      "Anthropic's first-party agent loop. Fewer harness bugs; SDK persists session state for free.",
+  },
+];
+const DEFAULT_HARNESS_ID = HARNESS_OPTIONS[0].id;
 
 function mcpLabel(m: McpRow): string {
   return m.alias?.trim() || m.server_name?.trim() || m.server_id;
@@ -51,6 +70,7 @@ export default function NewAgentPage() {
   const router = useRouter();
 
   const [name, setName] = useState("");
+  const [harnessId, setHarnessId] = useState<string>(DEFAULT_HARNESS_ID);
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [modelQuery, setModelQuery] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -246,6 +266,7 @@ export default function NewAgentPage() {
         name: name.trim() || undefined,
         model: model.trim(),
         prompt: systemPrompt.trim() || undefined,
+        harness_id: harnessId,
         branch: branchOverride.trim() || undefined,
         pfp_url: pfpUrl ?? undefined,
         mcp_servers: mcpServers.length > 0 ? mcpServers : undefined,
@@ -301,29 +322,61 @@ export default function NewAgentPage() {
 
             <div className="space-y-1.5">
               <Label>Harness</Label>
-              <div className="rounded-lg border bg-card px-3 py-2.5">
-                <span className="text-[13px] font-medium text-foreground">
-                  harness:{" "}
-                  <span className="font-mono">{HARNESS_ID}</span>
-                </span>
-                {preinstalledRepo ? (
-                  <p className="mt-1.5 text-[11px] text-muted-foreground">
-                    repo:{" "}
-                    <a
-                      href={preinstalledRepo}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-foreground underline-offset-2 hover:underline"
-                    >
-                      {preinstalledRepo}
-                    </a>
-                  </p>
-                ) : null}
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  The local backend ships a single harness. Per-agent repo +
-                  branch overrides are configured below.
-                </p>
+              <div className="rounded-lg border bg-card">
+                <ul role="radiogroup" aria-label="Harness" className="divide-y">
+                  {HARNESS_OPTIONS.map((opt) => {
+                    const selected = opt.id === harnessId;
+                    return (
+                      <li key={opt.id}>
+                        <button
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          onClick={() => setHarnessId(opt.id)}
+                          disabled={submitting}
+                          className={cn(
+                            "flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                            selected && "bg-accent/30",
+                          )}
+                        >
+                          <span
+                            className={cn(
+                              "mt-0.5 grid size-4 shrink-0 place-items-center rounded-full border transition-colors",
+                              selected
+                                ? "border-foreground bg-foreground text-background"
+                                : "border-border bg-transparent",
+                            )}
+                            aria-hidden
+                          >
+                            {selected ? <Check className="size-3" /> : null}
+                          </span>
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="font-mono text-[13px] text-foreground">
+                              {opt.label}
+                            </span>
+                            <span className="text-[11px] text-muted-foreground">
+                              {opt.description}
+                            </span>
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                </ul>
               </div>
+              {preinstalledRepo ? (
+                <p className="text-[11px] text-muted-foreground">
+                  repo:{" "}
+                  <a
+                    href={preinstalledRepo}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-mono text-foreground underline-offset-2 hover:underline"
+                  >
+                    {preinstalledRepo}
+                  </a>
+                </p>
+              ) : null}
             </div>
 
             <div className="space-y-1.5">
