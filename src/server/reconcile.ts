@@ -20,7 +20,15 @@
  */
 
 import { prisma } from "@/server/db";
-import { listTaggedTasks, stopTask } from "@/server/k8s";
+import { harnessCreateSession } from "@/server/harness";
+import {
+  listTaggedTasks,
+  readNodePort,
+  readPodPhase,
+  resolveNodeHost,
+  stopTask,
+  waitHttpReady,
+} from "@/server/k8s";
 import {
   RECONCILE_NEW_TASK_GRACE_MS,
   SESSION_CREATING_TIMEOUT_MS,
@@ -184,6 +192,13 @@ export async function reconcileOrphans(): Promise<ReconcileResult> {
     }
   }
 
+  // Recovery sweep: sessions stuck in `creating` past STUCK_AFTER_MS but
+  // whose underlying pod is actually Running can sometimes be finished by
+  // re-running the post-pod-ready handoff (NodePort lookup, HTTP probe,
+  // harness session create). Runs before the timeout sweep below so a
+  // wedged-but-recoverable row gets a chance before it's failed out.
+  await recoverStuckCreating();
+
   // Stuck-creating sweep: sessions whose creating window expired never got a
   // ready signal. Mark them failed and stop any associated task.
   const cutoff = new Date(now - SESSION_CREATING_TIMEOUT_MS);
@@ -299,6 +314,173 @@ export async function reconcileOrphans(): Promise<ReconcileResult> {
     warm_orphans_stopped,
     ghost_killed,
   };
+}
+
+async function markFailed(session_id: string, reason: string): Promise<void> {
+  await prisma.session
+    .update({
+      where: { session_id },
+      data: { status: "failed", failure_reason: reason },
+    })
+    .catch(() => {});
+}
+
+/**
+ * Watchdog: sweep sessions stuck in `creating`. For each, inspect the
+ * underlying pod and either (a) recover the row by re-running the harness
+ * handoff if the pod is Running and the harness is reachable, or
+ * (b) hard-fail it past HARD_FAIL_AFTER_MS so the user isn't left staring
+ * at a perpetual spinner. Rows younger than HARD_FAIL_AFTER_MS in a
+ * non-terminal-but-not-Running phase are left pending for the next tick.
+ */
+async function recoverStuckCreating(): Promise<void> {
+  const STUCK_AFTER_MS = 90_000;
+  const HARD_FAIL_AFTER_MS = 600_000;
+  const cutoff = new Date(Date.now() - STUCK_AFTER_MS);
+  const stuck = await prisma.session.findMany({
+    where: { status: "creating", created_at: { lt: cutoff } },
+    select: {
+      session_id: true,
+      agent_id: true,
+      task_arn: true,
+      created_at: true,
+    },
+  });
+
+  let recovered = 0;
+  let failed = 0;
+  let pending = 0;
+
+  for (const row of stuck) {
+    const ageMs = Date.now() - row.created_at.getTime();
+    const hardFail = ageMs > HARD_FAIL_AFTER_MS;
+
+    if (!row.task_arn) {
+      await markFailed(
+        row.session_id,
+        `watchdog: no task_arn after ${Math.round(ageMs / 1000)}s`,
+      );
+      failed++;
+      continue;
+    }
+
+    let phaseInfo;
+    try {
+      phaseInfo = await readPodPhase(row.task_arn);
+    } catch {
+      if (hardFail) {
+        await markFailed(
+          row.session_id,
+          `watchdog: readPodPhase threw after ${Math.round(ageMs / 1000)}s`,
+        );
+        failed++;
+      } else {
+        pending++;
+      }
+      continue;
+    }
+
+    if (!phaseInfo || phaseInfo.phase === "Failed") {
+      await markFailed(
+        row.session_id,
+        `watchdog: pod ${row.task_arn} phase=${phaseInfo?.phase ?? "missing"} reason=${phaseInfo?.reason ?? "?"}`,
+      );
+      failed++;
+      continue;
+    }
+
+    if (phaseInfo.phase !== "Running") {
+      if (hardFail) {
+        await markFailed(
+          row.session_id,
+          `watchdog: pod ${row.task_arn} stuck phase=${phaseInfo.phase} for ${Math.round(ageMs / 1000)}s`,
+        );
+        failed++;
+      } else {
+        pending++;
+      }
+      continue;
+    }
+
+    const nodePort = await readNodePort(row.task_arn).catch(() => null);
+    if (nodePort === null) {
+      if (hardFail) {
+        await markFailed(
+          row.session_id,
+          `watchdog: no NodePort after ${Math.round(ageMs / 1000)}s`,
+        );
+        failed++;
+      } else {
+        pending++;
+      }
+      continue;
+    }
+
+    const host = await resolveNodeHost();
+    const sandbox_url = `http://${host}:${nodePort}`;
+
+    const probeOk = await waitHttpReady(sandbox_url, 5_000)
+      .then(() => true)
+      .catch(() => false);
+    if (!probeOk) {
+      if (hardFail) {
+        await markFailed(
+          row.session_id,
+          `watchdog: harness ${sandbox_url} unresponsive after ${Math.round(ageMs / 1000)}s`,
+        );
+        failed++;
+      } else {
+        pending++;
+      }
+      continue;
+    }
+
+    const agent = await prisma.agent.findUnique({
+      where: { agent_id: row.agent_id },
+    });
+    if (!agent) {
+      await markFailed(
+        row.session_id,
+        `watchdog: agent ${row.agent_id} not found`,
+      );
+      failed++;
+      continue;
+    }
+
+    try {
+      const harness_session_id = await harnessCreateSession({
+        sandbox_url,
+        title: "default",
+      });
+      await prisma.session.update({
+        where: { session_id: row.session_id },
+        data: {
+          status: "ready",
+          sandbox_url,
+          harness_session_id,
+          last_seen_at: new Date(),
+          phase: "ready",
+        },
+      });
+      console.log(
+        `watchdog: recovered ${row.session_id} age=${Math.round(ageMs / 1000)}s`,
+      );
+      recovered++;
+    } catch (e) {
+      const reason = e instanceof Error ? e.message : String(e);
+      await markFailed(
+        row.session_id,
+        `watchdog: finish threw — ${reason}`,
+      );
+      failed++;
+    }
+  }
+
+  if (stuck.length > 0) {
+    console.log(
+      `watchdog: stuck_creating sweep — checked=${stuck.length} recovered=${recovered} failed=${failed} pending=${pending}`,
+    );
+  }
 }
 
 export async function stopSessionsForAgent(agent_id: string): Promise<number> {
