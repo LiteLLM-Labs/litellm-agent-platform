@@ -580,6 +580,66 @@ export function restartSession(
   );
 }
 
+// ---------- Sandbox pod logs (creating-state debugging) ----------
+
+export interface SandboxLogsOpts {
+  /** Only return lines from the last N seconds. Backend caps at 3600. */
+  sinceSeconds?: number;
+  /** Tail no more than N lines. Backend caps at 5000. */
+  tailLines?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Fetch the raw stdout+stderr of the harness pod backing `sessionId`. The
+ * backend returns `text/plain` and is intentionally lenient — missing pods,
+ * transient k8s errors, and sessions without a `task_arn` yet all surface as
+ * 200 with empty (or a tiny marker line) text so the UI can poll without
+ * branching on error states. A 404 still means "session row doesn't exist".
+ */
+export async function getSandboxLogs(
+  sessionId: string,
+  opts: SandboxLogsOpts = {},
+): Promise<string> {
+  const params = new URLSearchParams();
+  if (typeof opts.sinceSeconds === "number") {
+    params.set("sinceSeconds", String(opts.sinceSeconds));
+  }
+  if (typeof opts.tailLines === "number") {
+    params.set("tailLines", String(opts.tailLines));
+  }
+  const qs = params.toString();
+  const path = `/v1/managed_agents/sessions/${encodeURIComponent(sessionId)}/sandbox_logs${qs ? `?${qs}` : ""}`;
+  const auth = authHeader();
+  const headers: Record<string, string> = {};
+  if (auth) headers["Authorization"] = auth;
+  const res = await fetch(`${PROXY_PREFIX}${path}`, {
+    method: "GET",
+    headers,
+    signal: opts.signal,
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      clearStoredMasterKey();
+      if (
+        typeof window !== "undefined" &&
+        !window.location.pathname.startsWith("/login")
+      ) {
+        const next = encodeURIComponent(
+          window.location.pathname + window.location.search,
+        );
+        window.location.href = `/login?next=${next}`;
+      }
+    }
+    // Read the body as text so non-JSON error pages (e.g. proxy 502) don't
+    // throw inside JSON.parse — the route itself returns JSON on error but
+    // upstream infra might not.
+    const text = await res.text().catch(() => "");
+    throw new ApiError(res.status, text, text || `sandbox_logs ${res.status}`);
+  }
+  return res.text();
+}
+
 // ---------- Session messages (passthrough to harness) ----------
 
 export interface SendMessageRequest {
