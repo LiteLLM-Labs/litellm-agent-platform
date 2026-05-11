@@ -32,10 +32,15 @@ const IV_LEN = 12;
 const TAG_LEN = 16;
 
 let warnedAboutMissingKey = false;
+let _cachedKey: Buffer | null | undefined; // undefined = not yet resolved
 
 function getKey(): Buffer | null {
+  if (_cachedKey !== undefined) return _cachedKey;
   const raw = process.env.INTEGRATION_TOKEN_KEY;
-  if (!raw) return null;
+  if (!raw) {
+    _cachedKey = null;
+    return null;
+  }
   const buf = Buffer.from(raw, "base64");
   if (buf.length !== 32) {
     throw new Error(
@@ -43,6 +48,7 @@ function getKey(): Buffer | null {
         `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"`,
     );
   }
+  _cachedKey = buf;
   return buf;
 }
 
@@ -59,9 +65,14 @@ function warnOnceAboutPlaintext(): void {
 export function encryptToken(plaintext: string): string {
   const key = getKey();
   if (key === null) {
-    if (process.env.NODE_ENV === "production") {
+    const allowPlaintext =
+      process.env.NODE_ENV === "development" ||
+      process.env.NODE_ENV === "test";
+    if (!allowPlaintext) {
       throw new Error(
-        "INTEGRATION_TOKEN_KEY is required to encrypt tokens in production",
+        "INTEGRATION_TOKEN_KEY is required outside development/test (NODE_ENV=" +
+          (process.env.NODE_ENV ?? "unset") +
+          ")",
       );
     }
     warnOnceAboutPlaintext();
