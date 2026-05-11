@@ -214,7 +214,7 @@ function buildMeta(opts: RunTaskOpts): RunTaskMeta {
 async function buildContainerEnv(
   opts: RunTaskOpts,
 ): Promise<Array<{ name: string; value: string }>> {
-  const { agent, env_vars } = opts;
+  const { agent, env_vars, session_id } = opts;
 
   // Pre-load top-N memories into AGENT_PROMPT so the agent has instinctive
   // awareness from turn 1. The search_memory tool inside the harness reads
@@ -223,6 +223,17 @@ async function buildContainerEnv(
   const memories = await topMemoriesForAgent(agent.agent_id);
   const memoryBlock = renderMemoryBlock(memories);
   const fullPrompt = [memoryBlock, agent.prompt ?? ""].filter(Boolean).join("\n\n");
+
+  // Phase-report wiring. The in-sandbox entrypoint POSTs to
+  // {PLATFORM_URL}/api/v1/managed_agents/sessions/{SESSION_ID}/phase with
+  // `Authorization: Bearer ${HARNESS_PROGRESS_TOKEN}`. Token == session_id
+  // (per-session scope, no separate key management). Warm-pool tasks don't
+  // yet have a session_id, so the harness falls back to a no-op if either
+  // SESSION_ID or PLATFORM_URL is empty — phase reports only land once the
+  // task has been claimed and reparented to a Session row, which is fine
+  // because the warm path skips the pod-spawn phases anyway.
+  const platformUrl = env.PLATFORM_INTERNAL_URL ?? "";
+  const phaseToken = session_id ?? "";
 
   const base: Record<string, string> = {
     REPO_URL: agent.repo_url ?? env.PREINSTALLED_GITHUB_REPO,
@@ -237,6 +248,10 @@ async function buildContainerEnv(
     AGENT_ID: agent.agent_id,
     LAP_BASE_URL: env.LAP_BASE_URL,
     LAP_AUTH_TOKEN: env.LAP_BASE_URL ? env.MASTER_KEY : "",
+    // Harness phase-report channel (see entrypoint.sh `report_phase`).
+    PLATFORM_URL: platformUrl,
+    SESSION_ID: phaseToken,
+    HARNESS_PROGRESS_TOKEN: phaseToken,
   };
   // Same precedence as fargate.ts buildContainerEnv: passthrough -> per-session
   // env_vars -> required base. Required keys always win.

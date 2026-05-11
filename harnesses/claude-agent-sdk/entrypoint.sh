@@ -14,6 +14,26 @@ set -euo pipefail
 : "${PORT:=4096}"
 : "${REPO_DIR:=/work/repo}"
 
+# Phase progress reporter. POSTs the named phase to the platform so the UI
+# can render real container-side progress instead of guessing from the
+# wall clock. The platform injects PLATFORM_URL, SESSION_ID, and
+# HARNESS_PROGRESS_TOKEN at runTask time; if any is empty (warm-pool tasks
+# pre-claim, or a deploy that hasn't configured PLATFORM_INTERNAL_URL) the
+# call short-circuits. The trailing `|| true` is critical — a failed phase
+# report must never prevent the harness from booting.
+report_phase() {
+  if [ -z "${PLATFORM_URL:-}" ] || [ -z "${SESSION_ID:-}" ] || [ -z "${HARNESS_PROGRESS_TOKEN:-}" ]; then
+    return 0
+  fi
+  curl -fsS --max-time 5 \
+    -X POST \
+    -H "Authorization: Bearer ${HARNESS_PROGRESS_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "{\"phase\":\"$1\"}" \
+    "${PLATFORM_URL}/api/v1/managed_agents/sessions/${SESSION_ID}/phase" \
+    >/dev/null 2>&1 || true
+}
+
 # The SDK spawns the `claude` binary with cwd=$REPO_DIR. If the directory
 # doesn't exist (no REPO_URL set, or clone failed), spawn fails with
 # ENOENT — and the SDK's error message blames "Claude Code native binary
@@ -28,6 +48,7 @@ CLONE_TOKEN="${GIT_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
 
 if [ -n "${REPO_URL:-}" ]; then
   if [ ! -d "$REPO_DIR/.git" ]; then
+    report_phase cloning_repo
     if [ -n "$CLONE_TOKEN" ]; then
       git -c credential.helper= \
           -c "credential.helper=!f() { echo username=x-access-token; echo password=$CLONE_TOKEN; }; f" \
@@ -47,8 +68,18 @@ if [ -n "${REPO_URL:-}" ]; then
   fi
 fi
 
+# claude-agent-sdk bakes its deps into the image at build time, so there's
+# no runtime `npm install`. Still report installing_deps for parity with
+# how the harness will evolve and to give the UI a distinct beat between
+# clone-finished and the listener actually accepting connections.
+report_phase installing_deps
+
 # Clone-only token: wipe so the LLM can't `printenv GIT_TOKEN` it back.
 unset GIT_TOKEN
+
+# Last point before `exec` replaces this process — there's no opportunity
+# to report after the server takes over.
+report_phase harness_listening
 
 # Hand off to the Node server. The server reads ANTHROPIC_BASE_URL +
 # ANTHROPIC_AUTH_TOKEN from the LITELLM_* values at boot.

@@ -77,6 +77,33 @@ interface BringUpBody {
 }
 
 // ---------------------------------------------------------------------------
+// Phase marker. Writes the current bring-up phase onto the Session row so the
+// UI can render a real progress indicator instead of the wall-clock-driven
+// approximation from PR #34. Best-effort: a phase write must never break the
+// bring-up itself, so all errors are swallowed (and logged at warn level so a
+// systemic DB failure is still visible in the operator logs).
+// ---------------------------------------------------------------------------
+
+async function setPhase(
+  session_id: string,
+  phase: string,
+  detail?: string,
+): Promise<void> {
+  try {
+    await prisma.session.update({
+      where: { session_id },
+      data: { phase, phase_detail: detail ?? null },
+    });
+  } catch (e) {
+    console.warn(
+      `setPhase(${session_id}, ${phase}) failed: ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Background bring-up orchestrator.
 //
 // Wraps the warm/cold + fallback dance that used to live inline in the POST
@@ -165,6 +192,7 @@ async function coldBringUp(
   session_id: string,
   body: BringUpBody,
 ): Promise<BringUpResult> {
+  await setPhase(session_id, "creating_sandbox");
   const { task_arn } = await runTask({
     agent,
     session_id,
@@ -174,8 +202,12 @@ async function coldBringUp(
     where: { session_id },
     data: { task_arn },
   });
+  await setPhase(session_id, "pod_pending");
   const sandbox_url = await waitRunningGetUrl(task_arn, agent);
+  await setPhase(session_id, "pod_running");
+  await setPhase(session_id, "waiting_harness");
   await waitHttpReady(sandbox_url);
+  await setPhase(session_id, "harness_ready");
   return finishBringUp(agent, session_id, body, sandbox_url);
 }
 
@@ -202,6 +234,11 @@ async function warmBringUp(
     where: { session_id },
     data: { task_arn: warm.task_arn },
   });
+  // Warm path skips creating_sandbox / pod_pending / pod_running /
+  // waiting_harness — the pod is already up and the harness is already
+  // listening. Jump straight to harness_ready so the UI doesn't briefly
+  // pretend a warm session is doing pod scheduling work.
+  await setPhase(session_id, "harness_ready");
   return finishBringUp(agent, session_id, body, warm.sandbox_url);
 }
 
@@ -215,6 +252,14 @@ async function finishBringUp(
   body: BringUpBody,
   sandbox_url: string,
 ): Promise<BringUpResult> {
+  // Approximation: by the time harnessCreateSession succeeds the container's
+  // entrypoint has already cloned the repo. We surface `cloning_repo` here
+  // so the UI shows *some* progress between harness_ready and the final
+  // `ready` flip even when Phase 3's harness-side reports are unavailable
+  // (e.g. PLATFORM_INTERNAL_URL unset, sandbox can't reach the platform).
+  // When the harness *does* report, those writes happen earlier and this
+  // line is effectively a no-op overwrite with the same value.
+  await setPhase(session_id, "cloning_repo");
   const harness_session_id = await harnessCreateSession({
     sandbox_url,
     title: body.title,
@@ -232,6 +277,12 @@ async function finishBringUp(
     where: { session_id },
     data: {
       status: "ready",
+      // Flip phase to `ready` in the same update so the UI sees both
+      // status=ready and phase=ready atomically — avoids a tick where the
+      // session is ready but the progress card still renders the previous
+      // phase.
+      phase: "ready",
+      phase_detail: null,
       sandbox_url,
       harness_session_id,
       // Seed the idle clock at ready-transition so the reconciler doesn't

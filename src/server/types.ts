@@ -27,6 +27,29 @@ export type MemoryRow = Memory;
 export type SessionStatus = "creating" | "ready" | "failed" | "dead";
 export type WarmTaskStatus = "provisioning" | "warm" | "claimed" | "dead";
 
+/**
+ * Closed set of bring-up phase values written to `Session.phase`. The
+ * platform owns the pod-spawn phases (everything up to and including
+ * `harness_ready`); the in-sandbox harness owns the container-side phases
+ * (`cloning_repo`, `installing_deps`, `harness_listening`). The
+ * /sessions/{id}/phase endpoint whitelists the harness-side subset so the
+ * sandbox can't write arbitrary states.
+ *
+ * Kept as a string union (not a TS enum) so it serialises cleanly to JSON
+ * and survives Prisma's `String?` column without an additional mapping
+ * layer.
+ */
+export type SessionPhase =
+  | "creating_sandbox"
+  | "pod_pending"
+  | "pod_running"
+  | "waiting_harness"
+  | "harness_ready"
+  | "cloning_repo"
+  | "installing_deps"
+  | "harness_listening"
+  | "ready";
+
 // ============================================================================
 // API request schemas (zod) — handlers parse with these
 // ============================================================================
@@ -196,6 +219,13 @@ export interface ApiSession {
   // on the session page so the user can see why bring-up died instead of
   // staring at a stuck "creating" spinner.
   failure_reason: string | null;
+  // Fine-grained bring-up phase. Null on legacy rows created before the
+  // phase column existed; the UI falls back to wall-clock thresholds when
+  // null. See `SessionPhase` for the closed set of values.
+  phase: string | null;
+  // Optional human-readable detail for the current phase. Rendered as a
+  // small subtitle under the active step in the spawn-progress card.
+  phase_detail: string | null;
 }
 
 // Admin / observability — wire shape returned by GET /api/v1/admin/stats.
@@ -331,6 +361,15 @@ export interface ServerEnv {
    * In docker-compose dev, "http://host.docker.internal:3000" reaches the host.
    */
   LAP_BASE_URL: string;
+  /**
+   * URL that an in-sandbox harness uses to POST progress events back to the
+   * platform's /sessions/{id}/phase endpoint. Distinct from LAP_BASE_URL
+   * because the harness-side reports may need to reach the platform on a
+   * cluster-internal address (e.g. `http://litellm-agent-platform.default.svc:3000`)
+   * while LAP_BASE_URL is the external https URL the memory tools rely on.
+   * Empty string disables harness phase reports (the curl just no-ops).
+   */
+  PLATFORM_INTERNAL_URL: string;
   CONTAINER_PORT: number; // default 4096
   RECONCILE_INTERVAL_SECONDS: number; // default 60
 
@@ -525,6 +564,8 @@ export function toApiSession(
     last_seen_at: row.last_seen_at ? row.last_seen_at.toISOString() : null,
     idle_timeout_ms: SESSION_IDLE_TIMEOUT_MS,
     failure_reason: row.failure_reason ?? null,
+    phase: row.phase ?? null,
+    phase_detail: row.phase_detail ?? null,
   };
 }
 

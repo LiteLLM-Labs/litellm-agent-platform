@@ -42,6 +42,17 @@ model Session {
   session_id         String    @id @default(uuid())
   agent_id           String
   status             String    @default("creating") // creating | ready | dead | failed
+  // Fine-grained bring-up phase, written by coldBringUp / warmBringUp /
+  // finishBringUp at each step and by the in-sandbox harness for stages
+  // it owns (cloning_repo, installing_deps, harness_listening). Null on
+  // legacy rows created before this column existed — the UI falls back
+  // to a wall-clock approximation for those. See SessionPhase in
+  // src/server/types.ts for the closed set of values.
+  phase              String?
+  // Optional free-form detail for the current phase ("cloning <repo>",
+  // "installing 42 packages", …). Rendered as a small subtitle under the
+  // active step in the UI; safe to leave null.
+  phase_detail       String?
   task_arn           String?
   sandbox_url        String?
   harness_session_id String?

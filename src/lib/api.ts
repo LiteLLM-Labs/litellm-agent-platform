@@ -177,6 +177,15 @@ export interface SessionRow {
   // creating-state UI surfaces this verbatim so the user knows why the
   // sandbox never came up.
   failure_reason?: string | null;
+  // Fine-grained bring-up phase, written by the platform's bring-up
+  // orchestrator and (for container-side steps) by the in-sandbox harness.
+  // Null on legacy rows created before the column existed — SpawnProgress
+  // falls back to a wall-clock approximation in that case. See the server
+  // SessionPhase union for the closed set of values.
+  phase?: string | null;
+  // Optional human-readable detail for the current phase. Rendered as a
+  // small subtitle under the active step.
+  phase_detail?: string | null;
 }
 
 /**
