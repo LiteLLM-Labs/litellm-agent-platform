@@ -130,24 +130,38 @@ case "$CALLER_ARN" in
     ;;
 esac
 
-info "ensuring $MAPPING_ARN is mapped to system:masters in aws-auth"
-# `eksctl create iamidentitymapping` is *not* idempotent by default — it
-# appends a second record to aws-auth on every run. The `--no-duplicate-
-# arns` flag inverts that to a hard error on dupes (still not what we
-# want). Check first, then create only if missing.
-if silent eksctl get iamidentitymapping \
-     --cluster "$CLUSTER_NAME" \
-     --region "$AWS_REGION" \
-     --arn "$MAPPING_ARN"; then
-  info "  $MAPPING_ARN already mapped — skipping"
-else
-  silent eksctl create iamidentitymapping \
-    --cluster "$CLUSTER_NAME" \
-    --region "$AWS_REGION" \
-    --arn "$MAPPING_ARN" \
-    --group system:masters \
-    --username "litellm-agents-deployer"
-fi
+# eksctl rejects root ARNs ("arn is neither user nor role") because
+# aws-auth ConfigMap entries are user/role only. Root doesn't need an
+# explicit mapping anyway — EKS implicitly grants system:masters to the
+# cluster-creator IAM principal, and root is the creator of every
+# cluster in its account. Skip the mapping step and warn the operator.
+case "$MAPPING_ARN" in
+  arn:aws:iam::*:root)
+    info "running as root — skipping aws-auth mapping (root has implicit cluster-admin)"
+    info "  WARNING: running deploys with root credentials is not recommended;"
+    info "  create a dedicated IAM user/role and re-run this script with those creds."
+    ;;
+  *)
+    info "ensuring $MAPPING_ARN is mapped to system:masters in aws-auth"
+    # `eksctl create iamidentitymapping` is *not* idempotent by default — it
+    # appends a second record to aws-auth on every run. The `--no-duplicate-
+    # arns` flag inverts that to a hard error on dupes (still not what we
+    # want). Check first, then create only if missing.
+    if silent eksctl get iamidentitymapping \
+         --cluster "$CLUSTER_NAME" \
+         --region "$AWS_REGION" \
+         --arn "$MAPPING_ARN"; then
+      info "  $MAPPING_ARN already mapped — skipping"
+    else
+      silent eksctl create iamidentitymapping \
+        --cluster "$CLUSTER_NAME" \
+        --region "$AWS_REGION" \
+        --arn "$MAPPING_ARN" \
+        --group system:masters \
+        --username "litellm-agents-deployer"
+    fi
+    ;;
+esac
 
 # ---- 5. Exec-plugin kubeconfig ------------------------------------------
 # The kubernetes-client-node library invokes `aws-iam-authenticator token`
