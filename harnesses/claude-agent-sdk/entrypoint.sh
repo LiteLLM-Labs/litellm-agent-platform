@@ -52,4 +52,4 @@ unset GIT_TOKEN
 
 # Hand off to the Node server. The server reads ANTHROPIC_BASE_URL +
 # ANTHROPIC_AUTH_TOKEN from the LITELLM_* values at boot.
-exec node /opt/harness/dist/server.js
+exec node /opt/harnesses/claude-agent-sdk/dist/server.js

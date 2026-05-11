@@ -47,10 +47,14 @@ The image ships with `gh`, `curl`, `git`, `python3`, `jq`, `uv`, `uvx`. These we
 
 ## Build & push
 
-Same shape as `harnesses/opencode/`:
+The build context is the repo root because this image bundles the
+platform-level [`@lap/managed-tools`](../../managed-tools/) package:
 
 ```bash
-docker buildx build --platform linux/amd64 -t litellm-agents-claude-sdk:$(git rev-parse --short HEAD) .
+docker buildx build --platform linux/amd64 \
+  -f harnesses/claude-agent-sdk/Dockerfile \
+  -t litellm-agents-claude-sdk:$(git rev-parse --short HEAD) \
+  .
 # tag + push to ECR using the same flow setup.sh uses for opencode,
 # then register a separate task definition family.
 ```

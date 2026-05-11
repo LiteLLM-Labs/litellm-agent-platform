@@ -433,6 +433,85 @@ export function updateAgent(
   );
 }
 
+// ---------- Memory ----------
+
+export interface MemoryRow {
+  id: string;
+  agent_id: string;
+  text: string;
+  tags: string[];
+  type: string;
+  priority: number;
+  disabled: boolean;
+  times_applied: number;
+  last_applied_at: string | null;
+  source: string;
+  source_user_id: string | null;
+  source_session_id: string | null;
+  source_thread_ts: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateMemoryRequest {
+  text: string;
+  tags?: string[];
+  type?: string;
+  priority?: number;
+}
+
+export interface UpdateMemoryRequest {
+  text?: string;
+  tags?: string[];
+  type?: string;
+  priority?: number;
+  disabled?: boolean;
+}
+
+export function listMemory(
+  agentId: string,
+  opts: { q?: string; tag?: string } = {},
+): Promise<MemoryRow[]> {
+  const qs = new URLSearchParams();
+  if (opts.q) qs.set("q", opts.q);
+  if (opts.tag) qs.set("tag", opts.tag);
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return api<MemoryRow[]>(
+    "GET",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/memory${suffix}`,
+  );
+}
+
+export function createMemory(
+  agentId: string,
+  req: CreateMemoryRequest,
+): Promise<MemoryRow> {
+  return api<MemoryRow>(
+    "POST",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/memory`,
+    req,
+  );
+}
+
+export function updateMemory(
+  agentId: string,
+  memoryId: string,
+  req: UpdateMemoryRequest,
+): Promise<MemoryRow> {
+  return api<MemoryRow>(
+    "PATCH",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(memoryId)}`,
+    req,
+  );
+}
+
+export function deleteMemory(agentId: string, memoryId: string): Promise<void> {
+  return api<void>(
+    "DELETE",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(memoryId)}`,
+  );
+}
+
 // ---------- Sessions ----------
 
 export interface CreateSessionRequest {

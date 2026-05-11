@@ -204,19 +204,27 @@ export default function AgentDetailPage({ params }: PageProps) {
                 </div>
               </div>
             </div>
-            <Button
-              size="lg"
-              onClick={() => void handleSpawn()}
-              disabled={spawning}
-              className="shrink-0"
-            >
-              {spawning ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Play className="size-4" />
-              )}
-              {spawning ? "Spawning…" : "Spawn session"}
-            </Button>
+            <div className="flex shrink-0 items-center gap-2">
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={() => router.push(`/agents/${id}/memory`)}
+              >
+                Memory
+              </Button>
+              <Button
+                size="lg"
+                onClick={() => void handleSpawn()}
+                disabled={spawning}
+              >
+                {spawning ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Play className="size-4" />
+                )}
+                {spawning ? "Spawning…" : "Spawn session"}
+              </Button>
+            </div>
           </header>
 
           {editingPfp ? (

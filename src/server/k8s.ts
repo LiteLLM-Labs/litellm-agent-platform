@@ -25,6 +25,7 @@ import * as k8s from "@kubernetes/client-node";
 import { fetch } from "undici";
 
 import { env } from "@/server/env";
+import { renderMemoryBlock, topMemoriesForAgent } from "@/server/memory";
 import {
   TAG_AGENT_ID,
   TAG_SESSION_ID,
@@ -210,16 +211,32 @@ function buildMeta(opts: RunTaskOpts): RunTaskMeta {
   return { name, labels };
 }
 
-function buildContainerEnv(opts: RunTaskOpts): Array<{ name: string; value: string }> {
+async function buildContainerEnv(
+  opts: RunTaskOpts,
+): Promise<Array<{ name: string; value: string }>> {
   const { agent, env_vars } = opts;
+
+  // Pre-load top-N memories into AGENT_PROMPT so the agent has instinctive
+  // awareness from turn 1. The search_memory tool inside the harness reads
+  // the live DB on demand, so any memory saved after launch is still
+  // reachable mid-run — this is just the cheap "always-in-context" layer.
+  const memories = await topMemoriesForAgent(agent.agent_id);
+  const memoryBlock = renderMemoryBlock(memories);
+  const fullPrompt = [memoryBlock, agent.prompt ?? ""].filter(Boolean).join("\n\n");
+
   const base: Record<string, string> = {
     REPO_URL: agent.repo_url ?? env.PREINSTALLED_GITHUB_REPO,
     BRANCH: agent.branch,
     LITELLM_API_KEY: env.LITELLM_API_KEY,
     LITELLM_API_BASE: env.LITELLM_API_BASE,
     LITELLM_DEFAULT_MODEL: agent.model,
-    AGENT_PROMPT: agent.prompt ?? "",
+    AGENT_PROMPT: fullPrompt,
     PORT: String(agent.container_port),
+    // For the harness's memory tools — empty LAP_BASE_URL makes the
+    // tools no-op gracefully (the harness checks before registering them).
+    AGENT_ID: agent.agent_id,
+    LAP_BASE_URL: env.LAP_BASE_URL,
+    LAP_AUTH_TOKEN: env.LAP_BASE_URL ? env.MASTER_KEY : "",
   };
   // Same precedence as fargate.ts buildContainerEnv: passthrough -> per-session
   // env_vars -> required base. Required keys always win.
@@ -292,7 +309,7 @@ export async function runTask(
               image: env.K8S_HARNESS_IMAGE,
               imagePullPolicy: env.K8S_IMAGE_PULL_POLICY,
               ports: [{ containerPort: agent.container_port }],
-              env: buildContainerEnv(opts),
+              env: await buildContainerEnv(opts),
               resources: {
                 // Opencode is mostly idle between LLM round-trips — it's a
                 // thin HTTP server forwarding to the model. Right-size the

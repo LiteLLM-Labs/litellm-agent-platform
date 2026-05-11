@@ -12,7 +12,7 @@
  * with what the existing UI sends.
  */
 
-import type { Agent, Session, WarmTask } from "@prisma/client";
+import type { Agent, Memory, Session, WarmTask } from "@prisma/client";
 import { z } from "zod";
 
 // ============================================================================
@@ -22,6 +22,7 @@ import { z } from "zod";
 export type AgentRow = Agent;
 export type SessionRow = Session;
 export type WarmTaskRow = WarmTask;
+export type MemoryRow = Memory;
 
 export type SessionStatus = "creating" | "ready" | "failed" | "dead";
 export type WarmTaskStatus = "provisioning" | "warm" | "claimed" | "dead";
@@ -116,6 +117,30 @@ export const SendMessageBody = z.object({
 });
 export type SendMessageBody = z.infer<typeof SendMessageBody>;
 
+// Memory bodies — see src/server/memory.ts for the model.
+// `source` is set by the handler (slack/ui/agent depending on the entry
+// point), not the caller, so it's not in the body.
+export const CreateMemoryBody = z.object({
+  text: z.string().min(1, "text required"),
+  tags: z.array(z.string()).max(8).optional(),
+  type: z.string().optional(),
+  priority: z.number().int().optional(),
+  source: z.enum(["agent", "slack", "ui"]).optional(),
+  source_user_id: z.string().optional(),
+  source_session_id: z.string().optional(),
+  source_thread_ts: z.string().optional(),
+});
+export type CreateMemoryBody = z.infer<typeof CreateMemoryBody>;
+
+export const UpdateMemoryBody = z.object({
+  text: z.string().min(1).optional(),
+  tags: z.array(z.string()).max(8).optional(),
+  type: z.string().optional(),
+  priority: z.number().int().optional(),
+  disabled: z.boolean().optional(),
+});
+export type UpdateMemoryBody = z.infer<typeof UpdateMemoryBody>;
+
 // ============================================================================
 // API response shapes — keep field names identical to frontend src/lib/api.ts
 // (drop-in compatibility). `id` aliases the Prisma PK; `created_at` is ISO.
@@ -132,6 +157,24 @@ export interface ApiAgent {
   pfp_url: string | null;
   mcp_servers: string[];
   created_at: string;
+}
+
+export interface ApiMemory {
+  id: string;
+  agent_id: string;
+  text: string;
+  tags: string[];
+  type: string;
+  priority: number;
+  disabled: boolean;
+  times_applied: number;
+  last_applied_at: string | null;
+  source: string;
+  source_user_id: string | null;
+  source_session_id: string | null;
+  source_thread_ts: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface ApiSession {
@@ -275,6 +318,15 @@ export interface ServerEnv {
   PREINSTALLED_GITHUB_REPO: string;
   LITELLM_API_BASE: string;
   LITELLM_API_KEY: string;
+  /**
+   * Base URL the in-sandbox harness uses to call back into this platform —
+   * specifically the agent memory endpoints. Empty string means the memory
+   * tools are unavailable to the harness (graceful no-op), which is fine for
+   * local dev without the kind cluster pointed at the host. In prod, set to
+   * the Render external URL (e.g. https://litellm-agent-platform.onrender.com).
+   * In docker-compose dev, "http://host.docker.internal:3000" reaches the host.
+   */
+  LAP_BASE_URL: string;
   CONTAINER_PORT: number; // default 4096
   RECONCILE_INTERVAL_SECONDS: number; // default 60
 
@@ -427,6 +479,26 @@ export function toApiAgent(row: AgentRow): ApiAgent {
         )
       : [],
     created_at: row.created_at.toISOString(),
+  };
+}
+
+export function toApiMemory(row: MemoryRow): ApiMemory {
+  return {
+    id: row.memory_id,
+    agent_id: row.agent_id,
+    text: row.text,
+    tags: row.tags,
+    type: row.type,
+    priority: row.priority,
+    disabled: row.disabled,
+    times_applied: row.times_applied,
+    last_applied_at: row.last_applied_at ? row.last_applied_at.toISOString() : null,
+    source: row.source,
+    source_user_id: row.source_user_id ?? null,
+    source_session_id: row.source_session_id ?? null,
+    source_thread_ts: row.source_thread_ts ?? null,
+    created_at: row.created_at.toISOString(),
+    updated_at: row.updated_at.toISOString(),
   };
 }
 

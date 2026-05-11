@@ -31,6 +31,10 @@ import {
   type Options,
   type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
+import {
+  buildMemoryMcpServer,
+  MEMORY_TOOL_NAMES,
+} from "./memory-tools.js";
 
 // SDK's auto-resolution of the Claude Code native binary fails when
 // `process.cwd()` differs from the SDK's install location (we run with
@@ -54,6 +58,11 @@ function resolveClaudeBinary(): string | undefined {
   return existsSync(candidate) ? candidate : undefined;
 }
 const CLAUDE_BIN = resolveClaudeBinary();
+
+// In-process MCP server exposing save_memory + search_memory to the model.
+// Returns null when LAP_BASE_URL/AGENT_ID/LAP_AUTH_TOKEN aren't all set, so
+// local dev without the platform reachable still works (tools just absent).
+const MEMORY_MCP = buildMemoryMcpServer();
 
 // ---------------------------------------------------------------------------
 // Config
@@ -186,6 +195,14 @@ async function runTurn(
     // those into a growing `message.part.updated` below.
     includePartialMessages: true,
     ...(CLAUDE_BIN ? { pathToClaudeCodeExecutable: CLAUDE_BIN } : {}),
+    // Memory tools: only register when the in-process server was built (i.e.
+    // LAP env vars are set). Names are namespaced `mcp__<server>__<tool>`.
+    ...(MEMORY_MCP
+      ? {
+          mcpServers: { "lap-memory": MEMORY_MCP },
+          allowedTools: [...MEMORY_TOOL_NAMES],
+        }
+      : {}),
     // Resume the SDK's persisted session if we have one — that's how the
     // SDK stitches turn N+1 onto turn N's history without us tracking it.
     ...(s.sdk_session_id ? { resume: s.sdk_session_id } : {}),

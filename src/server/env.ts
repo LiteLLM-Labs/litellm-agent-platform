@@ -37,6 +37,9 @@ const EnvSchema = z.object({
   PREINSTALLED_GITHUB_REPO: z.string().min(1),
   LITELLM_API_BASE: z.string().min(1),
   LITELLM_API_KEY: z.string().min(1),
+  // The harness inside the sandbox uses this to POST/GET memory endpoints
+  // on this platform. Empty string disables the memory tools gracefully.
+  LAP_BASE_URL: z.string().default(""),
   CONTAINER_PORT: z.coerce.number().int().positive().default(4096),
   RECONCILE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
 
