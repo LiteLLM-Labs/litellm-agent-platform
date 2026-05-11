@@ -34,6 +34,15 @@ The codebase ships scripts and a Render Blueprint for exactly this combo.
    and caches for 30s — survives nodegroup scales and node replacements.
    The script prints a sample IP for sanity-checking only.
 
+   The kubeconfig that `bin/eks-up.sh` emits uses an `aws-iam-authenticator`
+   exec-plugin block — it carries no bearer token and never expires. The
+   binary is downloaded into the build artifact by both the Dockerfile
+   and `render.yaml`'s `buildCommand`. The same AWS credentials you used
+   to run the script must also be set on the Render services (web +
+   worker) as `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` /
+   `AWS_REGION`, because the exec-plugin reads them from the process env
+   at every k8s API call.
+
 2. **Push the harness image** to ECR (or any registry your cluster nodes
    can pull from):
    ```bash
@@ -71,7 +80,11 @@ LITELLM_API_BASE=
 LITELLM_API_KEY=
 LITELLM_DEFAULT_MODEL=anthropic/claude-sonnet-4-6
 
-KUBE_CONFIG_B64=                  # bin/eks-up.sh output
+KUBE_CONFIG_B64=                  # bin/eks-up.sh output (exec-plugin kubeconfig — never expires)
+AWS_ACCESS_KEY_ID=                # consumed by aws-iam-authenticator at every k8s API call
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=us-east-1
+
 K8S_NODE_HOST=auto                # platform discovers Ready node IP at spawn time (recommended)
 K8S_HARNESS_IMAGE=                # ECR path
 
@@ -86,11 +99,13 @@ WARM_POOL_SIZE=2
 
 ## Rotations
 
-- **EKS service-account token** caps at 24h. Re-run `bin/eks-up.sh`
-  on a daily cron, then `PUT /v1/services/<id>/env-vars/KUBE_CONFIG_B64`
-  on both Render services. Or move the cluster path to IRSA — out of
-  scope for this guide.
 - **MASTER_KEY** rotates by setting a new value in Render dashboard.
+- **AWS access keys** rotate like any IAM credential — drop the new pair
+  into `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` on both Render
+  services. No kubeconfig regeneration needed; the exec-plugin re-reads
+  env on the next call. (If you switch to a new IAM principal entirely,
+  re-run `bin/eks-up.sh` once so the new principal is mapped in the
+  cluster's `aws-auth` ConfigMap.)
 
 ## Other clouds / providers
 
