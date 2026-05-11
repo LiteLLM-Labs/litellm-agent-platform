@@ -92,17 +92,12 @@ export async function handleInbound(
   }
 
   if (event.kind === "new_task") {
-    const binding = await prisma.agentIntegrationBinding.findUnique({
-      where: {
-        agent_id_install_id: {
-          agent_id: event.target_agent_id,
-          install_id: install.install_id,
-        },
-      },
+    const binding = await prisma.agentIntegrationBinding.findFirst({
+      where: { install_id: install.install_id, enabled: true },
       include: { agent: true },
     });
-    if (!binding || !binding.enabled) {
-      return errorResponse(404, "agent not bound to this install");
+    if (!binding) {
+      return errorResponse(404, "no agent bound to this install");
     }
 
     // ACK inside the medium's deadline (Linear: 10s). The session spawn
@@ -123,7 +118,7 @@ export async function handleInbound(
       binding_id: binding.binding_id,
       external_session_id: event.external_session_id,
       external_ref: event.external_ref ?? null,
-      target_agent_id: event.target_agent_id,
+      agent_id: binding.agent.agent_id,
       prompt: event.prompt,
     });
 
@@ -168,13 +163,22 @@ export async function forwardSessionEvent(
   session_id: string,
   event: SessionEvent,
 ): Promise<void> {
-  const ext = await prisma.integrationSession.findUnique({
-    where: { session_id },
-    include: {
-      binding: { include: { install: true, agent: true } },
-    },
-  });
-  if (!ext) return; // session didn't originate from an integration
+  // Absorb the race with spawnSessionForEvent: the IntegrationSession row is
+  // written only after the v1 session create returns, so an outbound harness
+  // event in that gap would otherwise silently drop. Retry the lookup for up
+  // to ~500ms before giving up.
+  let ext: Awaited<ReturnType<typeof findIntegrationSession>> = null;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    ext = await findIntegrationSession(session_id);
+    if (ext) break;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  if (!ext) {
+    console.warn(
+      `[integrations/dispatcher] no IntegrationSession for session_id=${session_id}; event dropped`,
+    );
+    return; // session didn't originate from an integration, or row never landed
+  }
 
   const integration = getProvider(ext.binding.install.integration_id);
   if (!integration) return;
@@ -184,6 +188,15 @@ export async function forwardSessionEvent(
     externalSessionId: ext.external_session_id,
     event,
     agent: ext.binding.agent,
+  });
+}
+
+function findIntegrationSession(session_id: string) {
+  return prisma.integrationSession.findUnique({
+    where: { session_id },
+    include: {
+      binding: { include: { install: true, agent: true } },
+    },
   });
 }
 
@@ -201,14 +214,14 @@ interface SpawnInput {
   binding_id: string;
   external_session_id: string;
   external_ref: string | null;
-  target_agent_id: string;
+  agent_id: string;
   prompt: string;
 }
 
 async function spawnSessionForEvent(input: SpawnInput): Promise<void> {
   const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
   const url = `${baseUrl}/api/v1/managed_agents/agents/${encodeURIComponent(
-    input.target_agent_id,
+    input.agent_id,
   )}/session`;
 
   try {
@@ -248,7 +261,7 @@ async function spawnSessionForEvent(input: SpawnInput): Promise<void> {
           install,
           externalSessionId: input.external_session_id,
           event: { type: "error", body: `Failed to start session: ${reason}` },
-          agent: { agent_id: input.target_agent_id } as never,
+          agent: { agent_id: input.agent_id } as never,
         })
         .catch(() => {
           /* best-effort */
