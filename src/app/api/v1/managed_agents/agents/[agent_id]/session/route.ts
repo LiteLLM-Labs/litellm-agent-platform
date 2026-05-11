@@ -137,6 +137,7 @@ async function finishBringUp(
   const harness_session_id = await harnessCreateSession({
     sandbox_url,
     title: body.title,
+    prompt: agent.prompt ?? undefined,
   });
   let response: HarnessMessageResponse | null = null;
   if (body.initial_prompt) {

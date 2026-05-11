@@ -297,6 +297,33 @@ export default function AgentDetailPage({ params }: PageProps) {
                 )}
               </dd>
 
+              {/* System prompt + skill — split on the --- separator injected by selectTemplate */}
+              {agent.prompt?.trim() ? (() => {
+                const parts = agent.prompt.split(/\n<!-- skill -->\n/);
+                const systemPrompt = parts[0]?.trim();
+                const skill = parts[1]?.trim();
+                return (
+                  <>
+                    <dt className="text-muted-foreground">System prompt</dt>
+                    <dd>
+                      <pre className="max-h-48 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground">
+                        {systemPrompt}
+                      </pre>
+                    </dd>
+                    {skill ? (
+                      <>
+                        <dt className="text-muted-foreground">Skill</dt>
+                        <dd>
+                          <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground">
+                            {skill}
+                          </pre>
+                        </dd>
+                      </>
+                    ) : null}
+                  </>
+                );
+              })() : null}
+
               <dt className="text-muted-foreground">Agent ID</dt>
               <dd className="font-mono text-[12px] text-muted-foreground break-all">
                 {agent.id}

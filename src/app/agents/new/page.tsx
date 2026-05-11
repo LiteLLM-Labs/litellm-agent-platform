@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronDown, ChevronRight, Search } from "lucide-react";
+import { Check, ChevronDown, ChevronRight, Plus, Search, Trash2, Upload } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -17,6 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { PfpUpload } from "@/components/pfp-upload";
 import {
+  AgentTemplate,
   ApiError,
   McpAllowedTools,
   McpRow,
@@ -27,6 +28,7 @@ import {
   listMcps,
   listMcpTools,
   listModels,
+  listTemplates,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -69,6 +71,45 @@ function mcpLabel(m: McpRow): string {
 export default function NewAgentPage() {
   const router = useRouter();
 
+  // "blank" = no template; any other string = template id
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>("blank");
+  const [templates, setTemplates] = useState<AgentTemplate[]>([]);
+  const [activeTemplateTab, setActiveTemplateTab] = useState<"overview" | "skill" | "prompt">("overview");
+  // Per-template skill edits — keyed by template id
+  const [skillEdits, setSkillEdits] = useState<Record<string, string>>({});
+
+  const selectedTemplate = templates.find((t) => t.id === selectedTemplateId) ?? null;
+  const currentSkill = selectedTemplate
+    ? (skillEdits[selectedTemplate.id] ?? selectedTemplate.skill)
+    : "";
+
+  useEffect(() => {
+    listTemplates().then(setTemplates).catch(() => {});
+  }, []);
+
+  // Selecting a template immediately pre-fills the form fields.
+  function selectTemplate(id: string) {
+    setSelectedTemplateId(id);
+    setActiveTemplateTab("overview");
+    const t = templates.find((t) => t.id === id);
+    if (t) {
+      setName(t.name);
+      setHarnessId(t.harness_id);
+      setModel(t.model);
+      setSystemPrompt(
+        skillEdits[t.id] !== undefined
+          ? `${t.prompt}\n\n<!-- skill -->\n\n${skillEdits[t.id]}`
+          : `${t.prompt}\n\n<!-- skill -->\n\n${t.skill}`,
+      );
+    } else {
+      // blank
+      setName("");
+      setHarnessId(DEFAULT_HARNESS_ID);
+      setModel(DEFAULT_MODEL);
+      setSystemPrompt("");
+    }
+  }
+
   const [name, setName] = useState("");
   const [harnessId, setHarnessId] = useState<string>(DEFAULT_HARNESS_ID);
   const [model, setModel] = useState(DEFAULT_MODEL);
@@ -95,6 +136,8 @@ export default function NewAgentPage() {
   );
   const [loadingMeta, setLoadingMeta] = useState(true);
   const [metaError, setMetaError] = useState<string | null>(null);
+
+  const [envVars, setEnvVars] = useState<[string, string][]>([["", ""]]);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -221,6 +264,60 @@ export default function NewAgentPage() {
     return sortedModels.filter((m) => m.id.toLowerCase().includes(q));
   }, [sortedModels, modelQuery]);
 
+  function parseEnvFile(text: string): [string, string][] {
+    const pairs: [string, string][] = [];
+    for (const raw of text.split("\n")) {
+      const line = raw.trim();
+      if (!line || line.startsWith("#")) continue;
+      const eq = line.indexOf("=");
+      if (eq < 1) continue;
+      const key = line.slice(0, eq).trim();
+      let val = line.slice(eq + 1).trim();
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      if (key) pairs.push([key, val]);
+    }
+    return pairs;
+  }
+
+  function handleEnvFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result;
+      if (typeof text !== "string") return;
+      const parsed = parseEnvFile(text);
+      if (parsed.length === 0) return;
+      setEnvVars((prev) => {
+        const existing = prev.filter(([k]) => k.trim() !== "");
+        return [...existing, ...parsed, ["", ""] as [string, string]];
+      });
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  function setEnvKey(idx: number, key: string) {
+    setEnvVars((prev) => prev.map((p, i) => (i === idx ? [key, p[1]] : p)));
+  }
+  function setEnvVal(idx: number, val: string) {
+    setEnvVars((prev) => prev.map((p, i) => (i === idx ? [p[0], val] : p)));
+  }
+  function addEnvRow() {
+    setEnvVars((prev) => [...prev, ["", ""]]);
+  }
+  function removeEnvRow(idx: number) {
+    setEnvVars((prev) => {
+      const next = prev.filter((_, i) => i !== idx);
+      return next.length === 0 ? [["", ""]] : next;
+    });
+  }
+
   function validate(): string | null {
     const trimmedName = name.trim();
     if (trimmedName.length > NAME_MAX) {
@@ -262,6 +359,12 @@ export default function NewAgentPage() {
         }
       }
 
+      const envVarsRecord: Record<string, string> = {};
+      for (const [k, v] of envVars) {
+        const key = k.trim();
+        if (key) envVarsRecord[key] = v;
+      }
+
       const created = await createAgent({
         name: name.trim() || undefined,
         model: model.trim(),
@@ -272,6 +375,7 @@ export default function NewAgentPage() {
         mcp_servers: mcpServers.length > 0 ? mcpServers : undefined,
         mcp_allowed_tools:
           mcpAllowedTools.length > 0 ? mcpAllowedTools : undefined,
+        env_vars: Object.keys(envVarsRecord).length > 0 ? envVarsRecord : undefined,
       });
       router.push(`/agents/${created.id}`);
     } catch (err) {
@@ -284,12 +388,154 @@ export default function NewAgentPage() {
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-8">
       <h1 className="text-[22px] font-semibold tracking-tight">New Agent</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Pick a model and a system prompt. Sessions are spawned per-agent —
-        each run gets its own Fargate task.
-      </p>
 
-      <Card className="mt-6">
+      {/* Template strip — only shown when templates exist */}
+      {templates.length > 0 && (
+        <div className="mt-4 space-y-2">
+          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
+            Templates
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            {/* Blank — pre-selected */}
+            <button
+              type="button"
+              onClick={() => selectTemplate("blank")}
+              className={cn(
+                "rounded-lg border p-3 text-left transition-colors hover:bg-accent/40",
+                selectedTemplateId === "blank"
+                  ? "border-foreground bg-accent/30"
+                  : "border-dashed border-border",
+              )}
+            >
+              <div className="text-lg">✦</div>
+              <div className="mt-1.5 text-[13px] font-semibold">Blank</div>
+              <div className="mt-0.5 text-[12px] text-muted-foreground">Start from scratch.</div>
+            </button>
+
+            {templates.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => selectTemplate(t.id)}
+                className={cn(
+                  "rounded-lg border p-3 text-left transition-colors hover:bg-accent/40",
+                  selectedTemplateId === t.id
+                    ? "border-foreground bg-accent/30"
+                    : "border-border bg-card",
+                )}
+              >
+                <div className="text-lg">{t.icon}</div>
+                <div className="mt-1.5 text-[13px] font-semibold">{t.name}</div>
+                <div className="mt-0.5 text-[12px] text-muted-foreground">{t.description}</div>
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {t.tags.map((tag) => (
+                    <span key={tag} className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                      {tag}
+                    </span>
+                  ))}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          {/* Template detail — tools/skill/prompt tabs, only for non-blank */}
+          {selectedTemplate && (
+            <Card className="overflow-hidden">
+              <div className="flex border-b text-[13px]">
+                {(["overview", "skill", "prompt"] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => setActiveTemplateTab(tab)}
+                    className={cn(
+                      "px-4 py-2 font-medium capitalize transition-colors hover:text-foreground",
+                      activeTemplateTab === tab
+                        ? "border-b-2 border-foreground text-foreground"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+              <CardContent className="pt-4">
+                {activeTemplateTab === "overview" && (
+                  <div className="space-y-3 text-[13px]">
+                    <div>
+                      <p className="mb-1.5 text-xs font-medium uppercase tracking-widest text-muted-foreground">Tools</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedTemplate.tools.map((tool) => (
+                          <span key={tool} className="rounded border border-border bg-muted px-2 py-0.5 font-mono text-[12px]">
+                            {tool}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="mb-1.5 text-xs font-medium uppercase tracking-widest text-muted-foreground">Skill</p>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded border border-border bg-muted px-2 py-0.5 font-mono text-[12px]">
+                          {selectedTemplate.skill_name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTemplateTab("skill")}
+                          className="text-[12px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                        >
+                          Edit →
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {activeTemplateTab === "skill" && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[13px] font-semibold">{selectedTemplate.skill_name}</p>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSkillEdits((prev) => {
+                            const next = { ...prev };
+                            delete next[selectedTemplate.id];
+                            return next;
+                          })
+                        }
+                        className="text-[12px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                      >
+                        Reset
+                      </button>
+                    </div>
+                    <Textarea
+                      value={currentSkill}
+                      onChange={(e) =>
+                        setSkillEdits((prev) => ({
+                          ...prev,
+                          [selectedTemplate.id]: e.target.value,
+                        }))
+                      }
+                      className="min-h-[240px] font-mono text-[12px]"
+                      spellCheck={false}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Edits are local to this agent — template is unchanged.
+                    </p>
+                  </div>
+                )}
+                {activeTemplateTab === "prompt" && (
+                  <Textarea
+                    value={selectedTemplate.prompt}
+                    readOnly
+                    className="min-h-[120px] text-[13px] opacity-70"
+                  />
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </div>
+      )}
+
+      <Card className="mt-5">
         <CardHeader className="sr-only">
           <CardTitle>New Agent</CardTitle>
           <CardDescription>
@@ -503,6 +749,88 @@ export default function NewAgentPage() {
                 rows={6}
                 disabled={submitting}
               />
+            </div>
+
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label>Environment variables (optional)</Label>
+                <label
+                  className={cn(
+                    "flex cursor-pointer items-center gap-1.5 rounded-md border border-dashed px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground",
+                    submitting && "pointer-events-none opacity-50",
+                  )}
+                >
+                  <Upload className="size-3" aria-hidden />
+                  Upload .env
+                  <input
+                    type="file"
+                    accept=".env,text/plain"
+                    className="sr-only"
+                    disabled={submitting}
+                    onChange={handleEnvFileUpload}
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Injected into every session container. Stored in DB.
+                Per-session env vars take precedence over these.
+              </p>
+              <div className="rounded-lg border bg-card">
+                <ul className="divide-y">
+                  {envVars.map(([k, v], idx) => (
+                    <li key={idx} className="flex items-center gap-2 px-2 py-1.5">
+                      <Input
+                        value={k}
+                        onChange={(e) => setEnvKey(idx, e.target.value)}
+                        placeholder="KEY"
+                        disabled={submitting}
+                        className="h-7 flex-1 font-mono text-xs uppercase"
+                        autoComplete="off"
+                        spellCheck={false}
+                      />
+                      <span className="shrink-0 text-[11px] text-muted-foreground">=</span>
+                      <Input
+                        value={v}
+                        onChange={(e) => setEnvVal(idx, e.target.value)}
+                        placeholder="value"
+                        disabled={submitting}
+                        className="h-7 flex-[2] font-mono text-xs"
+                        autoComplete="off"
+                        spellCheck={false}
+                        type="password"
+                      />
+                      <button
+                        type="button"
+                        disabled={submitting}
+                        onClick={() => removeEnvRow(idx)}
+                        className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive disabled:opacity-40"
+                        aria-label="Remove row"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="border-t px-2 py-1.5">
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={addEnvRow}
+                    className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-40"
+                  >
+                    <Plus className="size-3" aria-hidden />
+                    Add variable
+                  </button>
+                </div>
+              </div>
+              {(() => {
+                const count = envVars.filter(([k]) => k.trim()).length;
+                return count > 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    {count} variable{count === 1 ? "" : "s"} set.
+                  </p>
+                ) : null;
+              })()}
             </div>
 
             <div className="space-y-1.5">

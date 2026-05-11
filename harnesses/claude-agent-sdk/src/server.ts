@@ -99,6 +99,7 @@ interface BusEvent {
 
 interface Session {
   id: string;                          // our session id (returned to platform)
+  system_prompt: string;               // per-session override from agent.prompt
   sdk_session_id: string | null;       // SDK's session id, set after first turn
   abortController: AbortController | null;
   history: PlatformMessage[];          // synthesized for GET /message
@@ -185,7 +186,7 @@ async function runTurn(
   const options: Options = {
     cwd: REPO_DIR,
     model: modelId,
-    systemPrompt: SYSTEM_PROMPT || undefined,
+    systemPrompt: (s.system_prompt || SYSTEM_PROMPT) || undefined,
     permissionMode: "bypassPermissions",
     abortController: ac,
     // Token-level streaming. Without this, the SDK only emits one `assistant`
@@ -491,15 +492,18 @@ app.get("/", (c) =>
 
 app.post("/session", async (c) => {
   let title: string | undefined;
+  let prompt: string | undefined;
   try {
-    const body = (await c.req.json()) as { title?: string };
+    const body = (await c.req.json()) as { title?: string; prompt?: string };
     title = body?.title;
+    prompt = body?.prompt;
   } catch {
     // empty body is fine — opencode accepts that too.
   }
   const id = `ses_${randomUUID().replace(/-/g, "").slice(0, 24)}`;
   sessions.set(id, {
     id,
+    system_prompt: prompt ?? "",
     sdk_session_id: null,
     abortController: null,
     history: [],

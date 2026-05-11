@@ -126,13 +126,7 @@ export interface DockerfileRow {
   container_port: number;
 }
 
-/**
- * @deprecated Sandbox templates are gone in the local backend — the harness
- * is fixed to "opencode" and the repo (if any) is set per-agent via
- * `repo_url`. Kept only so existing UI doesn't fail to compile; the call to
- * `listTemplates()` returns an empty array. Remove once the new-agent and
- * agent-detail pages stop referencing it.
- */
+/** @deprecated Use AgentTemplate instead. */
 export interface TemplateRow {
   id: string;
   name?: string | null;
@@ -156,6 +150,7 @@ export interface AgentRow {
   branch: string;
   pfp_url?: string | null;
   mcp_servers?: string[];
+  env_vars?: Record<string, string>;
   created_at?: string | null;
 }
 
@@ -362,14 +357,8 @@ export function listDockerfiles(): Promise<DockerfileRow[]> {
   return api<DockerfileRow[]>("GET", "/v1/managed_agents/dockerfiles");
 }
 
-/**
- * @deprecated The local backend doesn't expose sandbox templates — the
- * harness is fixed (opencode) and the repo, if any, is configured per-agent
- * via `repo_url`. This stub returns an empty array so legacy callers don't
- * crash; remove their usage and then delete this function.
- */
-export function listTemplates(): Promise<TemplateRow[]> {
-  return Promise.resolve([]);
+export function listTemplates(): Promise<AgentTemplate[]> {
+  return api<AgentTemplate[]>("GET", "/v1/templates");
 }
 
 // ---------- Agents ----------
@@ -398,6 +387,7 @@ export interface CreateAgentRequest {
   pfp_url?: string;
   mcp_servers?: string[];
   mcp_allowed_tools?: McpAllowedTools[];
+  env_vars?: Record<string, string>;
 }
 
 export interface UpdateAgentRequest {
@@ -856,6 +846,22 @@ export interface AdminStats {
 
 export function getAdminStats(): Promise<AdminStats> {
   return api<AdminStats>("GET", "/v1/admin/stats");
+}
+
+// ---------- Templates ----------
+
+export interface AgentTemplate {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  tags: string[];
+  harness_id: string;
+  model: string;
+  prompt: string;
+  skill_name: string;
+  skill: string;
+  tools: string[];
 }
 
 // ---------- Harness response helpers ----------
