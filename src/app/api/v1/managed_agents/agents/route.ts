@@ -25,12 +25,73 @@ import type { Prisma } from "@prisma/client";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+const VALID_SORT_FIELDS = new Set(["created_at", "name", "harness_id", "sessions"]);
+const VALID_ORDERS = new Set(["asc", "desc"]);
+
 export const GET = wrap(async (req: Request) => {
   assertAuth(req);
-  const rows = await prisma.agent.findMany({
-    orderBy: { created_at: "desc" },
+  const url = new URL(req.url);
+
+  const limitRaw = parseInt(url.searchParams.get("limit") ?? "50", 10);
+  const limit = Number.isFinite(limitRaw) ? Math.min(Math.max(limitRaw, 1), 200) : 50;
+
+  const offsetRaw = parseInt(url.searchParams.get("offset") ?? "0", 10);
+  const offset = Number.isFinite(offsetRaw) ? Math.max(offsetRaw, 0) : 0;
+
+  const sortParam = url.searchParams.get("sort") ?? "created_at";
+  const sort = VALID_SORT_FIELDS.has(sortParam) ? sortParam : "created_at";
+
+  const orderParam = url.searchParams.get("order") ?? "desc";
+  const order = VALID_ORDERS.has(orderParam) ? (orderParam as "asc" | "desc") : "desc";
+
+  const search = url.searchParams.get("search")?.trim() ?? "";
+
+  const where = search
+    ? {
+        OR: [
+          { agent_name: { contains: search, mode: "insensitive" as const } },
+          { agent_id: { contains: search, mode: "insensitive" as const } },
+          { harness_id: { contains: search, mode: "insensitive" as const } },
+        ],
+      }
+    : undefined;
+
+  // "name" is the API param; Prisma model uses agent_name.
+  const prismaSort = sort === "name" ? "agent_name" : sort;
+  const orderBy =
+    sort === "sessions"
+      ? { sessions: { _count: order } }
+      : { [prismaSort]: order };
+
+  const [rows, total] = await Promise.all([
+    prisma.agent.findMany({
+      where,
+      orderBy,
+      take: limit,
+      skip: offset,
+      include: {
+        _count: { select: { sessions: true } },
+        // One active session is enough to know the agent is live.
+        sessions: {
+          where: { status: { in: ["ready", "creating"] } },
+          select: { session_id: true },
+          take: 1,
+        },
+      },
+    }),
+    prisma.agent.count({ where }),
+  ]);
+
+  return Response.json({
+    data: rows.map((r) => ({
+      ...toApiAgent(r),
+      session_count: r._count.sessions,
+      has_active_session: r.sessions.length > 0,
+    })),
+    total,
+    limit,
+    offset,
   });
-  return Response.json(rows.map(toApiAgent));
 });
 
 export const POST = wrap(async (req: Request) => {

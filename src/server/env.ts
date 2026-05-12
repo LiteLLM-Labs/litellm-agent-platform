@@ -99,6 +99,14 @@ function parseEnv(): ServerEnv {
       `K8S_NODEPORT_MIN (${data.K8S_NODEPORT_MIN}) > K8S_NODEPORT_MAX (${data.K8S_NODEPORT_MAX})`,
     );
   }
+  // Render auto-injects RENDER_EXTERNAL_URL on every web service with the
+  // public https URL. Fall back to it when LAP_BASE_URL is unset so the
+  // memory tools (and any future cross-service caller) auto-resolve on
+  // Render without a manual dashboard env-var. Explicit LAP_BASE_URL still
+  // wins for non-Render deploys or split internal/external addressing.
+  if (!data.LAP_BASE_URL && process.env.RENDER_EXTERNAL_URL) {
+    data.LAP_BASE_URL = process.env.RENDER_EXTERNAL_URL;
+  }
   return {
     ...data,
     containerEnvPassthrough: collectContainerEnvPassthrough(process.env),

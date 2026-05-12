@@ -83,11 +83,14 @@ RUN curl -fsSL -o /tmp/uv.tar.gz \
 # so the `file:` dep resolves at install time.
 COPY --from=builder /build/managed-tools/package.json /opt/managed-tools/package.json
 COPY --from=builder /build/managed-tools/dist /opt/managed-tools/dist
-# Install managed-tools' own runtime deps (e.g. zod) so that when npm
-# symlinks this package via `file:` the dist files can resolve their imports.
+# Install managed-tools runtime deps INTO its own directory. Node ESM
+# resolves `import` from the FILE's real path, not the symlinked
+# `node_modules/@lap/managed-tools` path the harness sees — so the
+# harness's hoisted `zod` is invisible from `/opt/managed-tools/dist/*.js`.
+# Install the deps where memory.js etc. will actually look for them.
 WORKDIR /opt/managed-tools
+COPY managed-tools/.npmrc ./.npmrc
 RUN npm install --omit=dev --no-audit --no-fund --legacy-peer-deps
-
 WORKDIR /opt/harnesses/claude-agent-sdk
 COPY --from=builder /build/harnesses/claude-agent-sdk/package.json ./
 COPY --from=builder /build/harnesses/claude-agent-sdk/dist ./dist

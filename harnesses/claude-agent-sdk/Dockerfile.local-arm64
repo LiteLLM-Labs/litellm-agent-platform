@@ -1,0 +1,69 @@
+# syntax=docker/dockerfile:1.7
+#
+# Local arm64 variant of harnesses/claude-agent-sdk/Dockerfile for Apple
+# Silicon kind clusters. Diffs from the upstream:
+#   - gh deb pulled from linux_arm64 release asset
+#   - uv binary pulled from aarch64-unknown-linux-gnu asset
+#   - sha256 checks dropped (local dev only)
+#
+# DO NOT use this for production builds — the upstream Dockerfile pins
+# checksummed amd64 binaries for Fargate/EKS deploys.
+
+FROM node:20-bookworm AS builder
+
+WORKDIR /build/managed-tools
+COPY managed-tools/package.json managed-tools/tsconfig.json ./
+RUN npm install --no-audit --no-fund --legacy-peer-deps
+COPY managed-tools/src ./src
+RUN npx tsc
+
+WORKDIR /build/harnesses/claude-agent-sdk
+COPY harnesses/claude-agent-sdk/package.json harnesses/claude-agent-sdk/tsconfig.json ./
+RUN npm install --no-audit --no-fund --legacy-peer-deps
+COPY harnesses/claude-agent-sdk/src ./src
+RUN npx tsc
+
+FROM node:20-bookworm-slim
+
+ARG GH_VERSION=2.92.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates bash python3 curl jq \
+    && curl -fsSL -o /tmp/gh.deb \
+         "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_linux_arm64.deb" \
+    && dpkg -i /tmp/gh.deb \
+    && rm /tmp/gh.deb \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -m -u 1001 -s /bin/bash sandbox \
+    && mkdir -p /work \
+    && chown sandbox:sandbox /work
+
+ARG UV_VERSION=0.5.13
+RUN curl -fsSL -o /tmp/uv.tar.gz \
+      "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-aarch64-unknown-linux-gnu.tar.gz" \
+    && tar -xzf /tmp/uv.tar.gz -C /tmp \
+    && install -m 0755 "/tmp/uv-aarch64-unknown-linux-gnu/uv" /usr/local/bin/uv \
+    && install -m 0755 "/tmp/uv-aarch64-unknown-linux-gnu/uvx" /usr/local/bin/uvx \
+    && rm -rf /tmp/uv.tar.gz /tmp/uv-aarch64-unknown-linux-gnu
+
+COPY --from=builder /build/managed-tools/package.json /opt/managed-tools/package.json
+COPY --from=builder /build/managed-tools/dist /opt/managed-tools/dist
+WORKDIR /opt/managed-tools
+COPY managed-tools/.npmrc ./.npmrc
+RUN npm install --omit=dev --no-audit --no-fund --legacy-peer-deps
+
+WORKDIR /opt/harnesses/claude-agent-sdk
+COPY --from=builder /build/harnesses/claude-agent-sdk/package.json ./
+COPY --from=builder /build/harnesses/claude-agent-sdk/dist ./dist
+RUN npm install --omit=dev --no-audit --no-fund --legacy-peer-deps \
+    && chown -R sandbox:sandbox /opt/harnesses /opt/managed-tools \
+    && ln -sf /opt/harnesses/claude-agent-sdk/node_modules/@anthropic-ai/claude-agent-sdk-linux-arm64/claude \
+         /usr/local/bin/claude
+
+WORKDIR /work
+COPY --chown=sandbox:sandbox harnesses/claude-agent-sdk/entrypoint.sh /entrypoint.sh
+RUN chmod 755 /entrypoint.sh
+
+USER sandbox
+EXPOSE 4096
+ENTRYPOINT ["/entrypoint.sh"]
