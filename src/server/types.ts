@@ -128,6 +128,7 @@ export const UpdateAgentBody = z.object({
   name: z.string().optional(),
   pfp_url: z.string().optional(),
   mcp_servers: z.array(z.string()).optional(),
+  harness_image: z.string().optional(),
 });
 export type UpdateAgentBody = z.infer<typeof UpdateAgentBody>;
 
