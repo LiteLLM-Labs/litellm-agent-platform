@@ -31,14 +31,14 @@ exists outside the harness.**
 
 ## The contract
 
-[`harnesses/_shared/src/session-event.ts`](../harnesses/_shared/src/session-event.ts)
+[`harnesses/_shared/src/session-event.ts`](harnesses/_shared/src/session-event.ts)
 exports two things every consumer can rely on:
 
 - `SessionEvent` — the typed discriminated union. Every variant carries
   `event_id: string` (a UUID minted at emit time).
 - `SessionEventTranslator<SDKEvent>` — abstract base class. One concrete
   subclass per harness. The Claude SDK harness ships
-  [`ClaudeSdkTranslator`](../harnesses/claude-agent-sdk/src/sdk-translator.ts);
+  [`ClaudeSdkTranslator`](harnesses/claude-agent-sdk/src/sdk-translator.ts);
   a future OpenAI Agents harness would subclass the same base.
 
 A new harness only has to:
@@ -53,7 +53,7 @@ The platform is identical regardless of which harness produced the events.
 
 ### 1 · Harness emits
 
-[`harnesses/claude-agent-sdk/src/runner.ts`](../harnesses/claude-agent-sdk/src/runner.ts)
+[`harnesses/claude-agent-sdk/src/runner.ts`](harnesses/claude-agent-sdk/src/runner.ts)
 runs the SDK and hands each frame to the translator. The translator
 returns `SessionEvent[]`; the runner stamps each with `event_id =
 randomUUID()` and broadcasts to in-process SSE subscribers.
@@ -77,7 +77,7 @@ carries snapshot events only.
 
 ### 2 · Worker subscribes
 
-[`src/worker/index.ts`](../src/worker/index.ts) scans Postgres every 10s
+[`src/worker/index.ts`](src/worker/index.ts) scans Postgres every 10s
 for `status='ready'` sessions and attaches one SSE subscriber per pod.
 For each frame:
 
@@ -97,7 +97,7 @@ Two resilience features matter:
 
 ### 3 · DB writes (idempotent)
 
-[`src/server/sessionEvents.ts`](../src/server/sessionEvents.ts)
+[`src/server/sessionEvents.ts`](src/server/sessionEvents.ts)
 `appendSessionEvent` uses raw `INSERT … ON CONFLICT (session_id,
 event_id) DO NOTHING`. Two writers delivering the same SSE frame
 collapse to one row. **You can run as many subscribers as you want;
@@ -129,7 +129,7 @@ Two unique constraints, two failure modes:
 
 ### 4 · API serves the log
 
-[`src/app/api/v1/managed_agents/sessions/[session_id]/events/route.ts`](../src/app/api/v1/managed_agents/sessions/%5Bsession_id%5D/events/route.ts)
+[`src/app/api/v1/managed_agents/sessions/[session_id]/events/route.ts`](src/app/api/v1/managed_agents/sessions/%5Bsession_id%5D/events/route.ts)
 
 ```
 GET /api/v1/managed_agents/sessions/{sid}/events?since=N&wait=30
@@ -150,7 +150,7 @@ Each consumer keeps a cursor (the last `seq` it persisted), polls
 log — a refreshing client renders the same thread as a long-lived one.
 
 - **UI** —
-  [`src/app/sessions/[sid]/events/page.tsx`](../src/app/sessions/%5Bsid%5D/events/page.tsx)
+  [`src/app/sessions/[sid]/events/page.tsx`](src/app/sessions/%5Bsid%5D/events/page.tsx)
   groups events into turns, renders UserPromptBlock / ToolBlock /
   ThinkingBlock / typewriter-animated assistant text. A
   `WorkerHealthChip` surfaces a red "worker stuck (Ns)" indicator when

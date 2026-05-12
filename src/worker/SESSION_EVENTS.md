@@ -9,4 +9,4 @@ Before changing the subscriber, the reconnect/backoff, or
 `appendSessionEvent`, read the architecture doc — the contract is
 load-bearing across the UI, Slack bot, and external consumers:
 
-→ **[/ARCHITECTURE.md](../../../ARCHITECTURE.md)**
+→ **[/ARCHITECTURE.md](../../ARCHITECTURE.md)**
