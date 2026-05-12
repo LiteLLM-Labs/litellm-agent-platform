@@ -57,6 +57,7 @@ import {
   markClaimedTaskDead,
 } from "@/server/warmPool";
 import { wrap } from "@/server/route-helpers";
+import { requireFreshWorker, WorkerDeadError } from "@/server/workerHealth";
 import type { Prisma } from "@prisma/client";
 
 export const runtime = "nodejs";
@@ -124,6 +125,11 @@ async function runBringUp(
   warm: WarmTaskRow | null,
 ): Promise<void> {
   try {
+    // Refuse the bring-up if no SessionEvent worker is alive. Without
+    // it, the harness emits events that nobody persists and the user
+    // sees an empty session forever. Fail loud + cheap instead.
+    await requireFreshWorker();
+
     let result: BringUpResult;
     if (warm) {
       try {
