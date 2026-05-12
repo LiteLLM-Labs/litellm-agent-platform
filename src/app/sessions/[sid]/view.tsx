@@ -455,22 +455,19 @@ export default function SessionThreadView() {
 
       try {
         // Stream token deltas live. `message.part.delta` carries text or
-        // thinking chunks per partID; we accumulate per-part and render the
-        // result as a list of parts so each block (text, thinking, tool)
-        // renders distinctly. After `done` we refreshThread() to pull
-        // canonical state (tool inputs/outputs that the bus deltas don't
-        // reconstruct on their own).
-        type StreamPart = { id: string; type: "text" | "thinking"; text: string };
-        const partsState: Map<string, StreamPart> = new Map();
+        // thinking chunks per partID; `message.part.updated` carries
+        // authoritative full-part replacements for text, thinking, AND
+        // tool blocks (see harnesses/claude-agent-sdk/src/server.ts).
+        // We accumulate all three so the rendered parts array shows tool
+        // cards inline as soon as the harness emits them — without this,
+        // the UI sees zero tool calls until `refreshThread()` runs at
+        // turn-end.
+        const partsState: Map<string, HarnessMessagePart> = new Map();
         const renderStreaming = () => {
           // Stable order: insertion order matches the order parts were first
           // seen on the bus, which matches the order the model produced
-          // them (thinking before text, etc).
-          const partsArray = Array.from(partsState.values()).map((p) => ({
-            id: p.id,
-            type: p.type,
-            text: p.text,
-          })) as HarnessMessagePart[];
+          // them (thinking before text, tool calls interleaved, etc).
+          const partsArray = Array.from(partsState.values());
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
@@ -484,16 +481,18 @@ export default function SessionThreadView() {
           delta: string,
           field: "text" | "thinking",
         ) => {
-          const cur = partsState.get(partID) ?? {
+          const prior = partsState.get(partID);
+          // Carry forward fields if the prior entry was already a text or
+          // thinking part on the same partID; otherwise start a fresh one.
+          // (Tool parts on the same partID get overwritten — partIDs are
+          // unique per content block, so this should be inert in practice.)
+          const text =
+            prior && typeof prior.text === "string" ? prior.text : "";
+          partsState.set(partID, {
             id: partID,
             type: field,
-            text: "",
-          };
-          cur.text += delta;
-          // If a partID flips field mid-stream (shouldn't happen, but be
-          // defensive), trust the latest field type.
-          cur.type = field;
-          partsState.set(partID, cur);
+            text: text + delta,
+          });
         };
         await sendMessageStream(
           sessionId,
@@ -511,22 +510,23 @@ export default function SessionThreadView() {
               ingestDelta(partID, delta, field);
               renderStreaming();
             } else if (ev.type === "message.part.updated") {
-              // Authoritative replacement when we missed earlier deltas
-              // (or when the model bundles a block without per-token deltas,
-              // which is what Haiku does for thinking today).
+              // Authoritative full-part replacement. Covers:
+              //   - text / thinking blocks whose deltas we may have missed
+              //   - tool_use blocks (carry { tool, callID, state.input,
+              //     state.status: "running" })
+              //   - tool_result attachments onto a prior tool part (the
+              //     harness re-emits the same partID with state.output +
+              //     state.status flipped to "completed" or "error")
               const part = props.part as
-                | { id?: string; type?: string; text?: string }
+                | (HarnessMessagePart & { id?: string; type?: string })
                 | undefined;
+              if (!part?.id || typeof part.type !== "string") return;
               if (
-                part?.id &&
-                (part.type === "text" || part.type === "thinking") &&
-                typeof part.text === "string"
+                part.type === "text" ||
+                part.type === "thinking" ||
+                part.type === "tool"
               ) {
-                partsState.set(part.id, {
-                  id: part.id,
-                  type: part.type,
-                  text: part.text,
-                });
+                partsState.set(part.id, part as HarnessMessagePart);
                 renderStreaming();
               }
             }
