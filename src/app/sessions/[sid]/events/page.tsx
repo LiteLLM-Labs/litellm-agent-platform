@@ -15,7 +15,7 @@ import React, { useState } from "react";
 import { useParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { ChevronDown, Wrench, Loader2 } from "lucide-react";
+import { ChevronDown, Wrench, Loader2, ArrowUp, Image as ImageIcon } from "lucide-react";
 
 import type { SessionEvent } from "@lap/harness-shared/session-event";
 
@@ -61,11 +61,41 @@ function UserPromptBlock({
   );
 }
 
+// Typewriter — animates the assistant text in character-by-character when
+// the block first mounts, so a freshly-arrived turn feels like an LLM is
+// streaming a response. Once an event is "seen" (animation done) it
+// renders the full text on subsequent renders without re-animating.
+function useTypewriter(text: string, charsPerTick = 8, tickMs = 16): string {
+  const [shown, setShown] = React.useState("");
+  const targetRef = React.useRef("");
+  React.useEffect(() => {
+    targetRef.current = text;
+    setShown((cur) => (text.startsWith(cur) ? cur : ""));
+    const id = window.setInterval(() => {
+      setShown((cur) => {
+        if (cur.length >= targetRef.current.length) {
+          window.clearInterval(id);
+          return targetRef.current;
+        }
+        return targetRef.current.slice(0, cur.length + charsPerTick);
+      });
+    }, tickMs);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+  return shown;
+}
+
 function AssistantTextBlock({ text }: { text: string }) {
+  const shown = useTypewriter(text);
   if (!text) return null;
+  const streaming = shown.length < text.length;
   return (
     <div className="sessions-md text-[14px] text-gray-800 leading-relaxed">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{shown}</ReactMarkdown>
+      {streaming ? (
+        <span className="inline-block w-1 h-4 bg-gray-400 align-middle ml-0.5 animate-pulse" />
+      ) : null}
     </div>
   );
 }
@@ -458,6 +488,23 @@ export default function SessionEventsDemoPage() {
 
   const turns = groupIntoTurns(rows);
 
+  // "In progress" = a user_message landed but the most recent terminal
+  // event (turn_complete or error) is older than the most recent
+  // user_message. Powers the composer's "Queue a follow up" placeholder
+  // so a busy session feels different from an idle one.
+  const hasInProgress = React.useMemo(() => {
+    let lastUser = -1;
+    let lastTerminal = -1;
+    rows.forEach((r) => {
+      if (r.event.type === "user_message") lastUser = r.seq;
+      else if (r.event.type === "turn_complete" || r.event.type === "error")
+        lastTerminal = r.seq;
+    });
+    return lastUser > lastTerminal;
+  }, [rows]);
+
+  const [debugOpen, setDebugOpen] = React.useState(false);
+
   return (
     <div className="min-h-screen bg-white text-gray-800">
       <div className="max-w-3xl mx-auto px-4 py-6 flex flex-col gap-6">
@@ -479,6 +526,14 @@ export default function SessionEventsDemoPage() {
             />
             {polling ? "live" : "idle"}
           </span>
+          <button
+            type="button"
+            onClick={() => setDebugOpen((v) => !v)}
+            className="mono text-[11px] text-gray-500 hover:text-gray-800 border border-gray-200 rounded px-2 py-0.5"
+            title="Toggle raw SessionEvent log"
+          >
+            Debug ({rows.length})
+          </button>
         </header>
 
         {error ? (
@@ -599,10 +654,14 @@ export default function SessionEventsDemoPage() {
           </div>
         ) : null}
 
-        {rows.length > 0 ? <DebugEventLog rows={rows} /> : null}
-
-        <MessageInput sid={sid} />
+        <MessageInput sid={sid} hasInProgress={hasInProgress} />
       </div>
+
+      <DebugDrawer
+        rows={rows}
+        open={debugOpen}
+        onClose={() => setDebugOpen(false)}
+      />
     </div>
   );
 }
@@ -614,13 +673,24 @@ export default function SessionEventsDemoPage() {
 // clear the textarea.
 // =====================================================================
 
-function MessageInput({ sid }: { sid: string }) {
-  const [text, setText] = React.useState("");
+// Mirrors the legacy Composer block from view.tsx: rounded box, Enter to
+// send, ArrowUp circular button, attach icon (disabled), placeholder text
+// that changes when a turn is in flight. POSTs to /sessions/{id}/message
+// which is a 202 fire-and-forget — the resulting SessionEvents stream in
+// via the existing long-poll on this page.
+function MessageInput({
+  sid,
+  hasInProgress,
+}: {
+  sid: string;
+  hasInProgress: boolean;
+}) {
+  const [draft, setDraft] = React.useState("");
   const [sending, setSending] = React.useState(false);
   const [err, setErr] = React.useState<string | null>(null);
 
   const submit = async (): Promise<void> => {
-    const trimmed = text.trim();
+    const trimmed = draft.trim();
     if (!trimmed || sending) return;
     setSending(true);
     setErr(null);
@@ -641,7 +711,7 @@ function MessageInput({ sid }: { sid: string }) {
         setErr(`HTTP ${res.status}: ${body.slice(0, 200)}`);
         return;
       }
-      setText("");
+      setDraft("");
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : String(e));
     } finally {
@@ -649,35 +719,59 @@ function MessageInput({ sid }: { sid: string }) {
     }
   };
 
+  const canSend = draft.trim().length > 0 && !sending;
+  const placeholder = hasInProgress
+    ? "Queue a follow up"
+    : "Add a follow up";
+
   return (
     <div className="sticky bottom-4 mt-6">
-      <div className="border border-gray-200 rounded-xl bg-white shadow-sm p-3 flex flex-col gap-2">
+      <div className="border border-gray-200 rounded-xl shadow-sm bg-white overflow-hidden focus-within:ring-1 focus-within:ring-gray-300 focus-within:border-gray-300 transition-all">
         <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               void submit();
             }
           }}
-          placeholder="Send a follow-up… (⌘↩ to send)"
-          className="resize-none outline-none text-[14px] text-gray-800 leading-relaxed bg-transparent placeholder:text-gray-400 min-h-[44px]"
-          rows={2}
-          disabled={sending}
+          placeholder={placeholder}
+          rows={1}
+          className="w-full p-4 outline-none resize-none text-[15px] placeholder:text-gray-400 bg-transparent"
         />
-        <div className="flex items-center gap-2">
-          {err ? (
-            <span className="mono text-[11px] text-red-700">{err}</span>
-          ) : null}
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={sending || !text.trim()}
-            className="ml-auto px-3 py-1.5 text-[13px] rounded-md bg-gray-900 text-white hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed"
-          >
-            {sending ? "Sending…" : "Send"}
-          </button>
+        <div className="flex items-center justify-between px-4 pb-3 text-xs text-gray-500">
+          <span className="mono">
+            {err ? (
+              <span className="text-red-600">{err}</span>
+            ) : (
+              "Enter to send · Shift+Enter for newline"
+            )}
+          </span>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              className="hover:text-gray-700 transition-colors"
+              aria-label="Attach"
+              disabled
+            >
+              <ImageIcon className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => void submit()}
+              disabled={!canSend}
+              className="bg-black text-white p-1.5 rounded-full hover:bg-gray-800 transition-colors disabled:opacity-30 disabled:hover:bg-black"
+              aria-label={hasInProgress ? "Queue follow-up" : "Send"}
+              title={
+                hasInProgress
+                  ? "Queue follow-up — sends when the current message finishes"
+                  : "Send (Enter)"
+              }
+            >
+              <ArrowUp className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -690,15 +784,45 @@ function MessageInput({ sid }: { sid: string }) {
 // the DB, in what order, with their full JSON payload.
 // =====================================================================
 
-function DebugEventLog({ rows }: { rows: Row[] }) {
+// Right-side fixed drawer. Toggled from the header "Debug" button. Lists
+// every persisted SessionEvent row in chronological order; click a row to
+// expand its full JSON payload.
+function DebugDrawer({
+  rows,
+  open,
+  onClose,
+}: {
+  rows: Row[];
+  open: boolean;
+  onClose: () => void;
+}) {
   const [expanded, setExpanded] = React.useState<Record<number, boolean>>({});
   return (
-    <details className="border-t border-gray-100 pt-4 mt-4 group">
-      <summary className="cursor-pointer mono text-[11px] text-gray-400 hover:text-gray-600 select-none flex items-center gap-1.5">
-        <span className="inline-block transition-transform group-open:rotate-90">▸</span>
-        Debug · raw SessionEvent log ({rows.length} rows)
-      </summary>
-      <div className="mt-3 flex flex-col gap-1">
+    <aside
+      className={`fixed top-0 right-0 h-dvh w-[420px] bg-white border-l border-gray-200 shadow-xl transition-transform duration-200 ease-out z-30 flex flex-col ${
+        open ? "translate-x-0" : "translate-x-full"
+      }`}
+      aria-hidden={!open}
+    >
+      <header className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
+        <div className="flex items-baseline gap-2">
+          <span className="text-[13px] font-semibold text-gray-800">
+            Debug
+          </span>
+          <span className="mono text-[11px] text-gray-400">
+            {rows.length} SessionEvents
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="text-gray-400 hover:text-gray-700 px-2 -mr-2"
+          aria-label="Close debug drawer"
+        >
+          ×
+        </button>
+      </header>
+      <div className="flex-1 overflow-y-auto px-3 py-3 flex flex-col gap-1">
         {rows.map((r) => {
           const isOpen = !!expanded[r.seq];
           return (
@@ -716,9 +840,11 @@ function DebugEventLog({ rows }: { rows: Row[] }) {
                 <span className="text-gray-400 tabular-nums w-8">
                   #{r.seq}
                 </span>
-                <span className="text-gray-700 w-32">{r.event.type}</span>
-                <span className="text-gray-400">
-                  {r.ts ? r.ts.slice(11, 23) : ""}
+                <span className="text-gray-700 w-28 truncate">
+                  {r.event.type}
+                </span>
+                <span className="text-gray-400 text-[10px]">
+                  {r.ts ? r.ts.slice(11, 19) : ""}
                 </span>
                 <span className="ml-auto text-gray-300">
                   {isOpen ? "−" : "+"}
@@ -732,7 +858,10 @@ function DebugEventLog({ rows }: { rows: Row[] }) {
             </div>
           );
         })}
+        {rows.length === 0 ? (
+          <div className="mono text-[11px] text-gray-400">no events yet</div>
+        ) : null}
       </div>
-    </details>
+    </aside>
   );
 }
