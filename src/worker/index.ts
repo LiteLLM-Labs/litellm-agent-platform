@@ -31,7 +31,35 @@ import { appendSessionEvent } from "@/server/sessionEvents";
 import { topUpWarmPool } from "@/server/warmPool";
 
 const intervalMs = env.RECONCILE_INTERVAL_SECONDS * 1000;
-const SESSION_EVENT_SCAN_INTERVAL_MS = 10_000;
+// Local mode scans faster — the LAP_LOCAL_SANDBOX_URL session-create path
+// flips a session to `ready` and immediately posts the first user message
+// to the host harness. With a 10s scan we'd race that and miss the first
+// turn's events entirely. 1s closes the window. In k8s/ECS deploys
+// session creates take 10–30s so the wider scan is fine.
+const SESSION_EVENT_SCAN_INTERVAL_MS = env.LAP_LOCAL_SANDBOX_URL.length > 0
+  ? 1_000
+  : 10_000;
+
+// Postgres advisory lock — only one worker per database. A second
+// process trying to boot exits cleanly instead of joining the SSE
+// subscriber pool and double-writing events (mostly a problem in dev,
+// where `npx tsx` doesn't always leave a clean PID for pkill).
+const WORKER_ADVISORY_LOCK_KEY = 0x4c41_5057; // "LAPW" as i32
+
+async function acquireWorkerLock(): Promise<boolean> {
+  try {
+    const rows = await prisma.$queryRaw<Array<{ locked: boolean }>>`
+      SELECT pg_try_advisory_lock(${WORKER_ADVISORY_LOCK_KEY}) AS locked
+    `;
+    return rows[0]?.locked === true;
+  } catch (e) {
+    console.warn(
+      `worker: advisory-lock probe failed (${e instanceof Error ? e.message : String(e)}); ` +
+        `proceeding without it — duplicate workers may occur`,
+    );
+    return true;
+  }
+}
 
 async function tick() {
   try {
@@ -231,24 +259,62 @@ async function sessionEventTick(): Promise<void> {
   }
 }
 
+// Heartbeat — the API checks this row before flipping a new session to
+// `ready`. Stale heartbeat (>15s) ⇒ no worker writing ⇒ refuse the
+// session create instead of silently dropping the user's first message
+// on the floor. Singleton row (id=1) updated every 5s while we're up.
+const HEARTBEAT_INTERVAL_MS = 5_000;
+
+async function heartbeatTick(): Promise<void> {
+  try {
+    await prisma.$executeRaw`
+      INSERT INTO "lap_worker_heartbeat" (id, last_seen_at)
+      VALUES (1, NOW())
+      ON CONFLICT (id) DO UPDATE SET last_seen_at = NOW()
+    `;
+  } catch (e) {
+    console.warn(
+      `worker: heartbeat write failed (${e instanceof Error ? e.message : String(e)})`,
+    );
+  }
+}
+
 // Local-mode short-circuit: when LAP_LOCAL_SANDBOX_URL is set the platform
 // isn't talking to k8s/ECS, so the reconciler + warm-pool ticks would only
 // produce errors (or, worse, fight a separately-running production worker).
 // Skip both. The SessionEvent subscriber still runs — it's what lets the
 // UI see harness output in local-dev.
 const localMode = env.LAP_LOCAL_SANDBOX_URL.length > 0;
-if (!localMode) {
-  setInterval(tick, intervalMs);
-  tick();
+
+async function boot(): Promise<void> {
+  const got = await acquireWorkerLock();
+  if (!got) {
+    console.error(
+      "worker: another process holds the advisory lock; exiting cleanly.",
+    );
+    process.exit(0);
+  }
+
+  if (!localMode) {
+    setInterval(tick, intervalMs);
+    void tick();
+  }
+  setInterval(sessionEventTick, SESSION_EVENT_SCAN_INTERVAL_MS);
+  void sessionEventTick();
+
+  setInterval(heartbeatTick, HEARTBEAT_INTERVAL_MS);
+  void heartbeatTick();
+
+  console.log(
+    localMode
+      ? `worker started in local mode (sandbox=${env.LAP_LOCAL_SANDBOX_URL}, ` +
+          `session_event_scan_interval_ms=${SESSION_EVENT_SCAN_INTERVAL_MS}, ` +
+          `heartbeat_ms=${HEARTBEAT_INTERVAL_MS}; reconcile + warm-pool ticks disabled)`
+      : `reconciler worker started (interval=${intervalMs}ms, ` +
+          `warm_pool_size=${env.WARM_POOL_SIZE}, ` +
+          `session_event_scan_interval_ms=${SESSION_EVENT_SCAN_INTERVAL_MS}, ` +
+          `heartbeat_ms=${HEARTBEAT_INTERVAL_MS})`,
+  );
 }
-setInterval(sessionEventTick, SESSION_EVENT_SCAN_INTERVAL_MS);
-sessionEventTick();
-console.log(
-  localMode
-    ? `worker started in local mode (sandbox=${env.LAP_LOCAL_SANDBOX_URL}, ` +
-        `session_event_scan_interval_ms=${SESSION_EVENT_SCAN_INTERVAL_MS}; ` +
-        `reconcile + warm-pool ticks disabled)`
-    : `reconciler worker started (interval=${intervalMs}ms, ` +
-        `warm_pool_size=${env.WARM_POOL_SIZE}, ` +
-        `session_event_scan_interval_ms=${SESSION_EVENT_SCAN_INTERVAL_MS})`,
-);
+
+void boot();
