@@ -229,6 +229,16 @@ async function runTurn(
     const stream = query({ prompt: userText, options });
 
     for await (const m of stream as AsyncIterable<SDKMessage>) {
+      // Native passthrough. The SDK message is the contract — anything
+      // subscribed to `/sessions/:id/stream` reads
+      // `@anthropic-ai/claude-agent-sdk` types directly and renders
+      // without translation.
+      emit(s, "claude_sdk_message", { message: m });
+      // We still build the in-memory `parts` array for the DB-backed
+      // `/messages` historical view. `handleSdkEvent` does that
+      // translation; live consumers should ignore everything on the bus
+      // except `claude_sdk_message` going forward — the legacy
+      // `message.part.*` envelopes remain only for backcompat.
       handleSdkEvent(s, m, parts, assistantMessageId, turnState, (e) => {
         if (e.error) lastError = e.error;
         if (e.cost !== undefined) totalCost = e.cost;
