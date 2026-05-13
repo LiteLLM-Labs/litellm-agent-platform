@@ -393,9 +393,12 @@ export interface ServerEnv {
   // Image pull policy for Sandbox pods. "Never" for local kind-loaded images,
   // "IfNotPresent" or "Always" for registry-backed images.
   K8S_IMAGE_PULL_POLICY: "Never" | "IfNotPresent" | "Always";
-  // The opencode harness image for the Sandbox podTemplate. K8s has no task
-  // definition; the image is supplied per-Sandbox at create time.
+  // Per-harness container images. K8S_HARNESS_IMAGE is the fallback default
+  // (used when a harness-specific var is absent). Set K8S_HARNESS_IMAGE_OPENCODE
+  // and K8S_HARNESS_IMAGE_CLAUDE_SDK to route each harness to its own ECR image.
   K8S_HARNESS_IMAGE: string;
+  K8S_HARNESS_IMAGE_OPENCODE: string;
+  K8S_HARNESS_IMAGE_CLAUDE_SDK: string;
   // Optional override for the kubeconfig cluster server URL. Use when the
   // active kubeconfig points at a host the running process can't reach
   // (e.g. kubeconfig has 127.0.0.1 but the web container needs to dial

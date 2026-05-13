@@ -13,6 +13,7 @@ import { prisma } from "@/server/db";
 import { env } from "@/server/env";
 import {
   CreateAgentBody,
+  HARNESS_CLAUDE_SDK,
   HARNESS_OPENCODE,
   KNOWN_HARNESSES,
   encryptEnvVars,
@@ -120,10 +121,16 @@ export const POST = wrap(async (req: Request) => {
         ...(body.env_vars ?? {}),
         ...(body.requirements ? { AGENT_REQUIREMENTS: body.requirements } : {}),
       }) as Prisma.InputJsonValue,
-      // Legacy column from the ECS era; on k8s we run the same harness
-      // image for every Sandbox so we just stash that here. Plan is to
-      // drop the column on the next schema bump.
-      task_definition_arn: env.K8S_HARNESS_IMAGE,
+      // Snapshot the harness image at agent-creation time so existing agents
+      // keep running the same image even after K8S_HARNESS_IMAGE* is updated.
+      // Per-harness vars (K8S_HARNESS_IMAGE_OPENCODE / K8S_HARNESS_IMAGE_CLAUDE_SDK)
+      // take priority; K8S_HARNESS_IMAGE is the fallback default for both.
+      task_definition_arn:
+        (harness_id === HARNESS_CLAUDE_SDK
+          ? env.K8S_HARNESS_IMAGE_CLAUDE_SDK
+          : harness_id === HARNESS_OPENCODE
+            ? env.K8S_HARNESS_IMAGE_OPENCODE
+            : "") || env.K8S_HARNESS_IMAGE,
       container_port: env.CONTAINER_PORT,
       created_by: identity.user_id,
     },
