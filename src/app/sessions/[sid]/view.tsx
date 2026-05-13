@@ -946,10 +946,9 @@ function UserPromptBlock({
 }) {
   return (
     <div
-      className={`bg-[#f9f9f9] border border-gray-100 rounded-xl p-4 text-[14px] text-gray-700 leading-relaxed whitespace-pre-wrap overflow-y-auto ${
+      className={`bg-[#f9f9f9] border border-gray-100 rounded-xl p-4 text-[14px] text-gray-700 leading-relaxed whitespace-pre-wrap ${
         emphasized ? "shadow-sm" : ""
       }`}
-      style={{ maxHeight: MESSAGE_MAX_HEIGHT }}
     >
       {content}
     </div>
@@ -971,10 +970,7 @@ function AssistantBlock({ msg }: { msg: LocalMessage }) {
   });
 
   return (
-    <div
-      className="flex flex-col gap-3 overflow-y-auto"
-      style={{ maxHeight: MESSAGE_MAX_HEIGHT }}
-    >
+    <div className="flex flex-col gap-3">
       {failed && msg.text ? (
         <div
           className="sessions-md text-[14px] leading-relaxed"

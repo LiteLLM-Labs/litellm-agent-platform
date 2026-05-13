@@ -17,7 +17,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Activity, X } from "lucide-react";
+import { Activity, X, Copy, Check } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { getStoredMasterKey } from "@/lib/api";
@@ -81,7 +81,25 @@ const TYPE_COLORS: Record<string, string> = {
 };
 
 function EventRow({ frame, hideHeartbeat }: { frame: InspectedFrame; hideHeartbeat: boolean }) {
+  // ALL hooks must be called before any conditional return — Rules of Hooks.
+  // If a hook moves below an early return, React sees a different hook count
+  // on the next render and throws "Rendered fewer hooks than expected".
   const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(
+    async (e: React.MouseEvent) => {
+      e.stopPropagation();
+      try {
+        await navigator.clipboard.writeText(JSON.stringify(frame.raw, null, 2));
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+      } catch {
+        /* clipboard blocked in older browsers / insecure contexts */
+      }
+    },
+    [frame.raw],
+  );
+
   const innerType =
     frame.raw.type === "harness_event" && frame.raw.event ? frame.raw.event.type : null;
   const visibleType = frame.raw.type;
@@ -89,10 +107,15 @@ function EventRow({ frame, hideHeartbeat }: { frame: InspectedFrame; hideHeartbe
     return null;
   }
   const color = TYPE_COLORS[innerType ?? visibleType] ?? "text-gray-700";
+  // question.asked stalls the agent loop until the user answers in the chat
+  // UI — flag it explicitly so it's not silent in the inspector.
+  const isQuestion = innerType === "question.asked" || visibleType === "question.asked";
   return (
     <div
       onClick={() => setOpen((v) => !v)}
-      className="border-b border-dashed border-gray-200 py-1.5 px-2 cursor-pointer hover:bg-gray-50 font-mono text-[11px]"
+      className={`group border-b border-dashed border-gray-200 py-1.5 px-2 cursor-pointer hover:bg-gray-50 font-mono text-[11px] ${
+        isQuestion ? "bg-amber-50/60 border-amber-200" : ""
+      }`}
     >
       <div className="flex items-baseline gap-2">
         <span className="text-gray-400 text-[10px] shrink-0">
@@ -102,7 +125,24 @@ function EventRow({ frame, hideHeartbeat }: { frame: InspectedFrame; hideHeartbe
           {visibleType}
           {innerType && <span className="font-normal text-gray-400"> → {innerType}</span>}
         </span>
+        {isQuestion && (
+          <span className="shrink-0 text-amber-700 text-[10px] font-semibold">
+            ⏸ blocks agent until answered in chat
+          </span>
+        )}
         {!open && <span className="text-gray-500 truncate">{summarize(frame.raw)}</span>}
+        <button
+          type="button"
+          onClick={handleCopy}
+          title="Copy JSON"
+          className="ml-auto shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-gray-700"
+        >
+          {copied ? (
+            <Check className="size-3 text-emerald-600" />
+          ) : (
+            <Copy className="size-3" />
+          )}
+        </button>
       </div>
       {open && (
         <pre className="mt-1 p-2 bg-gray-50 rounded text-[10.5px] text-gray-700 whitespace-pre-wrap break-all overflow-x-auto">
