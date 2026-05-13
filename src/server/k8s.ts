@@ -626,7 +626,11 @@ export async function waitRunningGetUrl(
   // agent-sandbox auto-creates a headless Service at <sandbox-name>.<namespace>.svc.cluster.local
   // Wait for Running only, then return DNS URL.
   if (env.IN_CLUSTER === "true") {
-    const containerPort = agent.container_port ?? 3000;
+    // Use CONTAINER_PORT env var (matches what buildContainerEnv injects as PORT
+    // into the Sandbox pod). Fall back to agent.container_port then 3000.
+    // env.CONTAINER_PORT is already a number (coerced in env.ts, default 4096).
+    // This matches what buildContainerEnv injects as PORT into the Sandbox pod.
+    const containerPort = agent.container_port ?? env.CONTAINER_PORT;
     while (Date.now() < deadline) {
       const { phase, reason, containerReason, exitCode } = await readPodPhase(task_arn);
       if (phase === "Failed") throw new Error(`pod ${task_arn} failed: ${reason ?? "?"}`);
