@@ -344,6 +344,24 @@ export interface HarnessMessage {
 }
 
 // ============================================================================
+// SessionEvent — re-exported from the harness-shared package
+// ============================================================================
+// The canonical definition lives in `harnesses/_shared/src/session-event.ts`
+// so it's shared with every harness implementation (each harness ships a
+// concrete `SessionEventTranslator` that emits this shape on its /event SSE).
+// Platform code consumes it without further translation.
+export type { SessionEvent } from "@lap/harness-shared/session-event";
+import type { SessionEvent } from "@lap/harness-shared/session-event";
+
+// Row shape returned by GET /sessions/{id}/events
+export interface ApiSessionEvent {
+  session_id: string;
+  seq: number;
+  event: SessionEvent;
+  ts: string; // ISO-8601
+}
+
+// ============================================================================
 // Module signatures — fan-out agents implement against these.
 // ============================================================================
 
@@ -378,6 +396,23 @@ export interface ServerEnv {
   PREINSTALLED_GITHUB_REPO: string;
   LITELLM_API_BASE: string;
   LITELLM_API_KEY: string;
+  /**
+   * Local sandbox mode. When set to a non-empty URL (e.g.
+   * `http://localhost:4096`), session creation skips k8s/ECS entirely and
+   * points every new session at this URL — a harness already running on the
+   * host. One harness multiplexes many sessions (the harness's `sessions`
+   * map is keyed by harness session id). The reconciler skips sessions with
+   * `task_arn='local'` so it doesn't try to stop a non-existent ECS task.
+   *
+   * Empty string (default) → normal k8s/ECS flow.
+   *
+   * Local workflow:
+   *   1. cd harnesses/claude-agent-sdk
+   *   2. PORT=4096 ANTHROPIC_API_KEY=sk-ant-… node --import tsx src/server.ts
+   *   3. Set LAP_LOCAL_SANDBOX_URL=http://localhost:4096 in the platform env
+   *   4. Every POST /sessions returns ready in <1s with no k8s involved.
+   */
+  LAP_LOCAL_SANDBOX_URL: string;
   /**
    * Base URL the in-sandbox harness uses to call back into this platform —
    * specifically the agent memory endpoints. Empty string means the memory
