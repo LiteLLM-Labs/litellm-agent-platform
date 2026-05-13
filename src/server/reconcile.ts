@@ -29,6 +29,7 @@ import {
   stopTask,
   waitHttpReady,
 } from "@/server/k8s";
+import { env } from "@/server/env";
 import {
   RECONCILE_NEW_TASK_GRACE_MS,
   SESSION_CREATING_TIMEOUT_MS,
@@ -416,23 +417,29 @@ async function recoverStuckCreating(): Promise<void> {
       continue;
     }
 
-    const nodePort = await readNodePort(row.task_arn).catch(() => null);
-    if (nodePort === null) {
-      if (hardFail) {
-        await markFailed(
-          row.session_id,
-          `watchdog: no NodePort after ${Math.round(ageMs / 1000)}s`,
-          row.task_arn,
-        );
-        failed++;
-      } else {
-        pending++;
+    let sandbox_url: string;
+    if (env.IN_CLUSTER === "true") {
+      // In-cluster: no NodePort Service created; route via headless DNS.
+      const containerPort = env.CONTAINER_PORT;
+      sandbox_url = `http://${row.task_arn}.${env.K8S_NAMESPACE}.svc.cluster.local:${containerPort}`;
+    } else {
+      const nodePort = await readNodePort(row.task_arn).catch(() => null);
+      if (nodePort === null) {
+        if (hardFail) {
+          await markFailed(
+            row.session_id,
+            `watchdog: no NodePort after ${Math.round(ageMs / 1000)}s`,
+            row.task_arn,
+          );
+          failed++;
+        } else {
+          pending++;
+        }
+        continue;
       }
-      continue;
+      const host = await resolveNodeHost();
+      sandbox_url = `http://${host}:${nodePort}`;
     }
-
-    const host = await resolveNodeHost();
-    const sandbox_url = `http://${host}:${nodePort}`;
 
     const probeOk = await waitHttpReady(sandbox_url, 5_000)
       .then(() => true)
