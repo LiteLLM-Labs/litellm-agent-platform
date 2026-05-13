@@ -1,11 +1,13 @@
-// Self-signed CA + per-host leaf cert issuance.
+// Persistent cluster-level CA + per-host leaf cert issuance.
 //
-// At boot we generate a fresh CA per pod lifetime, write the cert (public) to
-// /lap-shared/ca.crt so the harness container can trust it. The private key
-// stays in this process's memory only.
+// The CA cert is baked into the harness image at build time
+// (harnesses/lap-vault/ca.crt -> /usr/local/share/ca-certificates) so every
+// binary in the sandbox trusts it on boot — including the bundled `claude`
+// native binary which ignores NODE_EXTRA_CA_CERTS.
 //
-// For each new outbound host the agent calls, we mint a leaf cert signed by
-// our CA, cached in-memory keyed by host.
+// The matching CA private key lives in the K8s secret `lap-vault-ca`,
+// mounted at /etc/lap-vault-ca/tls.key (read-only) on this container only.
+// The harness container never sees the key.
 
 import { promises as fs } from "node:fs";
 import { Crypto } from "@peculiar/webcrypto";
@@ -45,29 +47,50 @@ function toPem(der: Buffer, label: string): string {
   return `-----BEGIN ${label}-----\n${b64}\n-----END ${label}-----\n`;
 }
 
-export async function bootstrapCa(sharedDir: string): Promise<CA> {
-  const keys = await crypto.subtle.generateKey(ALG, true, ["sign", "verify"]);
-  const ca = await x509.X509CertificateGenerator.createSelfSigned({
-    serialNumber: "01",
-    name: "CN=lap-vault, O=LiteLLM",
-    notBefore: new Date(Date.now() - 60_000),
-    notAfter: new Date(Date.now() + 7 * 24 * 3600_000), // 7 days
-    keys,
-    signingAlgorithm: ALG,
-    extensions: [
-      new x509.BasicConstraintsExtension(true, 1, true),
-      new x509.KeyUsagesExtension(
-        x509.KeyUsageFlags.keyCertSign | x509.KeyUsageFlags.digitalSignature,
-        true,
-      ),
-    ],
-  });
+function pemToDer(pem: string, label: string): ArrayBuffer {
+  const re = new RegExp(`-----BEGIN ${label}-----([^-]*)-----END ${label}-----`);
+  const m = pem.match(re);
+  if (!m) throw new Error(`PEM missing ${label} block`);
+  const b64 = m[1].replace(/\s+/g, "");
+  const bin = Buffer.from(b64, "base64");
+  return bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength);
+}
 
-  const certPem = ca.toString("pem");
+export async function bootstrapCa(sharedDir: string): Promise<CA> {
+  // Load the CA from the secret-mounted directory. The cert is also baked
+  // into the harness image, so the agent already trusts whatever leaves
+  // we sign with this key.
+  const caDir = process.env.LAP_VAULT_CA_DIR ?? "/etc/lap-vault-ca";
+  const [certPem, keyPem] = await Promise.all([
+    fs.readFile(path.join(caDir, "tls.crt"), "utf8"),
+    fs.readFile(path.join(caDir, "tls.key"), "utf8"),
+  ]);
+
+  // peculiar/x509 expects the private key as a CryptoKey. PEM may carry
+  // either "PRIVATE KEY" (PKCS8) or "RSA PRIVATE KEY" (PKCS1) — openssl
+  // emits PKCS8 by default with -nodes, so we import PKCS8 directly.
+  const keyDer = pemToDer(keyPem, "PRIVATE KEY");
+  const privateKey = await crypto.subtle.importKey(
+    "pkcs8",
+    keyDer,
+    ALG,
+    true,
+    ["sign"],
+  );
+
+  // We don't separately need the publicKey beyond what leaf issuance
+  // already derives from the cert, but the CA type carries it for parity
+  // with the previous shape. Re-derive it from the cert.
+  const caCert = new x509.X509Certificate(certPem);
+  const publicKey = await caCert.publicKey.export(ALG, ["verify"], crypto);
+
+  // Mirror the cert into /lap-shared for any client that still wants to
+  // pick it up at runtime (defensive — image trust store is the load-
+  // bearing path now).
   await fs.mkdir(sharedDir, { recursive: true });
   await fs.writeFile(path.join(sharedDir, "ca.crt"), certPem, { mode: 0o644 });
 
-  return { certPem, privateKey: keys.privateKey, publicKey: keys.publicKey };
+  return { certPem, privateKey, publicKey };
 }
 
 export async function issueLeaf(ca: CA, host: string): Promise<Leaf> {
@@ -78,6 +101,12 @@ export async function issueLeaf(ca: CA, host: string): Promise<Leaf> {
 
   // Parse the CA cert so we can use it as issuer.
   const caCert = new x509.X509Certificate(ca.certPem);
+
+  // gnutls (Debian's git is libcurl-gnutls) strictly requires AuthorityKey-
+  // Identifier on leaves to chain back to the CA's SubjectKeyIdentifier.
+  // OpenSSL tolerates a missing AKI but gnutls rejects. Add both.
+  const ski = await x509.SubjectKeyIdentifierExtension.create(keys.publicKey);
+  const aki = await x509.AuthorityKeyIdentifierExtension.create(caCert, false);
 
   const leaf = await x509.X509CertificateGenerator.create({
     serialNumber: Math.floor(Math.random() * 1e10).toString(),
@@ -92,6 +121,8 @@ export async function issueLeaf(ca: CA, host: string): Promise<Leaf> {
       new x509.BasicConstraintsExtension(false, 0, true),
       new x509.ExtendedKeyUsageExtension(["1.3.6.1.5.5.7.3.1"], true),
       new x509.SubjectAlternativeNameExtension([{ type: "dns", value: host }]),
+      ski,
+      aki,
     ],
   });
 
