@@ -6,28 +6,28 @@
 # clone-then-listen flow, same port.
 set -euo pipefail
 
-# lap-vault sidecar handoff. When enabled, the sidecar writes a stub-env
+# vault sidecar handoff. When enabled, the sidecar writes a stub-env
 # file into the shared volume at /lap-shared. We wait for it and source
 # the stubs into our env. The CA cert is baked into the image's system
 # trust store at build time, so git/curl/python/node already trust the
 # sidecar's leaf certs alongside the public web — no per-process CA
 # overrides needed.
-if [ "${LAP_VAULT_ENABLED:-}" = "true" ]; then
+if [ "${VAULT_ENABLED:-}" = "true" ]; then
   for _ in $(seq 1 30); do
     if [ -s /lap-shared/env ]; then break; fi
     sleep 0.5
   done
   if [ ! -s /lap-shared/env ]; then
-    echo "[entrypoint] lap-vault not ready after 15s — proceeding without stubs" >&2
+    echo "[entrypoint] vault not ready after 15s — proceeding without stubs" >&2
   else
     set -a
     . /lap-shared/env
     set +a
     # Debian's git is linked against libcurl-gnutls, which doesn't always
     # auto-discover the system trust store. Pin it to the bundle file
-    # (which now contains the lap-vault CA — baked in at image build time).
+    # (which now contains the vault CA — baked in at image build time).
     export GIT_SSL_CAINFO=/etc/ssl/certs/ca-certificates.crt
-    echo "[entrypoint] lap-vault stubs sourced ($(wc -l </lap-shared/env) keys)"
+    echo "[entrypoint] vault stubs sourced ($(wc -l </lap-shared/env) keys)"
   fi
 fi
 
