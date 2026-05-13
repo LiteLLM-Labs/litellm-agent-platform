@@ -475,17 +475,12 @@ export default function SessionThreadView() {
         // renders distinctly. After `done` we refreshThread() to pull
         // canonical state (tool inputs/outputs that the bus deltas don't
         // reconstruct on their own).
-        type StreamPart = { id: string; type: "text" | "thinking"; text: string };
-        const partsState: Map<string, StreamPart> = new Map();
+        // partsState stores ANY part type the harness produces (text /
+        // thinking / reasoning / tool). The order tracks insertion, which
+        // matches the order parts were first observed on the bus.
+        const partsState: Map<string, HarnessMessagePart> = new Map();
         const renderStreaming = () => {
-          // Stable order: insertion order matches the order parts were first
-          // seen on the bus, which matches the order the model produced
-          // them (thinking before text, etc).
-          const partsArray = Array.from(partsState.values()).map((p) => ({
-            id: p.id,
-            type: p.type,
-            text: p.text,
-          })) as HarnessMessagePart[];
+          const partsArray = Array.from(partsState.values());
           setMessages((prev) =>
             prev.map((m) =>
               m.id === assistantId
@@ -499,15 +494,15 @@ export default function SessionThreadView() {
           delta: string,
           field: "text" | "thinking",
         ) => {
-          const cur = partsState.get(partID) ?? {
+          const cur = (partsState.get(partID) ?? {
             id: partID,
             type: field,
             text: "",
-          };
-          cur.text += delta;
-          // If a partID flips field mid-stream (shouldn't happen, but be
-          // defensive), trust the latest field type.
-          cur.type = field;
+          }) as HarnessMessagePart;
+          (cur as { text?: string }).text =
+            ((cur as { text?: string }).text || "") + delta;
+          // If a partID flips field mid-stream, trust the latest field type.
+          (cur as { type?: string }).type = field;
           partsState.set(partID, cur);
         };
         await sendMessageStream(
@@ -526,22 +521,16 @@ export default function SessionThreadView() {
               ingestDelta(partID, delta, field);
               renderStreaming();
             } else if (ev.type === "message.part.updated") {
-              // Authoritative replacement when we missed earlier deltas
-              // (or when the model bundles a block without per-token deltas,
-              // which is what Haiku does for thinking today).
-              const part = props.part as
-                | { id?: string; type?: string; text?: string }
-                | undefined;
-              if (
-                part?.id &&
-                (part.type === "text" || part.type === "thinking") &&
-                typeof part.text === "string"
-              ) {
-                partsState.set(part.id, {
-                  id: part.id,
-                  type: part.type,
-                  text: part.text,
-                });
+              // Authoritative replacement. The harness sends the FULL part
+              // object — text deltas resolved, tool inputs/outputs filled.
+              // Store it verbatim so tool blocks render in the streaming
+              // view too (not just after refreshThread).
+              const part = props.part as HarnessMessagePart | undefined;
+              if (part && typeof (part as { id?: string }).id === "string") {
+                partsState.set(
+                  (part as { id: string }).id,
+                  part,
+                );
                 renderStreaming();
               }
             }
