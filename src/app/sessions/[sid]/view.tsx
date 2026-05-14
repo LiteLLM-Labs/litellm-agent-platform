@@ -45,7 +45,6 @@ import {
 } from "@/lib/api";
 import { AgentAvatar } from "@/components/agent-avatar";
 import { InspectorPanel } from "@/components/inspector-dialog";
-import { InterceptionsPanel } from "./interceptions-panel";
 import {
   SdkStreamPanel,
   useSdkMessageStream,
@@ -895,15 +894,12 @@ function MainPanel({
           ))}
 
           {/*
-            Vault interceptions panel — collapsed by default. Mirrors the
-            sandbox-stdout panel: only polls when expanded, so quiet
-            sessions don't pay for the round-trip every 3s. Lives at the
-            bottom of the thread so it doesn't get in the way of the
-            conversation but is one click away when debugging tool calls.
+            Vault interceptions live on the Inspector's Vault tab — see
+            src/components/inspector-dialog.tsx. The chat thread used to
+            host an inline collapsed panel here; we moved it next to the
+            "Inspect" entrypoint so debugging tool calls is one click
+            away without taking up scroll real estate.
           */}
-          {session && (
-            <InterceptionsPanel sessionId={session.id} />
-          )}
 
           <div ref={messagesEndRef} />
           <div className="h-4" />
