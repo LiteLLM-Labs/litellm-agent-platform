@@ -52,6 +52,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && mkdir -p /work \
     && chown sandbox:sandbox /work
 
+# vault CA — baked into every trust path the sandbox uses, so every binary
+# (git/curl/python/node/the bundled `claude` SEA) accepts vault's MITM cert
+# without per-process env-var configuration. `update-ca-certificates`
+# handles the hash-symlinks; an explicit append covers the concatenated
+# bundle file (where Debian's `update-ca-certificates` is unreliable for
+# locally-added CAs); `openssl rehash` ensures the symlink dir is consistent.
+COPY vault/ca.crt /etc/ssl/certs/vault.crt
+RUN ln -sf /etc/ssl/certs/vault.crt /usr/local/share/ca-certificates/vault.crt \
+    && update-ca-certificates \
+    && cat /etc/ssl/certs/vault.crt >> /etc/ssl/certs/ca-certificates.crt \
+    && openssl rehash /etc/ssl/certs/
+
 # gitleaks — secret scanner used by security agent templates.
 # Uses Go-style arch names (x64/arm64), not dpkg names (amd64/arm64).
 ARG GITLEAKS_VERSION=8.18.4
