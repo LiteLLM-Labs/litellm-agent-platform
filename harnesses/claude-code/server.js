@@ -10,13 +10,9 @@
 //   POC_CMD=bash docker run …
 
 import http from "node:http";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { WebSocketServer } from "ws";
 import pty from "node-pty";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT ?? 4096);
 const CMD = process.env.POC_CMD ?? "claude";
 const REPO_DIR = process.env.REPO_DIR ?? process.cwd();
@@ -36,30 +32,74 @@ if (process.env.LITELLM_API_KEY) {
   process.env.ANTHROPIC_API_KEY = process.env.LITELLM_API_KEY;
 }
 
-const MIME = {
-  ".html": "text/html; charset=utf-8",
-  ".js":   "application/javascript; charset=utf-8",
-  ".css":  "text/css; charset=utf-8",
-  ".svg":  "image/svg+xml",
-};
+// Read the JSON body of an incoming request (server-side helper).
+function readJson(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      if (!raw) return resolve({});
+      try { resolve(JSON.parse(raw)); } catch (e) { reject(e); }
+    });
+    req.on("error", reject);
+  });
+}
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
   if (req.url === "/healthz") {
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ok: true, cmd: CMD, repo: REPO_DIR }));
     return;
   }
-  // Serve the static page on /
-  const url = req.url === "/" ? "/index.html" : req.url;
-  const file = path.join(__dirname, "public", url.replace(/\?.*$/, ""));
-  if (!file.startsWith(path.join(__dirname, "public"))) {
-    res.writeHead(403); res.end("forbidden"); return;
+
+  // Platform-compat stubs: the LAP platform expects every harness to expose
+  // the same JSON contract (POST /session, GET /session/:id/message, etc.).
+  // TUI harnesses don't actually use those — the session is the WS /tty
+  // connection — but the platform's bootstrap calls POST /session before
+  // marking the session ready. Return a constant id so it succeeds. The
+  // other endpoints are stubs in case anything probes them.
+  if (req.method === "POST" && req.url === "/session") {
+    await readJson(req).catch(() => null);
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ id: "tty" }));
+    return;
   }
-  fs.readFile(file, (err, data) => {
-    if (err) { res.writeHead(404); res.end("not found"); return; }
-    res.writeHead(200, { "content-type": MIME[path.extname(file)] ?? "application/octet-stream" });
-    res.end(data);
-  });
+  if (/^\/session\/[^/]+\/message$/.test(req.url ?? "")) {
+    if (req.method === "GET") {
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end("[]");
+      return;
+    }
+    if (req.method === "POST") {
+      await readJson(req).catch(() => null);
+      // TUI mode: messages don't flow through the JSON API. Tell callers
+      // to use the WS /tty endpoint instead.
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ text: "this is a TUI harness — connect to /tty" }));
+      return;
+    }
+  }
+  if (req.method === "POST" && /^\/session\/[^/]+\/abort$/.test(req.url ?? "")) {
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end("{}");
+    return;
+  }
+  // SSE bus: keep open with periodic comments so the platform's stream-tail
+  // doesn't immediately close.
+  if (req.method === "GET" && req.url?.startsWith("/event")) {
+    res.writeHead(200, {
+      "content-type": "text/event-stream",
+      "cache-control": "no-cache",
+      connection: "keep-alive",
+    });
+    const ka = setInterval(() => res.write(":keepalive\n\n"), 15000);
+    req.on("close", () => clearInterval(ka));
+    return;
+  }
+
+  res.writeHead(404, { "content-type": "application/json" });
+  res.end(JSON.stringify({ error: "not found" }));
 });
 
 const wss = new WebSocketServer({ server, path: "/tty" });
