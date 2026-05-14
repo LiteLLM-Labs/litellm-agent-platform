@@ -1,10 +1,12 @@
 "use client";
 
 // Renders an xterm.js terminal attached to a TUI harness (claude-code / codex)
-// via a single WebSocket. The harness pod exposes /tty; for the local POC the
-// bridge runs in a separate container at NEXT_PUBLIC_TUI_BRIDGE_URL (default
-// ws://localhost:4098/tty). In production this will resolve to the per-session
-// pod URL the platform's session-create flow returns.
+// via a single WebSocket. The harness pod exposes /tty on the same port as the
+// chat-mode harnesses' HTTP API, so we derive the WS URL directly from the
+// session row's sandbox_url (http://<host>:<nodePort> → ws://<host>:<nodePort>/tty).
+//
+// Falls back to NEXT_PUBLIC_TUI_BRIDGE_URL for local dev against a standalone
+// harness container (e.g. `docker run -p 4098:4096 claude-tty-poc`).
 //
 // Wire protocol:
 //   browser → server : raw text (keystrokes)  OR  JSON {"type":"resize",cols,rows}
@@ -16,12 +18,19 @@ import "@xterm/xterm/css/xterm.css";
 interface Props {
   sessionId: string;
   harnessId: string;
-  bridgeUrl?: string;
+  // From SessionRow.sandbox_url — populated by the reconciler once the pod is
+  // Running and the NodePort is bound. Null while the sandbox is still creating.
+  sandboxUrl: string | null;
+}
+
+// http(s)://host:port  →  ws(s)://host:port/tty
+function deriveTtyUrl(sandboxUrl: string): string {
+  return sandboxUrl.replace(/^http(s?):\/\//i, "ws$1://").replace(/\/+$/, "") + "/tty";
 }
 
 type ConnState = "connecting" | "connected" | "closed" | "error";
 
-export function TerminalPanel({ sessionId, harnessId, bridgeUrl }: Props) {
+export function TerminalPanel({ sessionId, harnessId, sandboxUrl }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [state, setState] = useState<ConnState>("connecting");
@@ -62,10 +71,11 @@ export function TerminalPanel({ sessionId, harnessId, bridgeUrl }: Props) {
       // fit needs a real width/height. requestAnimationFrame waits one frame.
       requestAnimationFrame(() => fit?.fit());
 
-      const url =
-        bridgeUrl ??
-        process.env.NEXT_PUBLIC_TUI_BRIDGE_URL ??
-        "ws://localhost:4098/tty";
+      // Prefer the live sandbox URL once the pod is ready; otherwise fall back
+      // to the local-dev override (a standalone harness container).
+      const url = sandboxUrl
+        ? deriveTtyUrl(sandboxUrl)
+        : process.env.NEXT_PUBLIC_TUI_BRIDGE_URL ?? "ws://localhost:4098/tty";
 
       ws = new WebSocket(url);
       ws.binaryType = "arraybuffer";
@@ -130,7 +140,7 @@ export function TerminalPanel({ sessionId, harnessId, bridgeUrl }: Props) {
         term?.dispose();
       } catch {}
     };
-  }, [sessionId, harnessId, bridgeUrl]);
+  }, [sessionId, harnessId, sandboxUrl]);
 
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-[#0b0c10]">
