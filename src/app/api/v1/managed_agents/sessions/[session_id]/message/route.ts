@@ -28,6 +28,7 @@ import { assertAuth } from "@/server/auth";
 import { prisma } from "@/server/db";
 import {
   expandMessage,
+  HarnessHttpError,
   harnessListMessages,
   harnessSendMessage,
 } from "@/server/harness";
@@ -82,6 +83,16 @@ function isHardConnectFailure(err: unknown): boolean {
     if (typeof c === "string" && HARD_CONNECT_CODES.has(c)) return true;
   }
   return false;
+}
+
+function isDeadSessionError(err: unknown): boolean {
+  if (!(err instanceof HarnessHttpError)) return false;
+  if (err.status !== 404) return false;
+  try {
+    return (JSON.parse(err.body) as { error?: string }).error === "not found";
+  } catch {
+    return false;
+  }
 }
 
 async function persistHistorySnapshot(opts: {
@@ -143,7 +154,7 @@ export async function POST(req: Request, ctx: RouteContext) {
       // Network failure or 5xx from the sandbox. Re-throw as a 502 so the
       // caller can distinguish "harness unreachable" from a generic 500.
       console.error("harness send_message failed", err);
-      if (isHardConnectFailure(err)) {
+      if (isHardConnectFailure(err) || isDeadSessionError(err)) {
         // Drop the cache entry up front so concurrent in-flight requests
         // don't keep dialing a dead pod.
         invalidateSession(session_id);

@@ -351,12 +351,20 @@ interface SandboxVolume {
   emptyDir?: { medium?: string };
   secret?: { secretName: string };
 }
+interface TopologySpreadConstraint {
+  maxSkew: number;
+  topologyKey: string;
+  whenUnsatisfiable: "DoNotSchedule" | "ScheduleAnyway";
+  labelSelector?: { matchLabels?: Record<string, string> };
+}
+
 interface SandboxSpec {
   podTemplate: {
     metadata?: { labels?: Record<string, string> };
     spec: {
       restartPolicy: string;
       priorityClassName?: string;
+      topologySpreadConstraints?: TopologySpreadConstraint[];
       containers: SandboxContainer[];
       volumes?: SandboxVolume[];
     };
@@ -392,10 +400,22 @@ export async function runTask(
         },
         spec: {
           restartPolicy: "Never",
-          // Active session pods run at higher priority than warm pool pods so
-          // the scheduler preempts warm pods to make room under memory pressure.
-          // Warm pool pods are stamped with sandbox-warm in warmPool.ts.
           priorityClassName: opts.session_id ? "sandbox-active" : "sandbox-warm",
+          // Spread pods for the same agent across nodes so no single node
+          // exhausts its CNI IP pool. ScheduleAnyway (not DoNotSchedule) so
+          // scheduling is never hard-blocked when nodes are imbalanced — but
+          // the scheduler scores node choices to prefer spread, and the signal
+          // also makes the cluster autoscaler aware of topology pressure.
+          topologySpreadConstraints: [
+            {
+              maxSkew: 2,
+              topologyKey: "kubernetes.io/hostname",
+              whenUnsatisfiable: "ScheduleAnyway",
+              labelSelector: {
+                matchLabels: { "litellm-agent-id": agent.agent_id },
+              },
+            },
+          ],
           containers: [
             {
               name: CONTAINER_NAME,
@@ -634,6 +654,30 @@ export async function readPodPhase(
 }
 
 // ---------------------------------------------------------------------------
+// CNI exhaustion detection
+//
+// AWS CNI reports IP exhaustion as a kubelet Event (reason=FailedCreatePodSandBox),
+// not as a pod phase change. The pod stays Pending with empty containerStatuses,
+// so readPodPhase() returns phase="Pending" indefinitely. Polling Events lets us
+// detect this case early and fail fast rather than waiting for HARD_FAIL_AFTER_MS.
+// ---------------------------------------------------------------------------
+
+export async function hasCniExhaustionEvent(podName: string): Promise<boolean> {
+  try {
+    const res = await coreApi().listNamespacedEvent({
+      namespace: env.K8S_NAMESPACE,
+      fieldSelector: `involvedObject.name=${podName},reason=FailedCreatePodSandBox`,
+    });
+    const list =
+      (res as unknown as { body?: k8s.CoreV1EventList }).body ??
+      (res as unknown as k8s.CoreV1EventList);
+    return (list.items?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Node-host discovery
 //
 // The sandbox URL has the shape `http://<host>:<nodePort>`. We can't pin
@@ -718,6 +762,9 @@ export async function waitRunningGetUrl(
       if (phase === "Running") {
         return inClusterSandboxUrl(task_arn, containerPort);
       }
+      if (phase !== "Failed" && await hasCniExhaustionEvent(task_arn)) {
+        throw new Error(`pod ${task_arn} CNI IP exhaustion: node has no available IPs (FailedCreatePodSandBox)`);
+      }
       lastReason = `phase=${phase ?? "?"} (in-cluster)`;
       await sleep(POLL_RUNNING_INTERVAL_MS);
     }
@@ -739,6 +786,9 @@ export async function waitRunningGetUrl(
     if (phase === "Running" && nodePort !== null) {
       const host = await resolveNodeHost();
       return `http://${host}:${nodePort}`;
+    }
+    if (phase !== "Failed" && await hasCniExhaustionEvent(task_arn)) {
+      throw new Error(`pod ${task_arn} CNI IP exhaustion: node has no available IPs (FailedCreatePodSandBox)`);
     }
     lastReason = `phase=${phase ?? "?"} nodePort=${nodePort ?? "?"}`;
     await sleep(POLL_RUNNING_INTERVAL_MS);

@@ -22,6 +22,20 @@ import type {
 const DEFAULT_CREATE_TIMEOUT_MS = 60_000;
 const DEFAULT_MESSAGE_TIMEOUT_MS = 600_000;
 
+export class HarnessHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly statusText: string,
+    public readonly body: string,
+    url: string,
+    method: string,
+  ) {
+    super(
+      `harness request failed: ${method} ${url} -> ${status} ${statusText}: ${body}`,
+    );
+  }
+}
+
 export function expandMessage(
   text?: string,
   parts?: HarnessMessagePart[],
@@ -44,9 +58,7 @@ async function postJson(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `harness request failed: POST ${url} -> ${res.status} ${res.statusText}: ${text}`,
-    );
+    throw new HarnessHttpError(res.status, res.statusText, text, url, "POST");
   }
   return res.json();
 }
@@ -105,9 +117,7 @@ export async function harnessListMessages(opts: {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `harness request failed: GET ${url} -> ${res.status} ${res.statusText}: ${text}`,
-    );
+    throw new HarnessHttpError(res.status, res.statusText, text, url, "GET");
   }
   const data = await res.json();
   if (!Array.isArray(data)) {
@@ -191,9 +201,7 @@ export async function harnessPromptAsync(
   // (200–299), so a single `!res.ok` guard handles the error case.
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `harness request failed: POST ${url} -> ${res.status} ${res.statusText}: ${text}`,
-    );
+    throw new HarnessHttpError(res.status, res.statusText, text, url, "POST");
   }
 }
 
@@ -222,9 +230,7 @@ export async function harnessOpenEventStream(opts: {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `harness request failed: GET ${url} -> ${res.status} ${res.statusText}: ${text}`,
-    );
+    throw new HarnessHttpError(res.status, res.statusText, text, url, "GET");
   }
   if (!res.body) {
     throw new Error(`harness ${url} returned no body`);
