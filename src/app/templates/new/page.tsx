@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -26,12 +26,54 @@ function generateId(): string {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
+function TagInput({
+  id, value, onChange, placeholder, disabled,
+}: {
+  id: string; value: string[]; onChange: (v: string[]) => void;
+  placeholder?: string; disabled?: boolean;
+}) {
+  const [draft, setDraft] = useState("");
+  function commit() {
+    const t = draft.trim();
+    if (!t || value.includes(t)) { setDraft(""); return; }
+    onChange([...value, t]); setDraft("");
+  }
+  function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" || e.key === ",") { e.preventDefault(); commit(); }
+    if (e.key === "Backspace" && draft === "" && value.length > 0) onChange(value.slice(0, -1));
+  }
+  return (
+    <div className="flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-input bg-transparent px-3 py-1.5 shadow-sm focus-within:ring-1 focus-within:ring-ring">
+      {value.map((v) => (
+        <span key={v} className="inline-flex items-center gap-1 rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          {v}
+          {!disabled && (
+            <button type="button" aria-label={`Remove ${v}`} onClick={() => onChange(value.filter((x) => x !== v))} className="text-muted-foreground hover:text-foreground focus-visible:outline-none">
+              <X className="size-2.5" aria-hidden />
+            </button>
+          )}
+        </span>
+      ))}
+      <input
+        id={id} type="text" value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={onKeyDown} onBlur={commit}
+        placeholder={value.length === 0 ? placeholder : ""}
+        disabled={disabled}
+        className="min-w-[140px] flex-1 bg-transparent font-mono text-[12px] outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed"
+      />
+    </div>
+  );
+}
+
 export default function NewTemplatePage() {
   const router = useRouter();
 
   const [name, setName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [envVars, setEnvVars] = useState<[string, string][]>([["", ""]]);
+  const [allowOut, setAllowOut] = useState<string[]>([]);
+  const [denyOut, setDenyOut] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -62,6 +104,8 @@ export default function NewTemplatePage() {
       model: "",
       repo_url: repoUrl.trim() || undefined,
       env_vars: envVarsRecord,
+      allow_out: allowOut.length > 0 ? allowOut : undefined,
+      deny_out: denyOut.length > 0 ? denyOut : undefined,
       prompt: "",
       skill_name: "",
       skill: "",
@@ -78,7 +122,7 @@ export default function NewTemplatePage() {
     <div className="mx-auto max-w-2xl px-6 py-8">
       <div className="mb-6 border-b pb-4">
         <h1 className="text-[22px] font-semibold tracking-tight text-foreground">New Template</h1>
-        <p className="mt-0.5 text-[13px] text-muted-foreground">Sandbox config — repo and environment variables.</p>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">Sandbox config — repo, env vars, and network egress.</p>
       </div>
 
       {error && (
@@ -105,30 +149,10 @@ export default function NewTemplatePage() {
             <ul className="divide-y">
               {envVars.map(([k, v], i) => (
                 <li key={i} className="flex items-center gap-2 px-3 py-2">
-                  <Input
-                    value={k}
-                    onChange={(e) => setKey(i, e.target.value)}
-                    placeholder="KEY"
-                    disabled={submitting}
-                    className="h-7 font-mono text-xs uppercase"
-                    aria-label={`Key ${i + 1}`}
-                  />
+                  <Input value={k} onChange={(e) => setKey(i, e.target.value)} placeholder="KEY" disabled={submitting} className="h-7 font-mono text-xs uppercase" aria-label={`Key ${i + 1}`} />
                   <span className="shrink-0 text-[11px] text-muted-foreground">=</span>
-                  <Input
-                    value={v}
-                    onChange={(e) => setVal(i, e.target.value)}
-                    placeholder="value"
-                    disabled={submitting}
-                    className="h-7 font-mono text-xs"
-                    aria-label={`Value ${i + 1}`}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => removeRow(i)}
-                    disabled={submitting}
-                    aria-label="Remove row"
-                    className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive disabled:opacity-40"
-                  >
+                  <Input value={v} onChange={(e) => setVal(i, e.target.value)} placeholder="value" disabled={submitting} className="h-7 font-mono text-xs" aria-label={`Value ${i + 1}`} />
+                  <button type="button" onClick={() => removeRow(i)} disabled={submitting} aria-label="Remove row" className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive disabled:opacity-40">
                     <Trash2 className="size-3.5" aria-hidden />
                   </button>
                 </li>
@@ -139,6 +163,31 @@ export default function NewTemplatePage() {
                 <Plus className="size-3" aria-hidden />
                 Add variable
               </button>
+            </div>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <div>
+            <Label>Network Egress</Label>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Domains, wildcards (<span className="font-mono">*.example.com</span>), IPs, CIDRs for allow; IPs/CIDRs only for deny. Allow takes precedence.
+            </p>
+          </div>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <label htmlFor="allow-out" className="flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                <span className="rounded-sm bg-emerald-100 px-1 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider dark:bg-emerald-900">Allow</span>
+                Outbound
+              </label>
+              <TagInput id="allow-out" value={allowOut} onChange={setAllowOut} placeholder="github.com, *.amazonaws.com, 8.8.8.8/32…" disabled={submitting} />
+            </div>
+            <div className="space-y-1.5">
+              <label htmlFor="deny-out" className="flex items-center gap-1.5 text-[11px] font-medium text-red-700 dark:text-red-400">
+                <span className="rounded-sm bg-red-100 px-1 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-wider dark:bg-red-900">Deny</span>
+                Outbound (IPs/CIDRs only)
+              </label>
+              <TagInput id="deny-out" value={denyOut} onChange={setDenyOut} placeholder="10.0.0.0/8, 192.168.0.0/16…" disabled={submitting} />
             </div>
           </div>
         </div>

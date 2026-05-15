@@ -118,6 +118,8 @@ export const POST = wrap(async (req: Request) => {
       branch: body.branch ?? "main",
       pfp_url: body.pfp_url ?? null,
       mcp_servers: body.mcp_servers as Prisma.InputJsonValue,
+      allow_out: body.allow_out as Prisma.InputJsonValue,
+      deny_out: body.deny_out as Prisma.InputJsonValue,
       env_vars: encryptEnvVars({
         ...(body.env_vars ?? {}),
         ...(body.requirements ? { AGENT_REQUIREMENTS: body.requirements } : {}),

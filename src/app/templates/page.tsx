@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2 } from "lucide-react";
+import { Globe, Plus, Trash2 } from "lucide-react";
 
 import { buttonVariants } from "@/components/ui/button";
 import { SANDBOX_TEMPLATES_STORAGE_KEY } from "@/lib/constants";
@@ -12,6 +12,8 @@ export interface LocalTemplate {
   name: string;
   repo_url?: string;
   env_vars?: Record<string, string>;
+  allow_out?: string[];
+  deny_out?: string[];
   // retained for AgentTemplate compat when passed to agents/new
   description: string;
   icon: string;
@@ -40,6 +42,8 @@ function saveLocalTemplates(ts: LocalTemplate[]): void {
 
 function TemplateCard({ template, onDelete }: { template: LocalTemplate; onDelete?: () => void }) {
   const envKeys = Object.keys(template.env_vars ?? {});
+  const allowOut = template.allow_out ?? [];
+  const denyOut = template.deny_out ?? [];
 
   return (
     <div className="flex flex-col gap-3 rounded-lg border bg-card p-4">
@@ -69,6 +73,35 @@ function TemplateCard({ template, onDelete }: { template: LocalTemplate; onDelet
               {k}
             </span>
           ))}
+        </div>
+      )}
+
+      {(allowOut.length > 0 || denyOut.length > 0) && (
+        <div className="space-y-1.5 rounded-md border border-border bg-muted/30 px-2.5 py-2">
+          <p className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            <Globe className="size-2.5" aria-hidden />
+            Network Egress
+          </p>
+          {allowOut.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[9px] font-medium uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Allow</p>
+              <div className="flex flex-wrap gap-1">
+                {allowOut.map((r) => (
+                  <span key={r} className="rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">{r}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {denyOut.length > 0 && (
+            <div className="space-y-1">
+              <p className="text-[9px] font-medium uppercase tracking-wider text-red-600 dark:text-red-400">Deny</p>
+              <div className="flex flex-wrap gap-1">
+                {denyOut.map((r) => (
+                  <span key={r} className="rounded border border-red-200 bg-red-50 px-1.5 py-0.5 font-mono text-[10px] text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">{r}</span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

@@ -158,6 +158,8 @@ export interface AgentRow {
   pfp_url?: string | null;
   mcp_servers?: string[];
   env_vars?: Record<string, string>;
+  allow_out?: string[];
+  deny_out?: string[];
   /**
    * IDs of skills currently attached to this agent, in attach order.
    * Parsed server-side from `<!-- skill:<id> -->` markers in `prompt`.
@@ -420,6 +422,8 @@ export interface CreateAgentRequest {
   mcp_servers?: string[];
   mcp_allowed_tools?: McpAllowedTools[];
   env_vars?: Record<string, string>;
+  allow_out?: string[];
+  deny_out?: string[];
 }
 
 export interface UpdateAgentRequest {

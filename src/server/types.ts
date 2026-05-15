@@ -100,6 +100,8 @@ export const CreateAgentBody = z.object({
   branch: z.string().optional(),
   pfp_url: z.string().optional(),
   mcp_servers: z.array(z.string()).default([]),
+  allow_out: z.array(z.string()).default([]),
+  deny_out: z.array(z.string()).default([]),
   /**
    * Agent-level env vars persisted to the DB and injected into every
    * session container. Same constraints as CreateSessionBody.env_vars.
@@ -270,6 +272,8 @@ export interface ApiAgent {
    * when the agent has no skills (or only the legacy anonymous marker).
    */
   attached_skill_ids: string[];
+  allow_out: string[];
+  deny_out: string[];
   created_at: string;
 }
 
@@ -647,6 +651,8 @@ export function toApiAgent(row: AgentRow): ApiAgent {
       : [],
     env_vars: decryptEnvVars(rawEnvVars),
     attached_skill_ids: parseAttachedSkillIds(row.prompt),
+    allow_out: Array.isArray(row.allow_out) ? (row.allow_out as string[]) : [],
+    deny_out: Array.isArray(row.deny_out) ? (row.deny_out as string[]) : [],
     created_at: row.created_at.toISOString(),
   };
 }

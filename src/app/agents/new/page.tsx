@@ -325,20 +325,22 @@ export default function NewAgentPage() {
         }
       }
 
-      const sandboxRepo = sandboxTemplates.find((s) => s.id === selectedSandboxId)?.repo_url;
+      const sandboxTpl = sandboxTemplates.find((s) => s.id === selectedSandboxId);
       const created = await createAgent({
         name: name.trim() || undefined,
         model: model.trim(),
         prompt: finalPrompt,
         harness_id: harnessId,
         requirements: selectedTemplate?.requirements ?? undefined,
-        repo_url: sandboxRepo || undefined,
+        repo_url: sandboxTpl?.repo_url || undefined,
         branch: branchOverride.trim() || undefined,
         pfp_url: pfpUrl ?? undefined,
         mcp_servers: mcpServers.length > 0 ? mcpServers : undefined,
         mcp_allowed_tools:
           mcpAllowedTools.length > 0 ? mcpAllowedTools : undefined,
         env_vars: Object.keys(envVarsRecord).length > 0 ? envVarsRecord : undefined,
+        allow_out: sandboxTpl?.allow_out,
+        deny_out: sandboxTpl?.deny_out,
       });
       router.push(`/agents/${created.id}`);
     } catch (err) {

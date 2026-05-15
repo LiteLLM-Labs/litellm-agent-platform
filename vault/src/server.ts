@@ -33,6 +33,74 @@ const PORT = Number(process.env.VAULT_PORT ?? 14322);
 const SHARED = process.env.VAULT_SHARED_DIR ?? "/lap-shared";
 const CA_DIR = process.env.VAULT_CA_DIR ?? "/etc/vault-ca";
 
+// ---------------------------------------------------------------------------
+// Egress enforcement
+// Reads EGRESS_ALLOW_OUT and EGRESS_DENY_OUT (comma-separated) at startup.
+// Each entry is a domain ("github.com"), wildcard ("*.example.com"),
+// bare IP, or CIDR ("10.0.0.0/8"). Allow takes precedence over deny.
+// If EGRESS_ALLOW_OUT is non-empty the host must be in the list.
+// ---------------------------------------------------------------------------
+
+function ipToU32(ip: string): number | null {
+  const parts = ip.split(".");
+  if (parts.length !== 4) return null;
+  let n = 0;
+  for (const p of parts) {
+    const b = Number(p);
+    if (!Number.isInteger(b) || b < 0 || b > 255) return null;
+    n = ((n << 8) | b) >>> 0;
+  }
+  return n;
+}
+
+function parseCidr(cidr: string): { base: number; mask: number } | null {
+  const [ip, bits] = cidr.split("/");
+  const parsed = ipToU32(ip);
+  if (parsed === null) return null;
+  const prefix = Number(bits ?? 32);
+  if (Number.isNaN(prefix) || prefix < 0 || prefix > 32) return null;
+  const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
+  return { base: (parsed & mask) >>> 0, mask };
+}
+
+type EgressRule =
+  | { kind: "exact"; value: string }
+  | { kind: "wildcard"; suffix: string }
+  | { kind: "cidr"; base: number; mask: number };
+
+function parseRule(raw: string): EgressRule | null {
+  const s = raw.trim();
+  if (!s) return null;
+  if (s.startsWith("*.")) return { kind: "wildcard", suffix: s.slice(1) };
+  if (s.includes("/")) {
+    const cidr = parseCidr(s);
+    return cidr ? { kind: "cidr", ...cidr } : null;
+  }
+  return { kind: "exact", value: s };
+}
+
+function matchesRule(host: string, rule: EgressRule): boolean {
+  if (rule.kind === "exact") return host === rule.value;
+  if (rule.kind === "wildcard") return host === rule.suffix.slice(1) || host.endsWith(rule.suffix);
+  const ip = ipToU32(host);
+  if (ip === null) return false;
+  return ((ip & rule.mask) >>> 0) === rule.base;
+}
+
+const ALLOW_OUT: EgressRule[] = (process.env.EGRESS_ALLOW_OUT ?? "")
+  .split(",").map(parseRule).filter((r): r is EgressRule => r !== null);
+const DENY_OUT: EgressRule[] = (process.env.EGRESS_DENY_OUT ?? "")
+  .split(",").map(parseRule).filter((r): r is EgressRule => r !== null);
+
+function isEgressAllowed(host: string): boolean {
+  if (ALLOW_OUT.length > 0) return ALLOW_OUT.some((r) => matchesRule(host, r));
+  if (DENY_OUT.length > 0) return !DENY_OUT.some((r) => matchesRule(host, r));
+  return true;
+}
+
+if (ALLOW_OUT.length > 0) console.log(`[vault] egress allow-list: ${process.env.EGRESS_ALLOW_OUT}`);
+if (DENY_OUT.length > 0) console.log(`[vault] egress deny-list: ${process.env.EGRESS_DENY_OUT}`);
+
 // Maximum number of interception records retained in memory. Old entries
 // drop off once the buffer is full — this is a debug aid, not an audit log.
 const INTERCEPTION_BUFFER_SIZE = 100;
@@ -262,6 +330,14 @@ proxy.on("connect", async (req, socket) => {
     port = colon >= 0 ? Number(raw.slice(colon + 1)) || 443 : 443;
   }
   socket.on("error", (e) => console.warn(`[vault] client ${host}: ${e.message}`));
+
+  if (!isEgressAllowed(host)) {
+    console.warn(`[vault] BLOCKED ${host} (egress policy)`);
+    socket.write("HTTP/1.1 403 Forbidden\r\nProxy-Agent: vault\r\nX-Vault-Blocked: egress-policy\r\n\r\n");
+    socket.destroy();
+    return;
+  }
+
   socket.write("HTTP/1.1 200 OK\r\nProxy-Agent: vault\r\n\r\n");
 
   let leaf;
