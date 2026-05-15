@@ -1,0 +1,3 @@
+#!/usr/bin/env sh
+echo "[pre-commit] tsc..."
+npx tsc --noEmit
