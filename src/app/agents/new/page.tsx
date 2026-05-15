@@ -18,7 +18,8 @@ import { Label } from "@/components/ui/label";
 import { PfpUpload } from "@/components/pfp-upload";
 import { HarnessPicker, DEFAULT_HARNESS_ID } from "@/components/harness-picker";
 import { ModelPicker } from "@/components/model-picker";
-import { McpToolsPicker, EnabledTools } from "@/components/mcp-tools-picker";
+import { McpToolsPicker, EnabledTools, EnabledToolsUpdater } from "@/components/mcp-tools-picker";
+import { SANDBOX_TEMPLATES_STORAGE_KEY } from "@/lib/constants";
 import {
   AgentTemplate,
   ApiError,
@@ -67,7 +68,7 @@ export default function NewAgentPage() {
 
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem("lap_custom_templates");
+      const raw = window.localStorage.getItem(SANDBOX_TEMPLATES_STORAGE_KEY);
       if (raw) setSandboxTemplates(JSON.parse(raw) as SandboxTemplate[]);
     } catch { /* ignore */ }
   }, []);
@@ -108,6 +109,7 @@ export default function NewAgentPage() {
 
   const [preinstalledRepo, setPreinstalledRepo] = useState<string>("");
   const [enabledTools, setEnabledTools] = useState<EnabledTools>(new Map());
+  const [mcpToolTotals, setMcpToolTotals] = useState<Map<string, number>>(new Map());
   const [loadingMeta, setLoadingMeta] = useState(true);
   const [metaError, setMetaError] = useState<string | null>(null);
 
@@ -264,18 +266,22 @@ export default function NewAgentPage() {
     try {
       // Walk per-server tool selections. A server is "enabled" iff it has at
       // least one tool checked. If every tool of a (fully-loaded) server is
-      // checked, send no whitelist for it — that lets the agent see future
-      // tools added on that server without re-saving. If only a subset is
-      // checked, send `mcp_allowed_tools` so the proxy can filter.
+      // checked, send no whitelist — that lets the agent see future tools
+      // added on that server without re-saving. If only a subset is checked,
+      // send `mcp_allowed_tools` so the proxy can filter.
       const mcpServers: string[] = [];
       const mcpAllowedTools: McpAllowedTools[] = [];
       for (const [serverId, toolSet] of enabledTools.entries()) {
         if (toolSet.size === 0) continue;
         mcpServers.push(serverId);
-        mcpAllowedTools.push({
-          server_id: serverId,
-          tools: Array.from(toolSet).sort(),
-        });
+        const total = mcpToolTotals.get(serverId);
+        // Only emit the whitelist when user selected a strict subset.
+        if (total === undefined || toolSet.size < total) {
+          mcpAllowedTools.push({
+            server_id: serverId,
+            tools: Array.from(toolSet).sort(),
+          });
+        }
       }
 
       const envVarsRecord: Record<string, string> = {};
@@ -918,7 +924,14 @@ export default function NewAgentPage() {
               <p className="text-xs text-muted-foreground">
                 Pick which MCP tools this agent can call. Expand a server to see its tools.
               </p>
-              <McpToolsPicker value={enabledTools} onChange={setEnabledTools} disabled={submitting} />
+              <McpToolsPicker
+                value={enabledTools}
+                onChange={(v: EnabledTools | EnabledToolsUpdater) =>
+                  setEnabledTools(v as Parameters<typeof setEnabledTools>[0])
+                }
+                onToolTotals={setMcpToolTotals}
+                disabled={submitting}
+              />
             </div>
 
             {metaError ? (

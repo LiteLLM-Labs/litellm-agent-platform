@@ -8,19 +8,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { LocalTemplate } from "../page";
-
-const LOCAL_STORAGE_KEY = "lap_custom_templates";
+import { SANDBOX_TEMPLATES_STORAGE_KEY } from "@/lib/constants";
 
 function loadLocalTemplates(): LocalTemplate[] {
   if (typeof window === "undefined") return [];
   try {
-    const raw = window.localStorage.getItem(LOCAL_STORAGE_KEY);
+    const raw = window.localStorage.getItem(SANDBOX_TEMPLATES_STORAGE_KEY);
     return raw ? (JSON.parse(raw) as LocalTemplate[]) : [];
   } catch { return []; }
 }
 
 function saveLocalTemplates(ts: LocalTemplate[]): void {
-  try { window.localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(ts)); } catch { /* ignore */ }
+  try { window.localStorage.setItem(SANDBOX_TEMPLATES_STORAGE_KEY, JSON.stringify(ts)); } catch { /* ignore */ }
 }
 
 function generateId(): string {

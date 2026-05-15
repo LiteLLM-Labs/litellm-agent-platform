@@ -18,6 +18,7 @@ import {
   listSessions,
   listSkills,
 } from "@/lib/api";
+import { SANDBOX_TEMPLATES_STORAGE_KEY } from "@/lib/constants";
 
 const REPO_URL = "https://github.com/BerriAI/litellm-agent-platform";
 const POLL_INTERVAL_MS = 10000;
@@ -77,7 +78,7 @@ export function Sidebar() {
 
   useEffect(() => {
     try {
-      const raw = window.localStorage.getItem("lap_custom_templates");
+      const raw = window.localStorage.getItem(SANDBOX_TEMPLATES_STORAGE_KEY);
       if (raw) setSandboxTemplates(JSON.parse(raw) as SandboxTemplate[]);
     } catch { /* ignore */ }
   }, []);
@@ -476,7 +477,7 @@ export function Sidebar() {
             ) : (
               sandboxTemplates.map((t) => {
                 const href = `/templates`;
-                const active = false;
+                const active = pathname === "/templates";
                 return (
                   <li key={t.id}>
                     <Link

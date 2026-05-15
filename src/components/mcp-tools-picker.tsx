@@ -7,6 +7,8 @@ import { ApiError, McpRow, McpToolRow, listMcpTools, listMcps } from "@/lib/api"
 import { cn } from "@/lib/utils";
 
 export type EnabledTools = Map<string, Set<string>>;
+// Functional updater form — avoids stale-closure races in async callbacks.
+export type EnabledToolsUpdater = (prev: EnabledTools) => EnabledTools;
 
 interface ServerToolsState {
   status: "idle" | "loading" | "ready" | "error";
@@ -20,11 +22,13 @@ function mcpLabel(m: McpRow): string {
 
 interface McpToolsPickerProps {
   value: EnabledTools;
-  onChange: (v: EnabledTools) => void;
+  onChange: (v: EnabledTools | EnabledToolsUpdater) => void;
+  /** Called with a map of serverId → total tool count whenever tool lists load. */
+  onToolTotals?: (totals: Map<string, number>) => void;
   disabled?: boolean;
 }
 
-export function McpToolsPicker({ value, onChange, disabled }: McpToolsPickerProps) {
+export function McpToolsPicker({ value, onChange, onToolTotals, disabled }: McpToolsPickerProps) {
   const [mcps, setMcps] = useState<McpRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedServers, setExpandedServers] = useState<Set<string>>(new Set());
@@ -53,14 +57,24 @@ export function McpToolsPicker({ value, onChange, disabled }: McpToolsPickerProp
       setServerTools((prev) => {
         const next = new Map(prev);
         next.set(serverId, { status: "ready", tools });
+        // Notify parent of updated totals so it can distinguish "all selected"
+        // from "subset selected" at submit time.
+        if (onToolTotals) {
+          const totals = new Map<string, number>();
+          next.forEach((s, id) => { if (s.status === "ready") totals.set(id, s.tools.length); });
+          onToolTotals(totals);
+        }
         return next;
       });
       // Default: enable all tools if this server hasn't been touched yet.
-      if (!value.has(serverId)) {
-        const next = new Map(value);
+      // Use functional updater to avoid stale-closure race when multiple
+      // servers are expanded concurrently.
+      onChange((prev) => {
+        if (prev.has(serverId)) return prev;
+        const next = new Map(prev);
         next.set(serverId, new Set(tools.map((t) => t.name)));
-        onChange(next);
-      }
+        return next;
+      });
     } catch (e) {
       const msg = e instanceof ApiError ? e.message : (e as Error).message;
       setServerTools((prev) => {
