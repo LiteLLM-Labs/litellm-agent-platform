@@ -9,7 +9,7 @@ URLs. Same feel as `ssh`.
   ✓ agent refactor-bot (ac70ab02, harness=claude-code)
   ✓ session 8c12262c
   waiting for sandbox. ready
-  → attaching local TTY to ws://54.174.239.129:32011/tty?token=…
+  → attaching local TTY to ws://54.174.239.129:32011/tty
 
 ╭───────────────────────────────────────────────────────╮
 │   ✻ Welcome to Claude Code                            │
@@ -64,13 +64,17 @@ your terminal      lap CLI                LAP API           harness pod
                    poll until status=ready
                    read sandbox_url + tty_token from response
 
-(raw mode) ◄───►   WebSocket   ws://host:port/tty?token=… ◄──► PTY → claude
+                   WS upgrade  ws://host:port/tty
+                   Authorization: Bearer <tty_token>
+(raw mode) ◄───►   WebSocket bytes ◄────────────────────► PTY → claude
 ```
 
 The CLI sets the local terminal to raw mode, opens a WebSocket to the
-harness pod's `/tty` endpoint, and pipes bytes both ways. Resize events
-(`SIGWINCH`) are forwarded as JSON control messages. `Ctrl-D` (`0x04`)
-detaches the local CLI without killing the remote session.
+harness pod's `/tty` endpoint with the bearer token attached as an
+`Authorization` header on the upgrade handshake, and pipes bytes both
+ways. Resize events (`SIGWINCH`) are forwarded as JSON control messages.
+`Ctrl-D` (`0x04`) detaches the local CLI without killing the remote
+session.
 
 ## Configuration
 
@@ -84,9 +88,16 @@ detaches the local CLI without killing the remote session.
 
 The harness pod's `/tty` WebSocket requires a bearer token matching
 `HARNESS_AUTH_TOKEN` on the pod. The CLI obtains it from
-`session.tty_token` in the API response, then appends `?token=…` to the
-WS URL. The harness rejects every unauthenticated upgrade with `401`
-before any PTY spawns — no anonymous shell access is possible.
+`session.tty_token` in the API response and presents it as an
+`Authorization: Bearer <token>` header on the WebSocket upgrade
+handshake — **not** in the URL query string — so the token never appears
+in ingress, proxy, or load-balancer access logs that record the request
+line. The harness rejects every unauthenticated upgrade with `401`
+before any PTY spawns; no anonymous shell access is possible.
+
+(The harness also accepts `?token=…` as a fallback because browsers
+cannot set arbitrary headers on `new WebSocket(...)`. The CLI is a Node
+client and always uses the header form.)
 
 ## Source
 
