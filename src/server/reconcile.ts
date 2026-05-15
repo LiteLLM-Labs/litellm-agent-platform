@@ -161,7 +161,7 @@ async function sweepWarmOrphans(
 async function sweepStaleWarmTasks(now: number): Promise<number> {
   const warmRows = await prisma.warmTask.findMany({
     where: { status: "warm", task_arn: { not: null } },
-    select: { warm_task_id: true, task_arn: true, ready_at: true },
+    select: { warm_task_id: true, task_arn: true, ready_at: true, created_at: true },
   });
 
   if (warmRows.length === 0) return 0;
@@ -170,11 +170,11 @@ async function sweepStaleWarmTasks(now: number): Promise<number> {
   for (const row of warmRows) {
     if (!row.task_arn) continue;
 
-    // Grace window: freshly provisioned pods may not yet appear in the API.
-    // Treat unknown age (null ready_at) as within the grace window — same
-    // conservative approach as sweepWarmOrphans / taskAgeMs.
-    const ageMs = row.ready_at ? now - row.ready_at.getTime() : null;
-    if (ageMs === null || ageMs < RECONCILE_NEW_TASK_GRACE_MS) continue;
+    // Grace window: freshly provisioned pods may not yet appear in the k8s API.
+    // Use created_at exclusively — the question is "was this pod created recently
+    // enough that we should wait for it to show up?" ready_at is irrelevant here.
+    const ageMs = now - row.created_at.getTime();
+    if (ageMs < RECONCILE_NEW_TASK_GRACE_MS) continue;
 
     let phaseInfo: Awaited<ReturnType<typeof readPodPhase>> | undefined;
     try {
