@@ -173,6 +173,11 @@ export interface SessionRow {
   id: string;
   agent_id: string;
   sandbox_url?: string | null;
+  // Browser-accessible WS base URL for TUI harnesses. Non-null when the
+  // session is ready and the platform can supply a reachable endpoint:
+  // - IN_CLUSTER: a relative path through the platform TCP proxy.
+  // - Local dev: null (terminal-panel derives from sandbox_url directly).
+  tty_url?: string | null;
   // Bearer token for the harness's `/tty` WebSocket on TUI harnesses.
   // Populated by the backend from process.env.HARNESS_AUTH_TOKEN.
   tty_token?: string | null;

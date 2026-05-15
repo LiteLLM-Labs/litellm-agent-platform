@@ -1,12 +1,19 @@
 "use client";
 
 // Renders an xterm.js terminal attached to a TUI harness (claude-code / codex)
-// via a single WebSocket. The harness pod exposes /tty on the same port as the
-// chat-mode harnesses' HTTP API, so we derive the WS URL directly from the
-// session row's sandbox_url (http://<host>:<nodePort> → ws://<host>:<nodePort>/tty).
+// via a single WebSocket.
 //
-// Falls back to NEXT_PUBLIC_TUI_BRIDGE_URL for local dev against a standalone
-// harness container (e.g. `docker run -p 4098:4096 claude-tty-poc`).
+// URL resolution priority:
+//   1. ttyUrl (non-null): platform-provided browser-accessible endpoint.
+//      - IN_CLUSTER deployments: a relative path like
+//        /api/v1/managed_agents/sessions/{id}/tty that the platform's TCP
+//        proxy (server-proxy.mjs) pipes to the cluster-internal sandbox pod.
+//      - Absolute ws(s):// URL for any other pre-resolved case.
+//   2. sandboxUrl (non-null): local dev — derive ws URL directly from the
+//      NodePort sandbox URL (http://host:port → ws://host:port/tty).
+//   3. Neither: session still creating — show a waiting state, do not attempt
+//      a connection. The localhost:4098 fallback is intentionally removed
+//      because it produces a misleading "closed" error in production.
 //
 // Wire protocol:
 //   browser → server : raw text (keystrokes)  OR  JSON {"type":"resize",cols,rows}
@@ -18,12 +25,17 @@ import "@xterm/xterm/css/xterm.css";
 interface Props {
   sessionId: string;
   harnessId: string;
-  // From SessionRow.sandbox_url — populated by the reconciler once the pod is
-  // Running and the NodePort is bound. Null while the sandbox is still creating.
+  // Browser-accessible WS base URL provided by the backend.
+  // Non-null when the session is ready and the platform can supply a
+  // reachable endpoint (IN_CLUSTER proxy path or direct NodePort URL).
+  // Null while the session is still creating or the sandbox URL isn't set.
+  ttyUrl: string | null;
+  // From SessionRow.sandbox_url — the raw cluster-internal URL.
+  // Only used as a fallback for local dev (not IN_CLUSTER) when ttyUrl is
+  // null but sandbox_url is already set on the session row.
   sandboxUrl: string | null;
-  // From SessionRow.tty_token — bearer token required by the harness's /tty
-  // WebSocket. Browsers can't set arbitrary headers on `new WebSocket(...)`,
-  // so the token is appended as `?token=…`.
+  // Bearer token required by the harness's /tty WebSocket. Appended as
+  // ?token=… because browsers can't set arbitrary headers on new WebSocket().
   ttyToken: string | null;
 }
 
@@ -33,20 +45,57 @@ function deriveTtyUrl(sandboxUrl: string, token: string | null): string {
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
-type ConnState = "connecting" | "connected" | "closed" | "error";
+// Resolve a ttyUrl (may be a relative path like /api/.../tty) to an absolute
+// ws(s):// URL using the browser's current origin.
+function resolveWsUrl(ttyUrl: string, token: string | null): string {
+  let base: string;
+  if (ttyUrl.startsWith("ws://") || ttyUrl.startsWith("wss://")) {
+    base = ttyUrl.replace(/\/+$/, "");
+  } else if (ttyUrl.startsWith("/")) {
+    const proto = window.location.protocol === "https:" ? "wss" : "ws";
+    base = `${proto}://${window.location.host}${ttyUrl}`.replace(/\/+$/, "");
+  } else {
+    base = ttyUrl.replace(/\/+$/, "");
+  }
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
 
-export function TerminalPanel({ sessionId, harnessId, sandboxUrl, ttyToken }: Props) {
+type ConnState = "waiting" | "connecting" | "connected" | "closed" | "error";
+
+export function TerminalPanel({ sessionId, harnessId, ttyUrl, sandboxUrl, ttyToken }: Props) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
-  const [state, setState] = useState<ConnState>("connecting");
+  const [state, setState] = useState<ConnState>("waiting");
   const [reason, setReason] = useState<string>("");
 
   useEffect(() => {
+    // Resolve the WS URL. If neither ttyUrl nor sandboxUrl is available the
+    // session is still creating — render the waiting indicator and don't open
+    // a socket (avoids the misleading "closed" error from the old localhost
+    // fallback).
+    let resolvedUrl: string | null = null;
+    if (ttyUrl) {
+      resolvedUrl = resolveWsUrl(ttyUrl, ttyToken);
+    } else if (sandboxUrl) {
+      resolvedUrl = deriveTtyUrl(sandboxUrl, ttyToken);
+    }
+
+    if (!resolvedUrl) {
+      setState("waiting");
+      return;
+    }
+
+    const wsUrl: string = resolvedUrl;
+
+    // hostRef is always mounted (the overlay pattern keeps the div in the DOM).
+    // This guard is kept as a defensive check against future render changes.
     if (!hostRef.current) return;
     let disposed = false;
     let term: import("@xterm/xterm").Terminal | null = null;
     let fit: import("@xterm/addon-fit").FitAddon | null = null;
     let ws: WebSocket | null = null;
+
+    setState("connecting");
 
     (async () => {
       const [{ Terminal }, { FitAddon }, { WebLinksAddon }] = await Promise.all([
@@ -76,12 +125,7 @@ export function TerminalPanel({ sessionId, harnessId, sandboxUrl, ttyToken }: Pr
       // fit needs a real width/height. requestAnimationFrame waits one frame.
       requestAnimationFrame(() => fit?.fit());
 
-      // Prefer the live sandbox URL once the pod is ready; otherwise fall back
-      // to the local-dev override (a standalone harness container).
-      const fallback = process.env.NEXT_PUBLIC_TUI_BRIDGE_URL ?? "ws://localhost:4098/tty";
-      const url = sandboxUrl
-        ? deriveTtyUrl(sandboxUrl, ttyToken)
-        : (ttyToken ? `${fallback}${fallback.includes("?") ? "&" : "?"}token=${encodeURIComponent(ttyToken)}` : fallback);
+      const url = wsUrl;
 
       ws = new WebSocket(url);
       ws.binaryType = "arraybuffer";
@@ -146,17 +190,17 @@ export function TerminalPanel({ sessionId, harnessId, sandboxUrl, ttyToken }: Pr
         term?.dispose();
       } catch {}
     };
-  }, [sessionId, harnessId, sandboxUrl, ttyToken]);
+  }, [sessionId, harnessId, ttyUrl, sandboxUrl, ttyToken]);
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col bg-[#0b0c10]">
+    <div className="flex-1 min-h-0 flex flex-col bg-[#0b0c10] relative">
       <div className="flex items-center gap-2 px-4 py-1.5 border-b border-[#1f2229] text-[11px] font-mono text-[#71717a]">
         <span
           aria-hidden
           className={`inline-block w-1.5 h-1.5 rounded-full ${
             state === "connected"
               ? "bg-emerald-500"
-              : state === "connecting"
+              : state === "connecting" || state === "waiting"
                 ? "bg-amber-500"
                 : "bg-red-500"
           }`}
@@ -171,7 +215,15 @@ export function TerminalPanel({ sessionId, harnessId, sandboxUrl, ttyToken }: Pr
           </>
         )}
       </div>
+      {/* xterm host: always in DOM so hostRef is non-null when resolvedUrl
+          arrives. The waiting overlay sits on top; removing it reveals the
+          terminal that was already opened into this div. */}
       <div ref={hostRef} className="flex-1 min-h-0 p-2" />
+      {state === "waiting" && (
+        <div className="absolute inset-x-0 bottom-0 top-[33px] flex items-center justify-center bg-[#0b0c10] text-[#71717a] text-[13px] font-mono pointer-events-none">
+          waiting for sandbox…
+        </div>
+      )}
     </div>
   );
 }

@@ -111,10 +111,17 @@ COPY --from=builder --chown=nextjs:nodejs /app/package.json /app/package-lock.js
 COPY --from=builder --chown=nextjs:nodejs /app/src/server ./src/server
 COPY --from=builder --chown=nextjs:nodejs /app/src/worker ./src/worker
 
+# TCP proxy that fronts the Next.js standalone server and pipes /tty WS
+# upgrades directly to cluster-internal sandbox pods (IN_CLUSTER mode).
+COPY --chown=nextjs:nodejs server-proxy.mjs ./server-proxy.mjs
+
 USER nextjs
 EXPOSE 3000
 
-# Push schema, then start the standalone Next.js server (server.js is what
-# `output: "standalone"` writes — equivalent to `next start` without the
-# dev/test toolchain).
-CMD ["sh", "-c", "DATABASE_URL=\"${DATABASE_URL}&connection_limit=1&connect_timeout=30\" node node_modules/prisma/build/index.js db push --accept-data-loss --skip-generate && node server.js"]
+# Push schema, then start the server.
+# IN_CLUSTER=true: server-proxy.mjs listens on PORT (3000) and spawns
+#   Next.js on NEXT_PORT (3001 by default). The proxy intercepts WebSocket
+#   upgrades for /api/v1/managed_agents/sessions/*/tty and pipes them to
+#   the sandbox pod; all other traffic is forwarded to Next.js.
+# Not IN_CLUSTER: run Next.js standalone directly (local dev / no proxy needed).
+CMD ["sh", "-c", "DATABASE_URL=\"${DATABASE_URL}&connection_limit=1&connect_timeout=30\" node node_modules/prisma/build/index.js db push --accept-data-loss --skip-generate && if [ \"${IN_CLUSTER}\" = \"true\" ]; then node server-proxy.mjs; else node server.js; fi"]

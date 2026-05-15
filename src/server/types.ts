@@ -295,6 +295,14 @@ export interface ApiSession {
   id: string;
   agent_id: string;
   sandbox_url: string | null;
+  // Browser-accessible WebSocket base URL for TUI harnesses.
+  // - IN_CLUSTER deployments: a relative path routed through the platform's
+  //   TCP proxy (server-proxy.mjs) so the browser never dials the
+  //   cluster-internal sandbox DNS directly.
+  // - Local dev (not IN_CLUSTER): null — the session view derives the URL
+  //   from sandbox_url (the NodePort address the browser can reach).
+  // Null while the session is still creating (sandbox_url not yet set).
+  tty_url: string | null;
   // Bearer token for the harness's `/tty` WebSocket. Populated only for TUI
   // harnesses (claude-code, codex) where the harness pod requires
   // authentication on the WS upgrade. The browser session view and the
@@ -685,10 +693,26 @@ export function toApiSession(
     process.env.HARNESS_AUTH_TOKEN?.trim() ||
     process.env.CONTAINER_ENV_HARNESS_AUTH_TOKEN?.trim() ||
     null;
+
+  // tty_url: browser-accessible WS base URL for TUI harnesses.
+  // IN_CLUSTER: sandbox_url is cluster-internal (*.svc.cluster.local) and
+  // unreachable from the browser. Return a relative path that the platform's
+  // TCP proxy (server-proxy.mjs) handles by piping raw TCP to the sandbox.
+  // Not IN_CLUSTER (local dev): sandbox_url is a NodePort address the browser
+  // can reach directly; return null so the session view derives it client-side.
+  const ttyUrl: string | null = (() => {
+    if (!row.sandbox_url || row.status !== "ready") return null;
+    if (process.env.IN_CLUSTER === "true") {
+      return `/api/v1/managed_agents/sessions/${row.session_id}/tty`;
+    }
+    return null;
+  })();
+
   return {
     id: row.session_id,
     agent_id: row.agent_id,
     sandbox_url: row.sandbox_url ?? null,
+    tty_url: ttyUrl,
     tty_token: ttyToken,
     status: row.status,
     task_arn: row.task_arn ?? null,
