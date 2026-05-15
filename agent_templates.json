@@ -14,10 +14,20 @@
     "skill_name": "my-skill-name",
     "skill": "Skill markdown — injected after the prompt via <!-- skill --> separator.",
     "tools": ["gh CLI", "grep", "find"],
-    "requirements": null,
+    "requirements": "numpy\npandas>=2.0\nrequests==2.31.0",
+    "_requirements_note": "pip requirements injected as AGENT_REQUIREMENTS env var and installed at pod startup via uv pip install. Use null if no Python deps needed.",
+
+    "files": [
+      {
+        "template_path": "settings.json",
+        "sandbox_path": "~/.claude/settings.json",
+        "_note": "template_path is relative to agent-templates/<id>/. sandbox_path supports ~ expansion."
+      }
+    ],
+    "_files_note": "Files are read from agent-templates/<id>/ at startup, base64-encoded into LAP_FILE_N_* env vars, and written to sandbox_path by the harness entrypoint. Omit if no files needed.",
 
     "env_vars": {
-      "MY_VAR": "pre-seeded value — shown in the env var editor on agent create"
+      "MY_VAR": "pre-seeded value — shown in the env var editor when agent is created from this template"
     }
   },
   {
@@ -33,6 +43,21 @@
     "requirements": null,
     "prompt": "You are a security agent. Your only job is to scan pull requests and report vulnerabilities. You do not write code, suggest features, or merge PRs.\n\nFor every scan, follow the **reviewing-security procedure** defined in your system prompt:\n1. Search memory for known security conventions in this repository.\n2. Follow the step-by-step reviewing-security procedure: fetch diff → secrets scan → SAST → dependency audit → auth regression → output findings.\n3. Report findings grouped by severity: critical → high → medium → low → info.\n4. Save any new repo-specific security patterns you discover to memory.\n\nBe precise. If uncertain about a finding, include it with a confidence score.",
     "skill": "## PR security scan\n\nCopy this checklist and track progress:\n\n```\n- [ ] 1. Fetch PR diff\n- [ ] 2. Secrets scan\n- [ ] 3. SAST scan\n- [ ] 4. Dependency audit (if lockfile changed)\n- [ ] 5. Auth/authz regression check\n- [ ] 6. Output findings\n```\n\n### Step 1 — Fetch diff\n\n```bash\ngh pr diff <PR_URL>\n```\n\n### Step 2 — Secrets scan\n\n```bash\ngitleaks detect --source . --no-git 2>/dev/null; gitleaks_exit=$?; [ $gitleaks_exit -eq 2 ] && echo \"gitleaks not available, scanning manually\"\n```\n\nNote: exit code 1 means findings were detected (expected); exit code 2 means gitleaks could not run.\n\nFlag: API keys, tokens, passwords, PII in changed lines.\n\n### Step 3 — SAST scan\n\n```bash\nsemgrep --config=auto --quiet 2>/dev/null; semgrep_exit=$?; [ $semgrep_exit -ge 2 ] && echo \"semgrep not available\"\n```\n\nNote: exit code 1 means findings were detected (expected); exit code 2+ means semgrep could not run.\n\nFocus: injection (SQL/cmd/XSS), broken access control, insecure deserialization, crypto misuse.\n\n### Step 4 — Dependency audit\n\nOnly if `package.json`, `requirements.txt`, `go.mod`, or lockfiles changed:\n\n```bash\nnpm audit --json 2>/dev/null || pip-audit 2>/dev/null || govulncheck ./... 2>/dev/null\n```\n\n### Step 5 — Auth/authz regression\n\nGrep for changes to middleware, permission checks, session handling. Flag removed or weakened guards.\n\n### Step 6 — Output\n\n```json\n{\n  \"summary\": \"<N> critical, <N> high, <N> medium\",\n  \"findings\": [\n    {\n      \"severity\": \"critical|high|medium|low|info\",\n      \"type\": \"secret|injection|auth|dependency|other\",\n      \"file\": \"path/to/file.ts\",\n      \"line\": 14,\n      \"description\": \"Specific issue description.\"\n    }\n  ],\n  \"recommendation\": \"Block merge / Merge with caveats / Safe to merge\"\n}\n```\n\n**Rules:** Never approve or merge. Report only. If no issues found, state explicitly with confidence level."
+  },
+  {
+    "id": "claude-code-dangerously-allow-permissions",
+    "name": "Claude Code (Dangerously Allow Permissions)",
+    "description": "Runs Claude Code with all permissions bypassed — equivalent to --dangerously-allow-permissions.",
+    "icon": "🔓",
+    "tags": ["claude-code", "unrestricted"],
+    "harness_id": "claude-agent-sdk",
+    "model": "anthropic/claude-sonnet-4-6",
+    "files": [
+      {
+        "template_path": "settings.json",
+        "sandbox_path": "~/.claude/settings.json"
+      }
+    ]
   },
   {
     "id": "docs-correctness",

@@ -1,60 +1,37 @@
 # agent-templates/
 
-Directory-based agent templates. Use this format when your template needs to ship real files into the sandbox (e.g. `~/.claude/settings.json`, `~/.gitconfig`).
+File storage for templates defined in [`agent_templates.json`](../agent_templates.json).
 
-For templates that only need a prompt and skill, add them directly to [`agent_templates.json`](../agent_templates.json) at the repo root — no directory needed.
+When a template in `agent_templates.json` has a `"files"` array, the referenced
+files are read from `agent-templates/<id>/<template_path>` at server startup,
+base64-encoded, and injected into the sandbox pod as env vars. The harness
+entrypoint writes them to `sandbox_path` before starting the agent.
 
 ## Structure
 
 ```
 agent-templates/
   <template-id>/
-    template.json   required
-    <any files>     referenced by template.json "files" array
+    <file>        any file referenced by the template's "files" array
 ```
 
-## template.json fields
+No `template.json` here — all template metadata lives in `agent_templates.json`.
+
+## Example
+
+`claude-code-dangerously-allow-permissions/settings.json` is referenced by:
 
 ```json
 {
-  "id": "my-template",
-  "name": "Human-readable name",
-  "description": "One-line description shown in the UI.",
-  "icon": "🤖",
-  "tags": ["tag1", "tag2"],
-  "harness_id": "claude-agent-sdk",
-  "model": "anthropic/claude-sonnet-4-6",
-
+  "id": "claude-code-dangerously-allow-permissions",
   "files": [
     {
       "template_path": "settings.json",
       "sandbox_path": "~/.claude/settings.json"
     }
-  ],
-
-  "prompt": "Optional system prompt.",
-  "skill_name": "optional-skill-name",
-  "skill": "Optional skill markdown.",
-  "tools": ["gh CLI", "grep"],
-  "requirements": null
+  ]
 }
 ```
 
-`prompt`, `skill`, `skill_name`, `tools`, and `requirements` are all optional — omit any you don't need.
-
-## How files get into the sandbox
-
-At agent create time the platform reads each file listed in `files`, base64-encodes the content, and stores it as `LAP_FILE_N_DEST` / `LAP_FILE_N_CONTENT` env vars on the agent. When a session pod starts, `entrypoint.sh` decodes them and writes them to `sandbox_path` before handing off to the server. The agent process never sees the `LAP_FILE_*` vars.
-
-`sandbox_path` supports `~` expansion (`~` → `/root`).
-
-## Example
-
-`claude-code-dangerously-allow-permissions/` ships a `settings.json` that sets `defaultMode: bypassPermissions` so Claude Code never asks for tool permissions:
-
-```
-agent-templates/
-  claude-code-dangerously-allow-permissions/
-    template.json
-    settings.json   → written to ~/.claude/settings.json in the pod
-```
+At pod startup the harness writes the file to `~/.claude/settings.json`
+before exec'ing the server. `~` expands to `/root`.

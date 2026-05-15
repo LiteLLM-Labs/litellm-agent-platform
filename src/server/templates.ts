@@ -1,17 +1,18 @@
 /**
- * Agent template loader. Two sources, merged at startup:
+ * Agent template loader.
  *
- * 1. agent_templates.json — flat list, simple templates with no extra files.
+ * Single source of truth: agent_templates.json at the repo root.
  *
- * 2. agent-templates/<id>/ — directory per template. Supports a `files` array
- *    that copies files from the template dir into the sandbox at pod startup.
- *    Each file is base64-encoded into LAP_FILE_N_DEST / LAP_FILE_N_CONTENT
- *    env vars; the harness entrypoint decodes and writes them to disk.
+ * Templates with a "files" array reference files stored under
+ * agent-templates/<id>/<template_path>. Those files are base64-encoded
+ * into LAP_FILE_N_DEST / LAP_FILE_N_CONTENT env vars at load time;
+ * the harness entrypoint decodes and writes them to sandbox_path before
+ * exec'ing the server.
  *
- * Directory templates take precedence over JSON entries with the same id.
+ * Entries with id starting with "_" are skipped (use for docs/examples).
  */
 
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 export interface TemplateFile {
@@ -54,17 +55,18 @@ interface RawTemplate {
   tools?: string[];
   requirements?: string | null;
   env_vars?: Record<string, string>;
-  files?: TemplateFile[];
+  files?: Omit<TemplateFile, "content">[];
 }
 
 const ROOT = process.cwd();
 const JSON_FILE = join(ROOT, "agent_templates.json");
-const DIR_ROOT = join(ROOT, "agent-templates");
+const FILES_DIR = join(ROOT, "agent-templates");
 
-function readFiles(base: string, rawFiles: Omit<TemplateFile, "content">[]): {
+function resolveFiles(id: string, rawFiles: Omit<TemplateFile, "content">[]): {
   files: TemplateFile[];
   env_vars: Record<string, string>;
 } {
+  const base = join(FILES_DIR, id);
   const files: TemplateFile[] = [];
   const env_vars: Record<string, string> = {};
   rawFiles.forEach(({ template_path, sandbox_path }, i) => {
@@ -75,15 +77,15 @@ function readFiles(base: string, rawFiles: Omit<TemplateFile, "content">[]): {
       env_vars[`LAP_FILE_${i}_CONTENT`] = buf.toString("base64");
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[templates] could not read file ${template_path}: ${msg}`);
+      console.warn(`[templates] ${id}/${template_path}: ${msg}`);
     }
   });
   return { files, env_vars };
 }
 
-function fromRaw(raw: RawTemplate, base?: string): AgentTemplate {
-  const { files, env_vars: fileVars } = base
-    ? readFiles(base, raw.files ?? [])
+function fromRaw(raw: RawTemplate): AgentTemplate {
+  const { files, env_vars: fileVars } = raw.files?.length
+    ? resolveFiles(raw.id, raw.files)
     : { files: [], env_vars: {} };
   return {
     id: raw.id,
@@ -103,45 +105,13 @@ function fromRaw(raw: RawTemplate, base?: string): AgentTemplate {
   };
 }
 
-function loadFromJson(): AgentTemplate[] {
+function loadTemplates(): AgentTemplate[] {
   try {
     const raw: RawTemplate[] = JSON.parse(readFileSync(JSON_FILE, "utf8"));
-    return raw.filter((t) => !t.id.startsWith("_")).map((t) => fromRaw(t));
+    return raw.filter((t) => !t.id.startsWith("_")).map(fromRaw);
   } catch {
     return [];
   }
-}
-
-function loadFromDirs(): AgentTemplate[] {
-  let dirs: string[];
-  try {
-    dirs = readdirSync(DIR_ROOT, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name);
-  } catch {
-    return [];
-  }
-
-  const out: AgentTemplate[] = [];
-  for (const dir of dirs) {
-    const base = join(DIR_ROOT, dir);
-    try {
-      const raw: RawTemplate = JSON.parse(readFileSync(join(base, "template.json"), "utf8"));
-      out.push(fromRaw(raw, base));
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[templates] skipping ${dir}: ${msg}`);
-    }
-  }
-  return out;
-}
-
-function loadTemplates(): AgentTemplate[] {
-  const fromJson = loadFromJson();
-  const fromDirs = loadFromDirs();
-  // Directory templates win on id collision.
-  const dirIds = new Set(fromDirs.map((t) => t.id));
-  return [...fromJson.filter((t) => !dirIds.has(t.id)), ...fromDirs];
 }
 
 const TEMPLATES: AgentTemplate[] = loadTemplates();
