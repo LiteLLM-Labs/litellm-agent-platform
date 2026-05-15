@@ -22,6 +22,7 @@
 import { prisma } from "@/server/db";
 import { harnessCreateSession } from "@/server/harness";
 import {
+  hasCniExhaustionEvent,
   inClusterSandboxUrl,
   listTaggedTasks,
   readNodePort,
@@ -405,12 +406,12 @@ async function recoverStuckCreating(): Promise<void> {
     }
 
     if (phaseInfo.phase !== "Running") {
-      if (hardFail) {
-        await markFailed(
-          row.session_id,
-          `watchdog: pod ${row.task_arn} stuck phase=${phaseInfo.phase} for ${Math.round(ageMs / 1000)}s`,
-          row.task_arn,
-        );
+      const cniExhausted = await hasCniExhaustionEvent(row.task_arn).catch(() => false);
+      if (cniExhausted || hardFail) {
+        const reason = cniExhausted
+          ? `watchdog: CNI IP exhaustion — pod ${row.task_arn} never got an IP (FailedCreatePodSandBox)`
+          : `watchdog: pod ${row.task_arn} stuck phase=${phaseInfo.phase} for ${Math.round(ageMs / 1000)}s`;
+        await markFailed(row.session_id, reason, row.task_arn);
         failed++;
       } else {
         pending++;

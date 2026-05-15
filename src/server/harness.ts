@@ -22,6 +22,54 @@ import type {
 const DEFAULT_CREATE_TIMEOUT_MS = 60_000;
 const DEFAULT_MESSAGE_TIMEOUT_MS = 600_000;
 
+export class HarnessHttpError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly statusText: string,
+    public readonly body: string,
+    url: string,
+    method: string,
+  ) {
+    super(
+      `harness request failed: ${method} ${url} -> ${status} ${statusText}: ${body}`,
+    );
+  }
+}
+
+const HARD_CONNECT_CODES = new Set([
+  "UND_ERR_CONNECT_TIMEOUT",
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "EAI_AGAIN",
+]);
+
+export function isHardConnectFailure(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: unknown; cause?: unknown };
+  if (typeof e.code === "string" && HARD_CONNECT_CODES.has(e.code)) return true;
+  const cause = e.cause;
+  if (cause && typeof cause === "object") {
+    const c = (cause as { code?: unknown }).code;
+    if (typeof c === "string" && HARD_CONNECT_CODES.has(c)) return true;
+  }
+  return false;
+}
+
+// 404 + {"error":"not found"} from the harness means the harness_session_id
+// is unknown — happens when a NodePort is reused by a different pod after
+// the original pod dies. Treat it as dead so the user can /restart.
+export function isDeadSessionError(err: unknown): boolean {
+  if (!(err instanceof HarnessHttpError)) return false;
+  if (err.status !== 404) return false;
+  try {
+    return (JSON.parse(err.body) as { error?: string }).error === "not found";
+  } catch {
+    return false;
+  }
+}
+
 export function expandMessage(
   text?: string,
   parts?: HarnessMessagePart[],
@@ -44,9 +92,7 @@ async function postJson(
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `harness request failed: POST ${url} -> ${res.status} ${res.statusText}: ${text}`,
-    );
+    throw new HarnessHttpError(res.status, res.statusText, text, url, "POST");
   }
   return res.json();
 }
@@ -105,9 +151,7 @@ export async function harnessListMessages(opts: {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `harness request failed: GET ${url} -> ${res.status} ${res.statusText}: ${text}`,
-    );
+    throw new HarnessHttpError(res.status, res.statusText, text, url, "GET");
   }
   const data = await res.json();
   if (!Array.isArray(data)) {
@@ -191,9 +235,7 @@ export async function harnessPromptAsync(
   // (200–299), so a single `!res.ok` guard handles the error case.
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `harness request failed: POST ${url} -> ${res.status} ${res.statusText}: ${text}`,
-    );
+    throw new HarnessHttpError(res.status, res.statusText, text, url, "POST");
   }
 }
 
@@ -222,9 +264,7 @@ export async function harnessOpenEventStream(opts: {
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(
-      `harness request failed: GET ${url} -> ${res.status} ${res.statusText}: ${text}`,
-    );
+    throw new HarnessHttpError(res.status, res.statusText, text, url, "GET");
   }
   if (!res.body) {
     throw new Error(`harness ${url} returned no body`);

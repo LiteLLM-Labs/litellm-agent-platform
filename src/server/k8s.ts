@@ -351,12 +351,20 @@ interface SandboxVolume {
   emptyDir?: { medium?: string };
   secret?: { secretName: string };
 }
+interface TopologySpreadConstraint {
+  maxSkew: number;
+  topologyKey: string;
+  whenUnsatisfiable: "DoNotSchedule" | "ScheduleAnyway";
+  labelSelector?: { matchLabels?: Record<string, string> };
+}
+
 interface SandboxSpec {
   podTemplate: {
     metadata?: { labels?: Record<string, string> };
     spec: {
       restartPolicy: string;
       priorityClassName?: string;
+      topologySpreadConstraints?: TopologySpreadConstraint[];
       containers: SandboxContainer[];
       volumes?: SandboxVolume[];
     };
@@ -392,10 +400,22 @@ export async function runTask(
         },
         spec: {
           restartPolicy: "Never",
-          // Active session pods run at higher priority than warm pool pods so
-          // the scheduler preempts warm pods to make room under memory pressure.
-          // Warm pool pods are stamped with sandbox-warm in warmPool.ts.
           priorityClassName: opts.session_id ? "sandbox-active" : "sandbox-warm",
+          // Spread pods for the same agent across nodes so no single node
+          // exhausts its CNI IP pool. ScheduleAnyway (not DoNotSchedule) so
+          // scheduling is never hard-blocked when nodes are imbalanced — but
+          // the scheduler scores node choices to prefer spread, and the signal
+          // also makes the cluster autoscaler aware of topology pressure.
+          topologySpreadConstraints: [
+            {
+              maxSkew: 2,
+              topologyKey: "kubernetes.io/hostname",
+              whenUnsatisfiable: "ScheduleAnyway",
+              labelSelector: {
+                matchLabels: { "litellm-agent-id": agent.agent_id },
+              },
+            },
+          ],
           containers: [
             {
               name: CONTAINER_NAME,
@@ -634,6 +654,30 @@ export async function readPodPhase(
 }
 
 // ---------------------------------------------------------------------------
+// CNI exhaustion detection
+//
+// AWS CNI reports IP exhaustion as a kubelet Event (reason=FailedCreatePodSandBox),
+// not as a pod phase change. The pod stays Pending with empty containerStatuses,
+// so readPodPhase() returns phase="Pending" indefinitely. Polling Events lets us
+// detect this case early and fail fast rather than waiting for HARD_FAIL_AFTER_MS.
+// ---------------------------------------------------------------------------
+
+export async function hasCniExhaustionEvent(podName: string): Promise<boolean> {
+  try {
+    const res = await coreApi().listNamespacedEvent({
+      namespace: env.K8S_NAMESPACE,
+      fieldSelector: `involvedObject.name=${podName},reason=FailedCreatePodSandBox`,
+    });
+    const list =
+      (res as unknown as { body?: k8s.CoreV1EventList }).body ??
+      (res as unknown as k8s.CoreV1EventList);
+    return (list.items?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Node-host discovery
 //
 // The sandbox URL has the shape `http://<host>:<nodePort>`. We can't pin
@@ -707,6 +751,12 @@ export async function waitRunningGetUrl(
     // env.CONTAINER_PORT is already a number (coerced in env.ts, default 4096).
     // This matches what buildContainerEnv injects as PORT into the Sandbox pod.
     const containerPort = agent.container_port ?? env.CONTAINER_PORT;
+    // Only poll the Events API after the pod has been non-Running for at least
+    // CNI_CHECK_AFTER_TICKS ticks. Avoids hammering the apiserver on every
+    // 200ms tick during normal startup; CNI exhaustion is detectable within
+    // a few seconds anyway since the kubelet emits the event immediately.
+    const CNI_CHECK_AFTER_TICKS = 5; // ~1s at POLL_RUNNING_INTERVAL_MS=200
+    let tick = 0;
     while (Date.now() < deadline) {
       const { phase, reason, containerReason, exitCode } = await readPodPhase(task_arn);
       if (phase === "Failed") throw new Error(`pod ${task_arn} failed: ${reason ?? "?"}`);
@@ -718,7 +768,11 @@ export async function waitRunningGetUrl(
       if (phase === "Running") {
         return inClusterSandboxUrl(task_arn, containerPort);
       }
+      if (phase !== "Failed" && tick >= CNI_CHECK_AFTER_TICKS && await hasCniExhaustionEvent(task_arn)) {
+        throw new Error(`pod ${task_arn} CNI IP exhaustion: node has no available IPs (FailedCreatePodSandBox)`);
+      }
       lastReason = `phase=${phase ?? "?"} (in-cluster)`;
+      tick++;
       await sleep(POLL_RUNNING_INTERVAL_MS);
     }
     throw new Error(`sandbox ${task_arn} never reached Running within ${timeout_ms}ms (last: ${lastReason})`);
@@ -726,6 +780,8 @@ export async function waitRunningGetUrl(
   // Out-of-cluster: existing NodePort path follows...
 
   let nodePort: number | null = null;
+  let tick = 0;
+  const CNI_CHECK_AFTER_TICKS = 5;
 
   while (Date.now() < deadline) {
     if (nodePort === null) nodePort = await readNodePort(task_arn);
@@ -740,7 +796,11 @@ export async function waitRunningGetUrl(
       const host = await resolveNodeHost();
       return `http://${host}:${nodePort}`;
     }
+    if (phase !== "Failed" && tick >= CNI_CHECK_AFTER_TICKS && await hasCniExhaustionEvent(task_arn)) {
+      throw new Error(`pod ${task_arn} CNI IP exhaustion: node has no available IPs (FailedCreatePodSandBox)`);
+    }
     lastReason = `phase=${phase ?? "?"} nodePort=${nodePort ?? "?"}`;
+    tick++;
     await sleep(POLL_RUNNING_INTERVAL_MS);
   }
 

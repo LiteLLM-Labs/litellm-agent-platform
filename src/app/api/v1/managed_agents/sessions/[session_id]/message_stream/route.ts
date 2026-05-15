@@ -38,8 +38,11 @@ import {
   expandMessage,
   harnessOpenEventStream,
   harnessPromptAsync,
+  isDeadSessionError,
+  isHardConnectFailure,
 } from "@/server/harness";
 import { safeStopTask } from "@/server/reconcile";
+import { invalidateSession } from "@/server/sessionCache";
 import {
   HttpError,
   httpError,
@@ -60,26 +63,6 @@ interface RouteContext {
 // connection forever. After this we send `error` and tear down.
 const STREAM_MAX_DURATION_MS = 600_000;
 
-const HARD_CONNECT_CODES = new Set([
-  "UND_ERR_CONNECT_TIMEOUT",
-  "ECONNREFUSED",
-  "EHOSTUNREACH",
-  "ENETUNREACH",
-  "ENOTFOUND",
-  "EAI_AGAIN",
-]);
-
-function isHardConnectFailure(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const e = err as { code?: unknown; cause?: unknown };
-  if (typeof e.code === "string" && HARD_CONNECT_CODES.has(e.code)) return true;
-  const cause = e.cause;
-  if (cause && typeof cause === "object") {
-    const c = (cause as { code?: unknown }).code;
-    if (typeof c === "string" && HARD_CONNECT_CODES.has(c)) return true;
-  }
-  return false;
-}
 
 interface BusEvent {
   id?: string;
@@ -158,7 +141,7 @@ export async function POST(req: Request, ctx: RouteContext) {
           });
         } catch (err) {
           console.error("harness event stream open failed", err);
-          if (isHardConnectFailure(err)) {
+          if (isHardConnectFailure(err) || isDeadSessionError(err)) {
             await prisma.session
               .updateMany({
                 where: { session_id, status: "ready" },
@@ -171,7 +154,7 @@ export async function POST(req: Request, ctx: RouteContext) {
               .catch(() => {
                 /* race with reconciler — fine */
               });
-            // Stop the pod immediately — fire-and-forget, don't block the stream
+            invalidateSession(session_id);
             if (row.task_arn) void safeStopTask(row.task_arn, "sandbox unreachable").catch(() => {});
           }
           send({ type: "error", message: "harness event stream failed" });
@@ -193,7 +176,7 @@ export async function POST(req: Request, ctx: RouteContext) {
           });
         } catch (err) {
           console.error("harness prompt_async failed", err);
-          if (isHardConnectFailure(err)) {
+          if (isHardConnectFailure(err) || isDeadSessionError(err)) {
             await prisma.session
               .updateMany({
                 where: { session_id, status: "ready" },
@@ -206,7 +189,7 @@ export async function POST(req: Request, ctx: RouteContext) {
               .catch(() => {
                 /* race with reconciler — fine */
               });
-            // Stop the pod immediately — fire-and-forget, don't block the stream
+            invalidateSession(session_id);
             if (row.task_arn) void safeStopTask(row.task_arn, "sandbox unreachable").catch(() => {});
           }
           send({ type: "error", message: "prompt_async failed" });

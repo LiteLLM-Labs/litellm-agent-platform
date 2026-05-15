@@ -30,6 +30,8 @@ import {
   expandMessage,
   harnessListMessages,
   harnessSendMessage,
+  isDeadSessionError,
+  isHardConnectFailure,
 } from "@/server/harness";
 import { safeStopTask } from "@/server/reconcile";
 import {
@@ -56,33 +58,6 @@ interface RouteContext {
   params: Promise<{ session_id: string }>;
 }
 
-// undici / Node net error codes that indicate the sandbox host is definitively
-// unreachable — TCP-handshake or DNS-resolution failures, not mid-request
-// errors. We deliberately exclude codes that fire on transient conditions
-// (`ECONNRESET` from a brief container restart or load-balancer teardown,
-// `UND_ERR_SOCKET` from a keepalive race) — those would permanently kill a
-// recoverable session in <1s, which is worse than letting the reconciler
-// catch it one tick later.
-const HARD_CONNECT_CODES = new Set([
-  "UND_ERR_CONNECT_TIMEOUT",
-  "ECONNREFUSED",
-  "EHOSTUNREACH",
-  "ENETUNREACH",
-  "ENOTFOUND",
-  "EAI_AGAIN",
-]);
-
-function isHardConnectFailure(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const e = err as { code?: unknown; cause?: unknown };
-  if (typeof e.code === "string" && HARD_CONNECT_CODES.has(e.code)) return true;
-  const cause = e.cause;
-  if (cause && typeof cause === "object") {
-    const c = (cause as { code?: unknown }).code;
-    if (typeof c === "string" && HARD_CONNECT_CODES.has(c)) return true;
-  }
-  return false;
-}
 
 async function persistHistorySnapshot(opts: {
   session_id: string;
@@ -143,7 +118,7 @@ export async function POST(req: Request, ctx: RouteContext) {
       // Network failure or 5xx from the sandbox. Re-throw as a 502 so the
       // caller can distinguish "harness unreachable" from a generic 500.
       console.error("harness send_message failed", err);
-      if (isHardConnectFailure(err)) {
+      if (isHardConnectFailure(err) || isDeadSessionError(err)) {
         // Drop the cache entry up front so concurrent in-flight requests
         // don't keep dialing a dead pod.
         invalidateSession(session_id);
