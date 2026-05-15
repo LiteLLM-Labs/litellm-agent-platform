@@ -22,6 +22,7 @@
  */
 
 import { createHmac } from "node:crypto";
+import { PassThrough } from "node:stream";
 
 import * as k8s from "@kubernetes/client-node";
 import { fetch } from "undici";
@@ -36,6 +37,7 @@ import {
   resolveHarnessImage,
   type AgentRow,
   type RunTaskOpts,
+  type SandboxFileSpec,
   type TaggedTask,
 } from "@/server/types";
 import type {
@@ -267,7 +269,10 @@ async function buildContainerEnv(
   const base: Record<string, string> = {
     REPO_URL: agent.repo_url ?? env.PREINSTALLED_GITHUB_REPO,
     BRANCH: agent.branch,
-    LITELLM_API_KEY: env.LITELLM_API_KEY,
+    // LITELLM_API_KEY is intentionally omitted here — it is passed to the
+    // vault sidecar as REAL_LITELLM_API_KEY so vault stubs it before the
+    // harness starts. The harness sources /lap-shared/env and receives only
+    // the stub, keeping the real key off the process's visible environment.
     LITELLM_API_BASE: env.LITELLM_API_BASE,
     LITELLM_DEFAULT_MODEL: agent.model,
     AGENT_PROMPT: fullPrompt,
@@ -312,6 +317,11 @@ async function buildContainerEnv(
     NODE_EXTRA_CA_CERTS: "/etc/vault-ca/tls.crt",
     VAULT_ENABLED: "true",
   };
+  // Unconditionally remove LITELLM_API_KEY from the harness env regardless
+  // of precedence. containerEnvPassthrough could reintroduce it via
+  // CONTAINER_ENV_LITELLM_API_KEY, silently defeating the vault-stub guarantee.
+  // The real key is routed through buildVaultEnv as REAL_LITELLM_API_KEY.
+  delete merged["LITELLM_API_KEY"];
   return Object.entries(merged).map(([name, value]) => ({ name, value }));
 }
 
@@ -326,12 +336,24 @@ function buildVaultEnv(opts: RunTaskOpts): Array<{ name: string; value: string }
     !Array.isArray(agent.env_vars)
       ? (agent.env_vars as Record<string, string>)
       : {};
-  const out: Array<{ name: string; value: string }> = Object.entries(raw).map(
-    ([k, v]) => ({ name: `REAL_${k}`, value: decrypt(v) }),
-  );
+  // Strip LITELLM_API_KEY from agent env_vars before mapping — we push it
+  // explicitly below as the platform key, so including it from agent.env_vars
+  // would produce two REAL_LITELLM_API_KEY entries with non-deterministic
+  // winner behaviour in the vault container spec.
+  const out: Array<{ name: string; value: string }> = Object.entries(raw)
+    .filter(([k]) => k !== "LITELLM_API_KEY")
+    .map(([k, v]) => ({ name: `REAL_${k}`, value: decrypt(v) }));
   // MASTER_KEY is the shared secret both sides hash to derive the
   // /interceptions auth token. Without it the platform's queries 401.
   out.push({ name: "MASTER_KEY", value: env.MASTER_KEY });
+
+  // Route LITELLM_API_KEY through vault so the harness only ever sees a stub.
+  // Vault writes LITELLM_API_KEY=stub_xxx to /lap-shared/env; the harness
+  // sources that file before starting, so `ANTHROPIC_API_KEY` (which the
+  // claude-code harness derives from it) is also a stub — the real key never
+  // appears in the process environment. Outbound API calls carry the stub in
+  // Authorization headers; vault swaps it for the real key at the wire.
+  out.push({ name: "REAL_LITELLM_API_KEY", value: env.LITELLM_API_KEY });
 
   // Egress enforcement — vault checks these before proxying each CONNECT.
   const allowOut = Array.isArray(agent.allow_out) ? (agent.allow_out as string[]) : [];
@@ -829,6 +851,72 @@ export async function waitRunningGetUrl(
   throw new Error(
     `sandbox ${task_arn} never reached Running with NodePort within ${timeout_ms}ms (last: ${lastReason})`,
   );
+}
+
+// ---------------------------------------------------------------------------
+// execFilesIntoContainer — write sandbox_files into the harness container
+// after the pod reaches Running, before the harness HTTP probe.
+// ---------------------------------------------------------------------------
+
+/**
+ * Write each file from `files` into the harness container at the specified
+ * `sandbox_path`. Expands a leading `~` to `/root`. Creates parent directories
+ * as needed. Runs sequentially so failures are attributed to a specific file.
+ */
+const EXEC_FILE_TIMEOUT_MS = 30_000;
+
+export async function execFilesIntoContainer(
+  task_arn: string,
+  files: SandboxFileSpec[],
+): Promise<void> {
+  if (files.length === 0) return;
+  const kc = loadKubeConfig();
+  const execApi = new k8s.Exec(kc);
+
+  for (const file of files) {
+    const dest = file.sandbox_path.replace(/^~(?=\/|$)/, "/root");
+    const content = Buffer.from(file.content, "base64");
+
+    const execPromise = new Promise<void>((resolve, reject) => {
+      const stdin = new PassThrough();
+      void execApi
+        .exec(
+          env.K8S_NAMESPACE,
+          task_arn,
+          CONTAINER_NAME,
+          // $1 is the destination path; pass it as positional arg to avoid
+          // shell-quoting issues with paths containing special characters.
+          ["sh", "-c", 'mkdir -p "$(dirname "$1")" && cat > "$1"', "--", dest],
+          null,
+          null,
+          stdin,
+          false,
+          (status: k8s.V1Status) => {
+            if (status.status === "Success") resolve();
+            else
+              reject(
+                new Error(
+                  `sandbox file inject failed (${dest}): ${status.message ?? JSON.stringify(status)}`,
+                ),
+              );
+          },
+        )
+        .then(() => {
+          stdin.write(content);
+          stdin.end();
+        })
+        .catch(reject);
+    });
+
+    const timeoutPromise = new Promise<void>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`sandbox file inject timed out after ${EXEC_FILE_TIMEOUT_MS}ms (${dest})`)),
+        EXEC_FILE_TIMEOUT_MS,
+      ),
+    );
+
+    await Promise.race([execPromise, timeoutPromise]);
+  }
 }
 
 // ---------------------------------------------------------------------------

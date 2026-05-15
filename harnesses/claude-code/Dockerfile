@@ -1,28 +1,30 @@
-# claude-tty POC
+# claude-tty harness
 #
 # Browser <--ws--> this container <--pty--> claude CLI
 #
-# Build:  docker build -t claude-tty-poc .
-# Run:    docker run --rm -p 4096:4096 \
-#           -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-#           claude-tty-poc
-# Then:   open http://localhost:4096
+# Build from repo root:
+#   docker buildx build -f harnesses/claude-code/Dockerfile -t claude-code-sandbox:dev .
 
 FROM node:20-bookworm-slim
 
-# Build deps for node-pty's native binding + git for the optional repo clone.
+# Build deps for node-pty's native binding + runtime deps.
+# curl is required by the phase reporter in entrypoint-common.sh.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git ca-certificates bash python3 make g++ \
+      git ca-certificates bash curl python3 make g++ \
     && rm -rf /var/lib/apt/lists/* \
     && npm install -g @anthropic-ai/claude-code@latest
 
 WORKDIR /app
-COPY package.json ./
+COPY harnesses/claude-code/package.json ./
 RUN npm install --no-audit --no-fund
 
-COPY server.js ./
-COPY public ./public
-COPY entrypoint.sh /entrypoint.sh
+COPY harnesses/claude-code/server.js ./
+COPY harnesses/claude-code/public ./public
+
+COPY harnesses/_shared/entrypoint-common.sh /opt/lap/common.sh
+RUN chmod +x /opt/lap/common.sh
+
+COPY harnesses/claude-code/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
 RUN useradd -m -u 1001 -s /bin/bash sandbox \
