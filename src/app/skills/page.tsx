@@ -151,6 +151,7 @@ export default function SkillsPage() {
       setSkills((prev) => prev.filter((s) => s.id !== deleteTargetId));
       setDeleteTargetId(null);
     } catch (e) {
+      setDeleteTargetId(null);
       setError(e instanceof ApiError ? e.message : (e as Error).message);
     } finally {
       setDeleting(false);

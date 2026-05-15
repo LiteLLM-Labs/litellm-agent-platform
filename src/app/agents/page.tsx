@@ -130,6 +130,7 @@ export default function AgentsListPage() {
       setDeleteTargetId(null);
       void load(search, sortCol, sortDir, page);
     } catch (e) {
+      setDeleteTargetId(null);
       setError(e instanceof ApiError ? e.message : (e as Error).message);
     } finally {
       setDeleting(false);
