@@ -3,6 +3,8 @@ title: "Codex TUI"
 description: "Run the OpenAI Codex CLI inside a managed sandbox and attach to it from your terminal."
 ---
 
+![Codex CLI attached over the lap TTY](/screenshots/codex-attach.gif)
+
 The `codex` harness wraps the [OpenAI Codex CLI](https://github.com/openai/codex) (`@openai/codex`) inside a sandboxed pod and exposes it over a WebSocket `/tty` endpoint. The `lap` CLI attaches your local terminal to the remote PTY — same feel as `ssh`.
 
 ## Create an agent
@@ -29,8 +31,6 @@ lap my-codex-agent
 ```
 
 You'll see the Codex CLI splash banner, and your local terminal becomes the sandbox's terminal — real `codex` v0.130+, real PTY, real ANSI rendering streamed over a WebSocket. Press **Ctrl-D** to detach.
-
-![Codex CLI attached over the lap TTY](/screenshots/codex-attach.gif)
 
 ## How auth works
 
