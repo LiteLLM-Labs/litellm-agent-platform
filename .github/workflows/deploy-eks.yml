@@ -203,12 +203,29 @@ jobs:
             --region "${{ secrets.AWS_REGION }}"
 
       - name: Update harness images in litellm-env secret
+        # GitHub Actions masks step outputs whose values contain a secret
+        # (here AWS_ACCOUNT_ID), and the masked value silently resolves to
+        # empty when consumed via `needs.build-push.outputs.*`. The earlier
+        # version of this step did exactly that and patched the secret with
+        # empty strings, so every claude-code session create then failed with
+        # `spec.containers[0].image: Required value`. Construct the URIs
+        # inline (same way the deployment-image step does) so the secrets
+        # are interpolated by bash at run time, never crossing a step output.
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform
+          SHA: ${{ github.sha }}
         run: |
-          kubectl patch secret litellm-env -n default -p "{\"data\":{
-            \"K8S_HARNESS_IMAGE_CLAUDE_CODE\":\"$(echo -n '${{ needs.build-push.outputs.claude_code_image }}' | base64 | tr -d '\n')\",
-            \"K8S_HARNESS_IMAGE_CLAUDE_SDK\":\"$(echo -n '${{ needs.build-push.outputs.claude_sdk_image }}' | base64 | tr -d '\n')\",
-            \"K8S_HARNESS_IMAGE_OPENCODE\":\"$(echo -n '${{ needs.build-push.outputs.opencode_image }}' | base64 | tr -d '\n')\"
-          }}"
+          CC="${REGISTRY}:harness-claude-code-${SHA}"
+          SDK="${REGISTRY}:harness-claude-sdk-${SHA}"
+          OC="${REGISTRY}:harness-opencode-${SHA}"
+          CC_B64=$(printf '%s' "$CC" | base64 | tr -d '\n')
+          SDK_B64=$(printf '%s' "$SDK" | base64 | tr -d '\n')
+          OC_B64=$(printf '%s' "$OC" | base64 | tr -d '\n')
+          kubectl patch secret litellm-env -n default --type=json -p="[
+            {\"op\":\"replace\",\"path\":\"/data/K8S_HARNESS_IMAGE_CLAUDE_CODE\",\"value\":\"$CC_B64\"},
+            {\"op\":\"replace\",\"path\":\"/data/K8S_HARNESS_IMAGE_CLAUDE_SDK\",\"value\":\"$SDK_B64\"},
+            {\"op\":\"replace\",\"path\":\"/data/K8S_HARNESS_IMAGE_OPENCODE\",\"value\":\"$OC_B64\"}
+          ]"
 
       - name: Update web deployment image
         run: |

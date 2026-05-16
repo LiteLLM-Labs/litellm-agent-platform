@@ -183,6 +183,38 @@ function isTuiAgent(a) {
   return CLIENT_TUI_HARNESSES.has(a.harness_id);
 }
 
+// Re-fetches the session row one more time (best-effort) and prints every
+// field that's useful for debugging a stuck startup — session id, status,
+// phase, phase_detail, failure_reason, sandbox_url, timestamps — so the
+// user has something concrete to paste when reporting the issue. Called
+// from the poll loop on timeout and on terminal `failed`/`dead` status.
+async function printSessionDiagnostics(cfg, sid, lastSession, headline) {
+  let s = lastSession;
+  try {
+    const r = await fetch(`${cfg.base}/api/v1/managed_agents/sessions/${sid}`, {
+      headers: { "authorization": `Bearer ${cfg.key}` },
+    });
+    if (r.ok) s = (await r.json().catch(() => null)) ?? s;
+  } catch { /* keep lastSession — diagnostics are best-effort */ }
+  const fields = [
+    ["session_id",     sid],
+    ["status",         s?.status],
+    ["phase",          s?.phase],
+    ["phase_detail",   s?.phase_detail],
+    ["failure_reason", s?.failure_reason],
+    ["sandbox_url",    s?.sandbox_url],
+    ["created_at",     s?.created_at],
+    ["last_seen_at",   s?.last_seen_at ?? s?.updated_at],
+  ];
+  console.error(`\n  ${ansi.red(`✗ ${headline}`)}\n`);
+  for (const [k, v] of fields) {
+    if (v === undefined || v === null || v === "") continue;
+    const label = (k + ":").padEnd(16);
+    console.error(`    ${ansi.dim(label)}${v}`);
+  }
+  console.error(`\n    ${ansi.dim("please share this block when reporting the issue.")}`);
+}
+
 async function openAgent(args) {
   // Accept `lap <name>`, `lap --agent <name>`, or `lap` (prompts).
   // The agent's harness_id determines what CLI runs inside the sandbox
@@ -249,15 +281,22 @@ async function openAgent(args) {
   }
   console.log(`  \x1b[32m✓\x1b[0m session \x1b[36m${sid.slice(0,8)}\x1b[0m`);
 
-  process.stdout.write("  \x1b[2mwaiting for sandbox\x1b[0m");
+  process.stdout.write(`  ${ansi.dim("waiting for sandbox")} `);
   let session = null;
   // Network blips shouldn't abort the poll, but server-side errors (401,
   // 4xx auth, 5xx outage) should surface fast. We tolerate up to two
   // consecutive failures and then bail with the upstream status so the
   // user isn't waiting out the full 60-iteration timeout to see a 401.
   let consecutiveFailures = 0;
-  for (let i = 0; i < 60; i++) {
-    await new Promise(r => setTimeout(r, 1500));
+  // Track the most recent phase we printed so we can surface phase
+  // transitions inline instead of just dots — gives the user real signal
+  // about why a slow start is slow (cloning_repo vs installing_deps vs
+  // waiting_harness, etc.) rather than an opaque row of `.`.
+  let lastPhase = null;
+  const POLL_LIMIT = 60;
+  const POLL_INTERVAL_MS = 1500;
+  for (let i = 0; i < POLL_LIMIT; i++) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
     let r;
     try {
       r = await fetch(`${cfg.base}/api/v1/managed_agents/sessions/${sid}`, {
@@ -289,18 +328,28 @@ async function openAgent(args) {
     }
     consecutiveFailures = 0;
     session = await r.json().catch(() => null);
-    process.stdout.write(".");
+    const phase = session?.phase ?? null;
+    if (phase && phase !== lastPhase) {
+      // First phase we see prints as `phase`; later transitions as `→ phase`
+      // so the line reads like `creating → cloning_repo → installing_deps`.
+      const arrow = lastPhase ? ` ${ansi.dim("→")} ` : "";
+      process.stdout.write(`${arrow}${ansi.cyan(phase)} `);
+      lastPhase = phase;
+    } else {
+      process.stdout.write(".");
+    }
     if (session?.status === "ready") break;
     if (session?.status === "failed" || session?.status === "dead") {
-      console.error(`\n  \x1b[31m✗ ${session.status}: ${session.failure_reason ?? ""}\x1b[0m`);
+      await printSessionDiagnostics(cfg, sid, session, `${session.status}`);
       process.exit(1);
     }
   }
   if (session?.status !== "ready") {
-    console.error("\n  \x1b[31m✗ timed out waiting for ready\x1b[0m");
+    const timeoutSecs = Math.round((POLL_LIMIT * POLL_INTERVAL_MS) / 1000);
+    await printSessionDiagnostics(cfg, sid, session, `session did not reach ready in ${timeoutSecs}s`);
     process.exit(1);
   }
-  process.stdout.write(" \x1b[32mready\x1b[0m\n");
+  process.stdout.write(` ${ansi.cyan("ready")}\n`);
 
   // Prefer session.tty_url when the platform provides it — that's a
   // platform-served route (e.g. /api/v1/managed_agents/sessions/<id>/tty

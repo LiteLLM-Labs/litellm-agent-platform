@@ -858,7 +858,12 @@ export function resolveHarnessImage(
     [HARNESS_CODEX]: harnessEnv.K8S_HARNESS_IMAGE_CODEX,
     [HARNESS_HERMES]: harnessEnv.K8S_HARNESS_IMAGE_HERMES,
   };
-  return map[harness_id] ?? harnessEnv.K8S_HARNESS_IMAGE;
+  // `||` (not `??`): an empty string for a per-harness var must also fall
+  // back to the global default. Otherwise an accidentally-blanked secret
+  // entry (e.g. K8S_HARNESS_IMAGE_CLAUDE_CODE="") returns "" here and the
+  // Sandbox CR is created with image="", which k8s rejects with
+  // `spec.containers[0].image: Required value` on every session create.
+  return map[harness_id] || harnessEnv.K8S_HARNESS_IMAGE;
 }
 
 export const SESSION_CREATING_TIMEOUT_MS = 600_000;
