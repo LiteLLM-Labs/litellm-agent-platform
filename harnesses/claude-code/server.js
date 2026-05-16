@@ -39,6 +39,15 @@ const MIME = {
   ".ico":  "image/x-icon",
 };
 const CMD = process.env.POC_CMD ?? "claude";
+// Extra CLI flags forwarded to the spawned command (whitespace-separated).
+// Empty/unset → no extra args (identical behavior to before). Most common use
+// is `CLAUDE_EXTRA_ARGS=--dangerously-skip-permissions` to opt an agent into
+// yolo mode so users aren't blocked on per-tool permission prompts. That flag
+// is security-sensitive — it bypasses every confirmation in the `claude` CLI
+// — so we just expose the knob here; whether to set it is a deploy decision.
+const EXTRA_ARGS = (process.env.CLAUDE_EXTRA_ARGS ?? "")
+  .split(/\s+/)
+  .filter(Boolean);
 const REPO_DIR = process.env.REPO_DIR ?? process.cwd();
 
 // Auth token. Empty → fail-closed: all auth-gated requests are rejected.
@@ -208,7 +217,7 @@ const wss = new WebSocketServer({
 wss.on("connection", (ws) => {
   let term;
   try {
-    term = pty.spawn(CMD, [], {
+    term = pty.spawn(CMD, EXTRA_ARGS, {
       name: "xterm-256color",
       cols: 100,
       rows: 30,
