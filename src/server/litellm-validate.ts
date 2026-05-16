@@ -79,7 +79,8 @@ export async function validateAgentModel(model: string): Promise<void> {
   }
 
   // Trim noisy fallback chains LiteLLM appends — they confuse the user.
-  detail = detail.replace(/No fallback model group.*/s, "").trim();
+  // `[\s\S]*` instead of `.*/s` keeps this valid under older TS targets.
+  detail = detail.replace(/No fallback model group[\s\S]*/, "").trim();
 
   // Hint: dated suffixes (e.g. `-20260416`) frequently 404 upstream when
   // the bare alias works. Suggest the bare alias when we detect one.

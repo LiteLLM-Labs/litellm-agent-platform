@@ -9,6 +9,7 @@
 
 import { assertAuth } from "@/server/auth";
 import { prisma } from "@/server/db";
+import { validateAgentModel } from "@/server/litellm-validate";
 import {
   encryptEnvVars,
   httpError,
@@ -38,6 +39,13 @@ export const PATCH = wrap<RouteContext>(async (req, ctx) => {
   assertAuth(req);
   const { agent_id } = await ctx.params;
   const body = UpdateAgentBody.parse(await req.json());
+
+  // If the model is being changed, confirm it's actually usable via
+  // LiteLLM before saving. Catches the dated-suffix-in-/v1/models-but-
+  // 404-upstream case (the common failure mode for opus/sonnet variants).
+  if (body.model !== undefined) {
+    await validateAgentModel(body.model);
+  }
 
   const data: Prisma.AgentUpdateInput = {};
   if (body.name !== undefined) data.agent_name = body.name;
