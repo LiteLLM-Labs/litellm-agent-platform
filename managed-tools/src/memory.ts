@@ -73,7 +73,19 @@ export const saveMemorySchema = {
     .min(0)
     .max(5)
     .optional()
-    .describe("Higher = surfaces first in pre-load and search. Default 0."),
+    .describe(
+      [
+        "Controls when this memory is surfaced. Two regimes:",
+        "- 4-5 = ALWAYS-ON. Pre-loaded into the system prompt every turn.",
+        "  Use for rules the user wants applied to every response (style,",
+        "  tone, blanket constraints).",
+        "- 0-1 = WHEN-RELEVANT. Only surfaces if search_memory matches.",
+        "  Use for topic-specific or domain-specific rules (one product",
+        "  area, one file type, one workflow).",
+        "If you can't tell which regime the user wants, ASK before saving.",
+        "Default 0.",
+      ].join(" "),
+    ),
 } as const;
 
 export const searchMemorySchema = {
@@ -113,6 +125,17 @@ export const saveMemoryDescription = [
   "feedback ('next time', 'always', 'never', 'going forward', or",
   "explicitly types 'remember:'). Phrase the lesson generically — for",
   "future tasks, not for this PR specifically.",
+  "",
+  "Before saving, decide the SCOPE and set `priority` accordingly:",
+  "- ALWAYS-ON (priority 4-5): rule should apply on every response,",
+  "  regardless of topic. Style preferences, blanket constraints, tone.",
+  "- WHEN-RELEVANT (priority 0-1): rule only matters in a specific",
+  "  domain/topic/workflow and is fine to surface only when search_memory",
+  "  matches.",
+  "If the scope isn't obvious from what the user said, ASK them",
+  "('Should I apply this to every response, or only when X?') before",
+  "calling save_memory. Don't guess — wrong-scope memories either spam",
+  "the system prompt or never get found.",
 ].join(" ");
 
 export const searchMemoryDescription = [
