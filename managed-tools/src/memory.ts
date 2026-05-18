@@ -73,7 +73,14 @@ export const saveMemorySchema = {
     .min(0)
     .max(5)
     .optional()
-    .describe("Higher = surfaces first in pre-load and search. Default 0."),
+    .describe(
+      [
+        "Controls whether the lesson is always-on or on-demand. Higher = surfaces first in pre-load and search.",
+        "  4-5 → always-on: rule applies to every response (style, behavior, hard constraints, identity).",
+        "  2-3 → frequent: rule applies to a broad area you'll hit often.",
+        "  0-1 → topic-specific: rule only matters when the topic comes up; reachable via search_memory but won't bloat the system prompt. Default 0.",
+      ].join("\n"),
+    ),
 } as const;
 
 export const searchMemorySchema = {
@@ -108,12 +115,14 @@ export type SearchMemoryInput = {
 // ---------------------------------------------------------------------------
 
 export const saveMemoryDescription = [
-  "Save a durable lesson the user has just taught you, so it applies to",
-  "every future run of this agent. Use when the user gives generalizable",
-  "feedback ('next time', 'always', 'never', 'going forward', or",
-  "explicitly types 'remember:'). Phrase the lesson generically — for",
-  "future tasks, not for this PR specifically.",
-].join(" ");
+  "Save a durable lesson the user has just taught you, so it applies to every future run of this agent. Use when the user gives generalizable feedback ('next time', 'always', 'never', 'going forward', or explicitly types 'remember:'). Phrase the lesson generically — for future tasks, not for this PR specifically.",
+  "",
+  "Before saving, decide the scope:",
+  "  • Always-on (priority 4-5): the rule should shape every response regardless of topic — style, behavior, hard constraints, identity. These get pre-loaded into the system prompt every turn.",
+  "  • Topic-specific (priority 0-1): the rule only matters for a narrow area (a specific feature, file, customer, workflow). These stay out of the system prompt and are retrieved via search_memory when relevant.",
+  "",
+  "If the scope is obvious from context (e.g. 'always be concise' is clearly always-on; 'the billing API endpoint is X' is clearly topic-specific), pick the priority and save. If it's ambiguous, ask the user one short clarifying question — 'apply this to every response, or only when [topic] comes up?' — before saving.",
+].join("\n");
 
 export const searchMemoryDescription = [
   "Search this agent's active memory for relevant lessons. MANDATORY",
