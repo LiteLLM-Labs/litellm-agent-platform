@@ -13,6 +13,10 @@
     "./memory": {
       "types": "./dist/memory.d.ts",
       "default": "./dist/memory.js"
+    },
+    "./system-prompt": {
+      "types": "./dist/system-prompt.d.ts",
+      "default": "./dist/system-prompt.js"
     }
   },
   "files": ["dist", "src"],

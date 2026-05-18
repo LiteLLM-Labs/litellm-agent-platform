@@ -35,6 +35,10 @@ import {
   buildMemoryMcpServer,
   MEMORY_TOOL_NAMES,
 } from "./memory-tools.js";
+import {
+  buildSystemPromptMcpServer,
+  SYSTEM_PROMPT_TOOL_NAMES,
+} from "./system-prompt-tools.js";
 
 // SDK's auto-resolution of the Claude Code native binary fails when
 // `process.cwd()` differs from the SDK's install location (we run with
@@ -63,6 +67,34 @@ const CLAUDE_BIN = resolveClaudeBinary();
 // Returns null when LAP_BASE_URL/AGENT_ID/LAP_AUTH_TOKEN aren't all set, so
 // local dev without the platform reachable still works (tools just absent).
 const MEMORY_MCP = buildMemoryMcpServer();
+
+// In-process MCP server exposing get_system_prompt + update_system_prompt
+// — lets the agent durably edit its own persona when the user teaches it a
+// rule that belongs in the system prompt rather than ephemeral memory.
+// Same env-gating as MEMORY_MCP: null when LAP_* env vars are missing.
+const SYSTEM_PROMPT_MCP = buildSystemPromptMcpServer();
+
+/**
+ * Collect every LAP-platform MCP server that successfully initialized into
+ * the partial `Options` slice the SDK expects (`mcpServers` + `allowedTools`).
+ * Returns an empty object when no servers are available, so the spread is a
+ * no-op — the SDK then accepts every tool name by default. This is the only
+ * place adding a new platform-tool server needs to touch on the server side.
+ */
+function buildLapMcpOptions(): Pick<Options, "mcpServers" | "allowedTools"> {
+  const mcpServers: NonNullable<Options["mcpServers"]> = {};
+  const allowedTools: string[] = [];
+  if (MEMORY_MCP) {
+    mcpServers["lap-memory"] = MEMORY_MCP;
+    allowedTools.push(...MEMORY_TOOL_NAMES);
+  }
+  if (SYSTEM_PROMPT_MCP) {
+    mcpServers["lap-self"] = SYSTEM_PROMPT_MCP;
+    allowedTools.push(...SYSTEM_PROMPT_TOOL_NAMES);
+  }
+  if (allowedTools.length === 0) return {};
+  return { mcpServers, allowedTools };
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -236,14 +268,11 @@ async function runTurn(
     // surfaces render answerable question cards.
     disallowedTools: ["AskUserQuestion"],
     ...(CLAUDE_BIN ? { pathToClaudeCodeExecutable: CLAUDE_BIN } : {}),
-    // Memory tools: only register when the in-process server was built (i.e.
-    // LAP env vars are set). Names are namespaced `mcp__<server>__<tool>`.
-    ...(MEMORY_MCP
-      ? {
-          mcpServers: { "lap-memory": MEMORY_MCP },
-          allowedTools: [...MEMORY_TOOL_NAMES],
-        }
-      : {}),
+    // LAP-platform tools: only register the servers we actually built (each
+    // returns null when LAP_BASE_URL/AGENT_ID/LAP_AUTH_TOKEN are missing, so
+    // local dev without the platform reachable still works). Names are
+    // namespaced `mcp__<server>__<tool>`.
+    ...buildLapMcpOptions(),
     // Resume the SDK's persisted session if we have one — that's how the
     // SDK stitches turn N+1 onto turn N's history without us tracking it.
     ...(s.sdk_session_id ? { resume: s.sdk_session_id } : {}),
