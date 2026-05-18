@@ -1,0 +1,98 @@
+{{/*
+Expand the name of the chart.
+*/}}
+{{- define "litellm-agent-platform.name" -}}
+{{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Create a default fully qualified app name.
+*/}}
+{{- define "litellm-agent-platform.fullname" -}}
+{{- if .Values.fullnameOverride }}
+{{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- $name := default .Chart.Name .Values.nameOverride }}
+{{- if contains $name .Release.Name }}
+{{- .Release.Name | trunc 63 | trimSuffix "-" }}
+{{- else }}
+{{- printf "%s-%s" .Release.Name $name | trunc 63 | trimSuffix "-" }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/*
+Chart label values.
+*/}}
+{{- define "litellm-agent-platform.chart" -}}
+{{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
+{{- end }}
+
+{{/*
+Common labels.
+*/}}
+{{- define "litellm-agent-platform.labels" -}}
+helm.sh/chart: {{ include "litellm-agent-platform.chart" . }}
+{{ include "litellm-agent-platform.selectorLabels" . }}
+app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+app.kubernetes.io/managed-by: {{ .Release.Service }}
+{{- end }}
+
+{{/*
+Selector labels.
+*/}}
+{{- define "litellm-agent-platform.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "litellm-agent-platform.name" . }}
+app.kubernetes.io/instance: {{ .Release.Name }}
+{{- end }}
+
+{{/*
+ServiceAccount name.
+*/}}
+{{- define "litellm-agent-platform.serviceAccountName" -}}
+{{- if .Values.serviceAccount.create }}
+{{- default (include "litellm-agent-platform.fullname" .) .Values.serviceAccount.name }}
+{{- else }}
+{{- default "default" .Values.serviceAccount.name }}
+{{- end }}
+{{- end }}
+
+{{/*
+Secret name for platform env vars.
+*/}}
+{{- define "litellm-agent-platform.secretName" -}}
+{{- if .Values.secrets.existingSecret }}
+{{- .Values.secrets.existingSecret }}
+{{- else }}
+{{- include "litellm-agent-platform.fullname" . }}-env
+{{- end }}
+{{- end }}
+
+{{/*
+Database URL — prefers externalDatabase.url, then builds from parts.
+*/}}
+{{- define "litellm-agent-platform.databaseUrl" -}}
+{{- if .Values.externalDatabase.url }}
+{{- .Values.externalDatabase.url }}
+{{- else if .Values.externalDatabase.existingSecret }}
+{{- printf "$(DB_URL_FROM_SECRET)" }}
+{{- else if .Values.postgresql.enabled }}
+{{- printf "postgresql://%s:%s@%s:%d/%s" .Values.postgresql.auth.username .Values.postgresql.auth.password (include "litellm-agent-platform.fullname" .) (int 5432) .Values.postgresql.auth.database }}
+{{- else }}
+{{- printf "postgresql://%s:%s@%s:%s/%s" .Values.externalDatabase.username .Values.externalDatabase.password .Values.externalDatabase.host .Values.externalDatabase.port .Values.externalDatabase.database }}
+{{- end }}
+{{- end }}
+
+{{/*
+Generate a random master key if not provided.
+*/}}
+{{- define "litellm-agent-platform.masterKey" -}}
+{{- .Values.secrets.masterKey | default (randAlphaNum 32) }}
+{{- end }}
+
+{{/*
+Generate a random harness auth token if not provided.
+*/}}
+{{- define "litellm-agent-platform.harnessAuthToken" -}}
+{{- .Values.secrets.harnessAuthToken | default (randAlphaNum 32) }}
+{{- end }}
