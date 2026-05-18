@@ -276,10 +276,14 @@ jobs:
       # placeholder; envsubst expands it to this commit's SHA so the
       # applied template carries a valid image reference — the same SHA
       # the explicit `kubectl set image` step below pins again.
-      - name: Apply web + worker manifests
+      - name: Apply RBAC + web + worker manifests
         env:
           GIT_SHA: ${{ github.sha }}
         run: |
+          # RBAC has no template placeholders, apply directly. Must come
+          # first so any new verb the deployment depends on is in place
+          # before the rollout starts.
+          kubectl apply -n default -f k8s/rbac-platform.yaml
           envsubst '$GIT_SHA' < k8s/web.yaml    | kubectl apply -n default -f -
           envsubst '$GIT_SHA' < k8s/worker.yaml | kubectl apply -n default -f -
 
