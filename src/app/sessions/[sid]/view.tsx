@@ -1453,12 +1453,6 @@ function MessageBlock({
   return <AssistantBlock msg={msg} />;
 }
 
-// Cap any single message at ~60% of the viewport so an oversized prompt or a
-// huge assistant reply (e.g. the agent dumping a whole file) doesn't shove
-// every other message off-screen. The block itself scrolls internally; the
-// page keeps scrolling past it.
-const MESSAGE_MAX_HEIGHT = "60vh";
-
 // Compact banner above the first message when a session was created from an
 // integration webhook. Surfaces "this conversation started elsewhere — here's
 // the link back" so the operator on the LAP side has a one-click path to the
@@ -1530,12 +1524,15 @@ function UserPromptBlock({
   attachments?: SendMessageAttachment[];
   emphasized: boolean;
 }) {
+  // Bubble grows to fit its content. The parent thread container owns the
+  // only scrollbar — we used to cap at 60vh + overflow-y-auto here, which
+  // gave every long message its own nested scroller. One scroll for the
+  // whole conversation is what the user expects.
   return (
     <div
-      className={`bg-muted/30 border border-border rounded-xl p-4 text-[14px] text-foreground leading-relaxed overflow-y-auto ${
+      className={`bg-muted/30 border border-border rounded-xl p-4 text-[14px] text-foreground leading-relaxed ${
         emphasized ? "shadow-sm" : ""
       }`}
-      style={{ maxHeight: MESSAGE_MAX_HEIGHT }}
     >
       {attachments && attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 mb-3">
@@ -1596,11 +1593,11 @@ function AssistantBlock({ msg }: { msg: LocalMessage }) {
     );
   });
 
+  // Lets the assistant block grow to fit its content. The parent thread
+  // container is the single scroll surface — see the matching change on
+  // UserPromptBlock for why we dropped the per-bubble overflow-y-auto.
   return (
-    <div
-      className="flex flex-col gap-3 overflow-y-auto"
-      style={{ maxHeight: MESSAGE_MAX_HEIGHT }}
-    >
+    <div className="flex flex-col gap-3">
       {failed && msg.text ? (
         <div
           className="sessions-md text-[14px] leading-relaxed"
