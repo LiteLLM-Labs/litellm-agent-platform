@@ -176,6 +176,8 @@ export interface AgentRow {
    * Pinned memories are always-included on top of this, capped server-side.
    */
   preload_memory_limit?: number;
+  /** Sub-agents wired as callable tools. */
+  agent_tools?: Array<{ agent_id: string; name: string; description: string }>;
   /**
    * IDs of skills currently attached to this agent, in attach order.
    * Parsed server-side from `<!-- skill:<id> -->` markers in `prompt`.
@@ -465,6 +467,8 @@ export interface UpdateAgentRequest {
   model?: string;
   branch?: string;
   preload_memory_limit?: number;
+  /** Replace the agent's sub-agent tools list. */
+  agent_tools?: Array<{ agent_id: string; name: string; description: string }>;
 }
 
 export function listAgents(): Promise<AgentRow[]> {
