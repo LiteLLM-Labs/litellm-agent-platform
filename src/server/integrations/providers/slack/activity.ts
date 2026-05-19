@@ -59,12 +59,31 @@ function decodeKey(external_session_id: string): DecodedKey | null {
   return { team_id, channel, thread_ts };
 }
 
+/**
+ * Render `externalUrls` as Slack mrkdwn link suffixes. Slack uses
+ * `<url|label>` rather than `[label](url)`, so build it explicitly here
+ * instead of leaning on a markdown renderer. Returns an empty string when
+ * the list is missing/empty so callers can append unconditionally.
+ */
+function formatLinks(
+  urls: { url: string; label: string }[] | undefined,
+): string {
+  if (!urls || urls.length === 0) return "";
+  return " " + urls.map((u) => `<${u.url}|${u.label}>`).join(" · ");
+}
+
 function bodyFor(event: SessionEvent): string | null {
   switch (event.type) {
     case "thought":
       // Render as italicized note so it visually separates from real replies.
-      return `_${event.body}_`;
+      // Any externalUrls (e.g. the LAP agent page on the "setting up…" ack)
+      // are appended after the italic block as plain links — Slack renders
+      // `<url|label>` correctly even outside the italics.
+      return `_${event.body}_${formatLinks(event.externalUrls)}`;
     case "response":
+      // `response.externalUrls` is reserved for a follow-up that posts the
+      // PR / artifact link alongside the agent's final reply. Not wired up
+      // here yet — keep response rendering unchanged.
       return event.body;
     case "elicit":
       return event.body;
