@@ -40,11 +40,20 @@ jobs:
           cutoff_7d  = now - timedelta(days=7)
 
           prs = gh(["pr", "list", "--state", "open", "--json",
-                    "number,createdAt,title,author", "--limit", "100"])
+                    "number,createdAt,title,author,labels", "--limit", "100"])
 
           for pr in prs:
               number  = pr["number"]
               created = datetime.fromisoformat(pr["createdAt"].replace("Z", "+00:00"))
+              labels  = [l["name"] for l in pr.get("labels", [])]
+
+              # Missing screenshot > 24h: close
+              if "needs-screenshot" in labels and created < cutoff_24h:
+                  print(f"PR #{number}: no screenshot >24h -> closing")
+                  close_pr(number,
+                      "Auto-closed: No screenshot was added within 24 hours. "
+                      "Please file a new PR and include a screenshot or screen recording showing the fix works.")
+                  continue
 
               # Stale > 7d: close unconditionally
               if created < cutoff_7d:
