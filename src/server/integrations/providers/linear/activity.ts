@@ -42,7 +42,7 @@ interface LinearActivityContent {
   result?: string;
 }
 
-function sessionEventToContent(event: SessionEvent): LinearActivityContent {
+function sessionEventToContent(event: SessionEvent): LinearActivityContent | null {
   switch (event.type) {
     case "thought":
       return { type: "thought", body: event.body };
@@ -65,6 +65,10 @@ function sessionEventToContent(event: SessionEvent): LinearActivityContent {
       // Canonical SessionEvent uses "elicit"; Linear's wire format uses
       // "elicitation". Translate at the boundary.
       return { type: "elicitation", body: event.body };
+    case "react":
+      // Linear doesn't expose a reactions API on agent activities — the
+      // dispatcher's react ack is a Slack UX nicety. No-op here.
+      return null;
   }
 }
 
@@ -72,6 +76,9 @@ export async function postActivity(
   integration: Integration,
   ctx: SessionEventContext,
 ): Promise<void> {
+  const content = sessionEventToContent(ctx.event);
+  if (content === null) return;
+
   const accessToken = await getAccessToken(ctx.install.install_id, integration);
   const res = await fetch(GRAPHQL_URL, {
     method: "POST",
@@ -84,7 +91,7 @@ export async function postActivity(
       variables: {
         input: {
           agentSessionId: ctx.externalSessionId,
-          content: sessionEventToContent(ctx.event),
+          content,
         },
       },
     }),

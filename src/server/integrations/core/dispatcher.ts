@@ -293,7 +293,10 @@ async function spawnSessionForEvent(input: SpawnInput): Promise<void> {
           install,
           externalSessionId: input.external_session_id,
           event: { type: "error", body: `Failed to start session: ${reason}` },
-          agent: { agent_id: input.agent_id } as never,
+          // No binding row was fetched on this path — the spawn failure
+          // happens after we already know the agent_id but before we
+          // refetch the agent row. Providers that need the agent on
+          // error events should guard the optional field.
         })
         .catch(() => {
           /* best-effort */
@@ -368,6 +371,28 @@ async function handleMessage(input: {
   const { integration, install, event } = input;
   if (!install) return errorResponse(404, "install not found");
 
+  // Fast-path UX: drop a `:eyes:` reaction on the user's message before
+  // we do any DB work or session bring-up. Fires fully in parallel — the
+  // dispatcher returns 202 in <200ms whether or not Slack's API answers
+  // promptly. `agent` is intentionally omitted because the binding lookup
+  // hasn't happened yet; SessionEventContext.agent is now optional and
+  // the Slack/Linear `react` handlers don't touch it.
+  void integration
+    .onSessionEvent({
+      install,
+      externalSessionId: event.external_session_id,
+      event: {
+        type: "react",
+        emoji: "eyes",
+        anchor: event.original_ts ? { ts: event.original_ts } : undefined,
+      },
+    })
+    .catch((err) => {
+      console.warn(
+        `[integrations/dispatcher] react ack failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+
   // Reusable session lookup. We pull the linked Session so we can check
   // status + last_seen_at without a second round trip.
   const existing = await prisma.integrationSession.findUnique({
@@ -394,6 +419,23 @@ async function handleMessage(input: {
   if (!binding) {
     return errorResponse(404, "no agent bound to this install");
   }
+
+  // Text ack in-thread, fire-and-forget. Lets the user see we picked up
+  // the work before the sandbox finishes bring-up (~10-60s on a cold
+  // start). We have `binding.agent` here so the provider can build a
+  // link to the agent / session page.
+  void integration
+    .onSessionEvent({
+      install,
+      externalSessionId: event.external_session_id,
+      event: { type: "thought", body: "Setting up an agent session." },
+      agent: binding.agent,
+    })
+    .catch((err) => {
+      console.warn(
+        `[integrations/dispatcher] thought ack failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
 
   if (existing && !reusable) {
     // Drop the stale row so the unique constraint on external_session_id

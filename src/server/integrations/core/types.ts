@@ -109,7 +109,17 @@ export interface SessionEventContext {
   /** The medium's session id — e.g. Linear's agentSession.id. */
   externalSessionId: string;
   event: SessionEvent;
-  agent: Agent;
+  /**
+   * Resolved agent bound to this install. Set whenever the dispatcher has
+   * already done the `agentIntegrationBinding` lookup before emitting the
+   * event — the common case for `thought`, `response`, `error`, etc.
+   *
+   * Undefined for events fired BEFORE the binding lookup, currently only
+   * the immediate `react` ack on the Slack message path. Providers that
+   * use `ctx.agent` must guard the field — typically by `event.type`-
+   * switching on event types that aren't fired pre-binding.
+   */
+  agent?: Agent;
 }
 
 // ============================================================================
@@ -190,8 +200,24 @@ export type IntegrationEvent =
       external_ref?: string;
       /** Image / file uploads attached to the inbound message. */
       attachments?: IntegrationAttachment[];
+      /** Original ts of the inbound message in the medium (e.g. Slack `event.ts`).
+       *  Used by the dispatcher to anchor immediate-ack signals (reactions,
+       *  first-thought reply) to the user's actual message rather than the
+       *  thread root. Optional — providers that don't have a per-message id
+       *  can leave it unset and the dispatcher falls back to `external_session_id`. */
+      original_ts?: string;
     }
   | { kind: "ignore" };
+
+/**
+ * Optional pointer to the inbound message a SessionEvent should anchor to.
+ * Used by `react` events so the provider knows which Slack message ts to
+ * `reactions.add` against — without it we'd react to the thread root by
+ * default, which is wrong for any followup message in a thread.
+ */
+export interface EventAnchor {
+  ts: string;
+}
 
 /**
  * Outbound event — what the harness emits and what the provider's
@@ -203,4 +229,12 @@ export type SessionEvent =
   | { type: "action"; action: string; parameter: string; result?: string }
   | { type: "response"; body: string; externalUrls?: { url: string; label: string }[] }
   | { type: "error"; body: string }
-  | { type: "elicit"; body: string };
+  | { type: "elicit"; body: string }
+  /**
+   * Lightweight acknowledgement signal. The dispatcher fires this the moment
+   * a message arrives, before any session bring-up, so the user gets fast
+   * visual feedback (a Slack reaction, a typing indicator on other platforms).
+   * `anchor` points at the user's inbound message; providers that can't
+   * anchor reactions to a specific message should no-op.
+   */
+  | { type: "react"; emoji: string; anchor?: EventAnchor };

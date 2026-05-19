@@ -62,6 +62,7 @@ const integration: Integration = {
             "im:history",
             "im:read",
             "im:write",
+            "reactions:write",
           ],
         },
       },
