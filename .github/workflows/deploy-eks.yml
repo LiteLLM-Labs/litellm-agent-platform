@@ -117,8 +117,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
-          # fetch-depth: 2 so git diff HEAD~1 can detect which harness dirs changed.
-          fetch-depth: 2
+          # fetch-depth: 0 so git diff can span the full push range (github.event.before → HEAD).
+          fetch-depth: 0
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -152,7 +152,6 @@ jobs:
 
       - name: Verify server-proxy.mjs in image
         run: |
-          # Compute sha256 of source and image copies — any mismatch aborts before push.
           src_hash=$(sha256sum server-proxy-v2.mjs | awk '{print $1}')
           img_hash=$(docker run --rm "$IMAGE" sh -c "sha256sum /app/server-proxy-v2.mjs | awk '{print \$1}'")
           echo "source sha256: $src_hash"
@@ -181,14 +180,26 @@ jobs:
         run: |
           IMG="${REGISTRY}:harness-claude-code-${SHA}"
           LATEST="${REGISTRY}:harness-claude-code-latest"
-          changed=$(git diff --name-only HEAD~1 HEAD -- harnesses/claude-code/ harnesses/_shared/ || echo changed)
+          DOCKERFILE="harnesses/claude-code/Dockerfile"
+          BEFORE="${{ github.event.before }}"
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || [ -z "$BEFORE" ]; then
+            changed=yes
+          else
+            changed=$(git diff --name-only "$BEFORE" HEAD -- harnesses/claude-code/ harnesses/_shared/ || echo changed)
+          fi
           if [ -n "$changed" ]; then
             echo "claude-code changed — building"
-            docker buildx build -f harnesses/claude-code/Dockerfile -t "$IMG" .
+            docker buildx build -f "$DOCKERFILE" -t "$IMG" .
             docker push "$IMG"
           else
             echo "claude-code unchanged — retagging"
-            docker pull "$LATEST" && docker tag "$LATEST" "$IMG" && docker push "$IMG"
+            if docker pull "$LATEST" 2>/dev/null; then
+              docker tag "$LATEST" "$IMG" && docker push "$IMG"
+            else
+              echo "claude-code: :latest not in ECR — building"
+              docker buildx build -f "$DOCKERFILE" -t "$IMG" .
+              docker push "$IMG"
+            fi
           fi
           docker tag "$IMG" "$LATEST" && docker push "$LATEST"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
@@ -201,14 +212,26 @@ jobs:
         run: |
           IMG="${REGISTRY}:harness-claude-sdk-${SHA}"
           LATEST="${REGISTRY}:harness-claude-sdk-latest"
-          changed=$(git diff --name-only HEAD~1 HEAD -- harnesses/claude-agent-sdk/ harnesses/_shared/ || echo changed)
+          DOCKERFILE="harnesses/claude-agent-sdk/Dockerfile"
+          BEFORE="${{ github.event.before }}"
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || [ -z "$BEFORE" ]; then
+            changed=yes
+          else
+            changed=$(git diff --name-only "$BEFORE" HEAD -- harnesses/claude-agent-sdk/ harnesses/_shared/ || echo changed)
+          fi
           if [ -n "$changed" ]; then
             echo "claude-agent-sdk changed — building"
-            docker buildx build -f harnesses/claude-agent-sdk/Dockerfile -t "$IMG" .
+            docker buildx build -f "$DOCKERFILE" -t "$IMG" .
             docker push "$IMG"
           else
             echo "claude-agent-sdk unchanged — retagging"
-            docker pull "$LATEST" && docker tag "$LATEST" "$IMG" && docker push "$IMG"
+            if docker pull "$LATEST" 2>/dev/null; then
+              docker tag "$LATEST" "$IMG" && docker push "$IMG"
+            else
+              echo "claude-agent-sdk: :latest not in ECR — building"
+              docker buildx build -f "$DOCKERFILE" -t "$IMG" .
+              docker push "$IMG"
+            fi
           fi
           docker tag "$IMG" "$LATEST" && docker push "$LATEST"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
@@ -221,14 +244,26 @@ jobs:
         run: |
           IMG="${REGISTRY}:harness-opencode-${SHA}"
           LATEST="${REGISTRY}:harness-opencode-latest"
-          changed=$(git diff --name-only HEAD~1 HEAD -- harnesses/opencode/ harnesses/_shared/ || echo changed)
+          DOCKERFILE="harnesses/opencode/Dockerfile"
+          BEFORE="${{ github.event.before }}"
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || [ -z "$BEFORE" ]; then
+            changed=yes
+          else
+            changed=$(git diff --name-only "$BEFORE" HEAD -- harnesses/opencode/ harnesses/_shared/ || echo changed)
+          fi
           if [ -n "$changed" ]; then
             echo "opencode changed — building"
-            docker buildx build -f harnesses/opencode/Dockerfile -t "$IMG" .
+            docker buildx build -f "$DOCKERFILE" -t "$IMG" .
             docker push "$IMG"
           else
             echo "opencode unchanged — retagging"
-            docker pull "$LATEST" && docker tag "$LATEST" "$IMG" && docker push "$IMG"
+            if docker pull "$LATEST" 2>/dev/null; then
+              docker tag "$LATEST" "$IMG" && docker push "$IMG"
+            else
+              echo "opencode: :latest not in ECR — building"
+              docker buildx build -f "$DOCKERFILE" -t "$IMG" .
+              docker push "$IMG"
+            fi
           fi
           docker tag "$IMG" "$LATEST" && docker push "$LATEST"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
@@ -241,14 +276,26 @@ jobs:
         run: |
           IMG="${REGISTRY}:harness-codex-${SHA}"
           LATEST="${REGISTRY}:harness-codex-latest"
-          changed=$(git diff --name-only HEAD~1 HEAD -- harnesses/codex/ harnesses/_shared/ || echo changed)
+          DOCKERFILE="harnesses/codex/Dockerfile"
+          BEFORE="${{ github.event.before }}"
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || [ -z "$BEFORE" ]; then
+            changed=yes
+          else
+            changed=$(git diff --name-only "$BEFORE" HEAD -- harnesses/codex/ harnesses/_shared/ || echo changed)
+          fi
           if [ -n "$changed" ]; then
             echo "codex changed — building"
-            docker buildx build -f harnesses/codex/Dockerfile -t "$IMG" .
+            docker buildx build -f "$DOCKERFILE" -t "$IMG" .
             docker push "$IMG"
           else
             echo "codex unchanged — retagging"
-            docker pull "$LATEST" && docker tag "$LATEST" "$IMG" && docker push "$IMG"
+            if docker pull "$LATEST" 2>/dev/null; then
+              docker tag "$LATEST" "$IMG" && docker push "$IMG"
+            else
+              echo "codex: :latest not in ECR — building"
+              docker buildx build -f "$DOCKERFILE" -t "$IMG" .
+              docker push "$IMG"
+            fi
           fi
           docker tag "$IMG" "$LATEST" && docker push "$LATEST"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
@@ -261,14 +308,26 @@ jobs:
         run: |
           IMG="${REGISTRY}:harness-hermes-${SHA}"
           LATEST="${REGISTRY}:harness-hermes-latest"
-          changed=$(git diff --name-only HEAD~1 HEAD -- harnesses/hermes/ harnesses/_shared/ || echo changed)
+          DOCKERFILE="harnesses/hermes/Dockerfile"
+          BEFORE="${{ github.event.before }}"
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ] || [ -z "$BEFORE" ]; then
+            changed=yes
+          else
+            changed=$(git diff --name-only "$BEFORE" HEAD -- harnesses/hermes/ harnesses/_shared/ || echo changed)
+          fi
           if [ -n "$changed" ]; then
             echo "hermes changed — building"
-            docker buildx build -f harnesses/hermes/Dockerfile -t "$IMG" .
+            docker buildx build -f "$DOCKERFILE" -t "$IMG" .
             docker push "$IMG"
           else
             echo "hermes unchanged — retagging"
-            docker pull "$LATEST" && docker tag "$LATEST" "$IMG" && docker push "$IMG"
+            if docker pull "$LATEST" 2>/dev/null; then
+              docker tag "$LATEST" "$IMG" && docker push "$IMG"
+            else
+              echo "hermes: :latest not in ECR — building"
+              docker buildx build -f "$DOCKERFILE" -t "$IMG" .
+              docker push "$IMG"
+            fi
           fi
           docker tag "$IMG" "$LATEST" && docker push "$LATEST"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
