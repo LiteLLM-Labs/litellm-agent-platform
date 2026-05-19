@@ -18,6 +18,12 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().min(1),
   UI_USERNAME: z.string().min(1),
   MASTER_KEY: z.string().min(8),
+  // HMAC-SHA256 signing key for per-pod agent tokens (see
+  // src/server/auth/agent-token.ts). Tokens issued at pod-spawn time are
+  // verified on every memory route call. Falls back to MASTER_KEY so
+  // existing deployments keep working without a new env var; production
+  // deployments should set this to its own random 32+ byte value.
+  HARNESS_TOKEN_SIGNING_KEY: z.string().min(16).optional(),
   K8S_NAMESPACE: z.string().min(1).default("default"),
   K8S_NODE_HOST: z.string().optional().default("host.docker.internal"),
   K8S_IMAGE_PULL_POLICY: z.enum(["Never", "IfNotPresent", "Always"]).default("Never"),
@@ -119,8 +125,18 @@ function parseEnv(): ServerEnv {
   if (!data.LAP_BASE_URL && process.env.RENDER_EXTERNAL_URL) {
     data.LAP_BASE_URL = process.env.RENDER_EXTERNAL_URL;
   }
+  // Default the HMAC signing key for per-pod agent tokens to MASTER_KEY when
+  // an operator hasn't set a dedicated value. Backward compatible: existing
+  // deployments don't have to touch their env to pick up the new auth path.
+  // Production deployments are still encouraged to set a separate value so
+  // that rotating the master key (which the UI uses) doesn't invalidate
+  // every live pod's tokens.
+  // After this fallback the field is guaranteed non-empty; assert it so the
+  // ServerEnv consumer doesn't carry the `string | undefined` from zod.
+  const signingKey = data.HARNESS_TOKEN_SIGNING_KEY || data.MASTER_KEY;
   return {
     ...data,
+    HARNESS_TOKEN_SIGNING_KEY: signingKey,
     containerEnvPassthrough: collectContainerEnvPassthrough(process.env),
   };
 }
