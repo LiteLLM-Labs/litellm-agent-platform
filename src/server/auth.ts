@@ -1,9 +1,24 @@
 /**
  * Bearer auth for v0 single-tenant UI.
  * See AuthIdentity / assertAuth / expectedBearer in src/server/types.ts.
+ *
+ * Two auth paths coexist:
+ *   1. MASTER_KEY bearer — used by the web UI, the `lap` CLI, and any
+ *      operator script. Grants full access to every route.
+ *   2. Per-pod agent access tokens (HMAC, see auth/agent-token.ts) — used
+ *      by the harness running inside a sandbox pod. Scoped to a single
+ *      agent's resources and to a specific route class (today: "memory").
+ *
+ * Routes that should accept BOTH call `assertAgentTokenOrMaster` (and have
+ * access to the URL's `agent_id`). Routes only reachable by the UI/CLI
+ * call the older `assertAuth`, which only accepts MASTER_KEY.
  */
 
 import { timingSafeEqual } from "node:crypto";
+import {
+  verifyAgentAccessToken,
+  type AgentScope,
+} from "@/server/auth/agent-token";
 import { env } from "@/server/env";
 import type { AuthIdentity } from "@/server/types";
 
@@ -76,4 +91,62 @@ export function assertCookieAuth(req: Request): AuthIdentity {
   if (a.length !== b.length) throw unauthorized();
   if (!timingSafeEqual(a, b)) throw unauthorized();
   return { user_id: "ui" };
+}
+
+// ---------------------------------------------------------------------------
+// Per-pod agent token auth — accepts either a valid agent access token
+// scoped to this URL's agent_id + the route's required scope, or the
+// MASTER_KEY (for UI/CLI parity). See src/server/auth/agent-token.ts.
+// ---------------------------------------------------------------------------
+
+export interface AssertAgentTokenOpts {
+  /** Required scope claim on the access token (e.g. "memory"). */
+  scope: AgentScope;
+  /** The URL's agent_id param; the token's `agent_id` claim must match. */
+  agent_id: string;
+}
+
+export interface AgentAuthIdentity {
+  /** "agent" when the request came in with a scoped agent token, "ui" for master key. */
+  source: "agent" | "ui";
+  /** Present only for the "agent" path. */
+  agent_id?: string;
+}
+
+/**
+ * Variant of `assertAuth` for routes the harness reaches from inside a
+ * sandbox pod. Accepts either:
+ *   - a scoped agent access token whose claims match the URL/scope, or
+ *   - the master key (so the UI keeps working for these routes too).
+ *
+ * On agent-token rejection we still try master-key — failing both yields
+ * a single 401 with no leak about which path was being attempted.
+ */
+export function assertAgentTokenOrMaster(
+  req: Request,
+  opts: AssertAgentTokenOpts,
+): AgentAuthIdentity {
+  const header = req.headers.get("authorization");
+  if (header === null) throw unauthorized();
+  if (!header.startsWith("Bearer ")) throw unauthorized();
+  const token = header.slice("Bearer ".length);
+
+  // Path 1: scoped agent token.
+  const verified = verifyAgentAccessToken(token, {
+    expected_agent_id: opts.agent_id,
+    required_scope: opts.scope,
+  });
+  if (verified.ok) {
+    return { source: "agent", agent_id: verified.claims.agent_id };
+  }
+
+  // Path 2: master-key bearer. Constant-time compare against the cached
+  // expected value so this branch matches the timing profile of assertAuth.
+  const a = Buffer.from(header);
+  const b = Buffer.from(expectedBearer());
+  if (a.length === b.length && timingSafeEqual(a, b)) {
+    return { source: "ui" };
+  }
+
+  throw unauthorized();
 }
