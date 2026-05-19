@@ -227,6 +227,11 @@ export interface SessionRow {
   // session view renders a small banner with a deep link back to the
   // originating thread. Null for sessions created from the UI.
   origin?: SessionOrigin | null;
+  // First user-message text from the session thread, truncated to ~60 chars.
+  // Used by the sidebar so rows show what each session is about instead of
+  // an opaque short-id. Null on brand-new sessions or rows whose history has
+  // not yet been snapshotted — callers fall back to `Session {shortId}`.
+  title_preview?: string | null;
 }
 
 /**
