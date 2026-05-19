@@ -117,6 +117,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          # fetch-depth: 2 so git diff HEAD~1 can detect which harness dirs changed.
+          fetch-depth: 2
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
@@ -173,50 +175,122 @@ jobs:
 
       - name: Build & push claude-code harness
         id: harness-claude-code
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform
+          SHA: ${{ github.sha }}
         run: |
-          IMG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform:harness-claude-code-${{ github.sha }}"
-          docker buildx build -f harnesses/claude-code/Dockerfile -t "$IMG" .
-          docker push "$IMG"
+          IMG="${REGISTRY}:harness-claude-code-${SHA}"
+          LATEST="${REGISTRY}:harness-claude-code-latest"
+          changed=$(git diff --name-only HEAD~1 HEAD -- harnesses/claude-code/ harnesses/_shared/ || echo changed)
+          if [ -n "$changed" ]; then
+            echo "claude-code changed — building"
+            docker buildx build -f harnesses/claude-code/Dockerfile -t "$IMG" .
+            docker push "$IMG"
+          else
+            echo "claude-code unchanged — retagging"
+            docker pull "$LATEST" && docker tag "$LATEST" "$IMG" && docker push "$IMG"
+          fi
+          docker tag "$IMG" "$LATEST" && docker push "$LATEST"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
 
       - name: Build & push claude-agent-sdk harness
         id: harness-claude-sdk
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform
+          SHA: ${{ github.sha }}
         run: |
-          IMG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform:harness-claude-sdk-${{ github.sha }}"
-          docker buildx build -f harnesses/claude-agent-sdk/Dockerfile -t "$IMG" .
-          docker push "$IMG"
+          IMG="${REGISTRY}:harness-claude-sdk-${SHA}"
+          LATEST="${REGISTRY}:harness-claude-sdk-latest"
+          changed=$(git diff --name-only HEAD~1 HEAD -- harnesses/claude-agent-sdk/ harnesses/_shared/ || echo changed)
+          if [ -n "$changed" ]; then
+            echo "claude-agent-sdk changed — building"
+            docker buildx build -f harnesses/claude-agent-sdk/Dockerfile -t "$IMG" .
+            docker push "$IMG"
+          else
+            echo "claude-agent-sdk unchanged — retagging"
+            docker pull "$LATEST" && docker tag "$LATEST" "$IMG" && docker push "$IMG"
+          fi
+          docker tag "$IMG" "$LATEST" && docker push "$LATEST"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
 
       - name: Build & push opencode harness
         id: harness-opencode
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform
+          SHA: ${{ github.sha }}
         run: |
-          IMG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform:harness-opencode-${{ github.sha }}"
-          docker buildx build -f harnesses/opencode/Dockerfile -t "$IMG" .
-          docker push "$IMG"
+          IMG="${REGISTRY}:harness-opencode-${SHA}"
+          LATEST="${REGISTRY}:harness-opencode-latest"
+          changed=$(git diff --name-only HEAD~1 HEAD -- harnesses/opencode/ harnesses/_shared/ || echo changed)
+          if [ -n "$changed" ]; then
+            echo "opencode changed — building"
+            docker buildx build -f harnesses/opencode/Dockerfile -t "$IMG" .
+            docker push "$IMG"
+          else
+            echo "opencode unchanged — retagging"
+            docker pull "$LATEST" && docker tag "$LATEST" "$IMG" && docker push "$IMG"
+          fi
+          docker tag "$IMG" "$LATEST" && docker push "$LATEST"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
 
       - name: Build & push codex harness
         id: harness-codex
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform
+          SHA: ${{ github.sha }}
         run: |
-          IMG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform:harness-codex-${{ github.sha }}"
-          docker buildx build -f harnesses/codex/Dockerfile -t "$IMG" .
-          docker push "$IMG"
+          IMG="${REGISTRY}:harness-codex-${SHA}"
+          LATEST="${REGISTRY}:harness-codex-latest"
+          changed=$(git diff --name-only HEAD~1 HEAD -- harnesses/codex/ harnesses/_shared/ || echo changed)
+          if [ -n "$changed" ]; then
+            echo "codex changed — building"
+            docker buildx build -f harnesses/codex/Dockerfile -t "$IMG" .
+            docker push "$IMG"
+          else
+            echo "codex unchanged — retagging"
+            docker pull "$LATEST" && docker tag "$LATEST" "$IMG" && docker push "$IMG"
+          fi
+          docker tag "$IMG" "$LATEST" && docker push "$LATEST"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
 
       - name: Build & push hermes harness
         id: harness-hermes
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform
+          SHA: ${{ github.sha }}
         run: |
-          IMG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform:harness-hermes-${{ github.sha }}"
-          docker buildx build -f harnesses/hermes/Dockerfile -t "$IMG" .
-          docker push "$IMG"
+          IMG="${REGISTRY}:harness-hermes-${SHA}"
+          LATEST="${REGISTRY}:harness-hermes-latest"
+          changed=$(git diff --name-only HEAD~1 HEAD -- harnesses/hermes/ harnesses/_shared/ || echo changed)
+          if [ -n "$changed" ]; then
+            echo "hermes changed — building"
+            docker buildx build -f harnesses/hermes/Dockerfile -t "$IMG" .
+            docker push "$IMG"
+          else
+            echo "hermes unchanged — retagging"
+            docker pull "$LATEST" && docker tag "$LATEST" "$IMG" && docker push "$IMG"
+          fi
+          docker tag "$IMG" "$LATEST" && docker push "$LATEST"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
 
       - name: Build & push gemini harness
         id: harness-gemini
+        env:
+          REGISTRY: ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform
+          SHA: ${{ github.sha }}
         run: |
-          IMG="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform:harness-gemini-${{ github.sha }}"
-          docker buildx build -f harnesses/gemini/Dockerfile -t "$IMG" .
-          docker push "$IMG"
+          IMG="${REGISTRY}:harness-gemini-${SHA}"
+          LATEST="${REGISTRY}:harness-gemini-latest"
+          changed=$(git diff --name-only HEAD~1 HEAD -- harnesses/gemini/ harnesses/_shared/ || echo changed)
+          if [ -n "$changed" ]; then
+            echo "gemini changed — building"
+            docker buildx build -f harnesses/gemini/Dockerfile -t "$IMG" .
+            docker push "$IMG"
+          else
+            echo "gemini unchanged — retagging"
+            docker pull "$LATEST" && docker tag "$LATEST" "$IMG" && docker push "$IMG"
+          fi
+          docker tag "$IMG" "$LATEST" && docker push "$LATEST"
           echo "image=$IMG" >> "$GITHUB_OUTPUT"
 
   # ── Job 2: Roll out the new image to EKS deployments ──────────────────────
