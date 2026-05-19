@@ -51,7 +51,7 @@ jobs:
                   print(f"PR #{number}: stale >7d -> closing")
                   close_pr(number,
                       "Auto-closed: PR has been open for more than 7 days without being merged. "
-                      "Please reopen with updated changes if still relevant.")
+                      "Please file a new PR with updated changes if still relevant.")
                   continue
 
               # Open < 24h: too new to evaluate
@@ -82,7 +82,7 @@ jobs:
                   print(f"  -> closing (score {score} < 4)")
                   close_pr(number,
                       f"Auto-closed: Greptile confidence score {score}/5 (< 4/5) and PR has been open for more than 24 hours. "
-                      "Please address the review feedback and reopen when ready.")
+                      "Please address the review feedback and file a new PR when ready.")
               else:
                   print(f"  -> score ok, keep open")
           EOF
