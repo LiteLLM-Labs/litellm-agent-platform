@@ -206,6 +206,12 @@ export type IntegrationEvent =
        *  thread root. Optional — providers that don't have a per-message id
        *  can leave it unset and the dispatcher falls back to `external_session_id`. */
       original_ts?: string;
+      /** Prior messages in the thread, oldest→newest, rendered as a transcript.
+       *  Set by mediums that backfill thread context when the bot is added to an
+       *  existing conversation (e.g. Slack `conversations.replies`). The
+       *  dispatcher folds it into the prompt on first-contact spawn only —
+       *  follow-ups reuse a live session that already carries its own history. */
+      thread_context?: string;
     }
   | { kind: "ignore" };
 
