@@ -171,6 +171,12 @@ jobs:
           docker tag "$IMAGE" "$LATEST"
           docker push "$LATEST"
 
+      - name: Build harnesses/base image
+        # All harness Dockerfiles start with FROM harnesses/base:dev.
+        # This image is never pushed — it only needs to exist in the local
+        # Docker daemon so the harness builds that follow can use it.
+        run: docker build -f harnesses/base/Dockerfile -t harnesses/base:dev .
+
       - name: Build & push claude-code harness
         id: harness-claude-code
         run: |
