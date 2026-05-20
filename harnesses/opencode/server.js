@@ -252,7 +252,9 @@ wss.on("connection", (ws) => {
       try {
         const msg = JSON.parse(s);
         if (msg.type === "resize" && Number.isFinite(msg.cols) && Number.isFinite(msg.rows)) {
-          term.resize(msg.cols, msg.rows);
+          const cols = Math.max(1, Math.floor(msg.cols));
+          const rows = Math.max(1, Math.floor(msg.rows));
+          try { term.resize(cols, rows); } catch { /* ignore invalid dimensions */ }
           return;
         }
         if (msg.type === "ping") return;
