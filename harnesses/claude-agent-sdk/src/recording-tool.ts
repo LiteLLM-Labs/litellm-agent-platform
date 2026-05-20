@@ -255,8 +255,7 @@ export function buildRecordingMcpServer(): McpSdkServerConfigWithInstance {
       try {
         const videoPath = await s.page.video()?.path();
         // context.close() finalizes the .webm — must happen before reading path
-        await s.context.close();
-        await s.browser.close();
+        try { await s.context.close(); } finally { await s.browser.close().catch(() => {}); }
         sessions.delete(input.session_id);
         // After close, path() is stable
         const finalPath = videoPath ?? (await s.page.video()?.path());
