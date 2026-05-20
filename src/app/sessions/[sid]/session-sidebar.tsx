@@ -66,7 +66,7 @@ function parseTaskInput(part: HarnessMessagePart): SessionTask[] {
 function isPlanTool(part: HarnessMessagePart): boolean {
   if ((typeof part?.type === "string" ? part.type : "") !== "tool") return false;
   const tool = typeof part.tool === "string" ? part.tool.toLowerCase() : "";
-  return tool === "todowrite" || tool === "update_plan" || tool.includes("todo");
+  return tool === "todowrite" || tool === "update_plan";
 }
 
 // Walk messages newest-first and return the task list from the most recent
