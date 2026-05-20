@@ -1797,6 +1797,7 @@ function WorkBar({
     <div className="flex flex-col gap-2">
       <button
         type="button"
+        aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
         className="inline-flex w-fit items-center gap-2 rounded-full border border-border bg-muted/40 px-3 py-1 text-[12px] text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
       >
