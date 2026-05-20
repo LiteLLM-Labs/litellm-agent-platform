@@ -527,17 +527,16 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
       status: "ready",
     });
     if (body.initial_prompt) {
-      void sendInlineBrainMessage(session.session_id, body.initial_prompt, agent)
-        .then(async ({ response: _ }) => {
-          const msgs = listInlineBrainMessages(session.session_id);
-          await prisma.session.update({
-            where: { session_id: session.session_id },
-            data: { history: msgs as unknown as Prisma.InputJsonValue },
-          }).catch(() => {});
-        })
-        .catch((err: unknown) => {
-          console.error(`brain-inline initial_prompt failed: ${err instanceof Error ? err.message : String(err)}`);
+      try {
+        await sendInlineBrainMessage(session.session_id, body.initial_prompt, agent);
+        const msgs = listInlineBrainMessages(session.session_id);
+        await prisma.session.update({
+          where: { session_id: session.session_id },
+          data: { history: msgs as unknown as Prisma.InputJsonValue },
         });
+      } catch (err) {
+        console.error(`brain-inline initial_prompt failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     }
     const updatedSession = await prisma.session.findUniqueOrThrow({ where: { session_id: session.session_id } });
     return Response.json(toApiSession(updatedSession, null, null, agent.harness_id));
