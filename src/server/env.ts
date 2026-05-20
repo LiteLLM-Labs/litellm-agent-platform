@@ -88,6 +88,12 @@ const EnvSchema = z.object({
     .int()
     .positive()
     .default(24),
+  // Priority agent: one agent that gets a dedicated warm-pool budget
+  // independent of the shared WARM_POOL_SIZE pool. Useful for a "default
+  // coding agent" that sees high traffic and needs more than 1 warm pod.
+  // Set both vars to enable; omit either to disable.
+  WARM_POOL_PRIORITY_AGENT_ID: z.string().optional(),
+  WARM_POOL_PRIORITY_SIZE: z.coerce.number().int().positive().default(1),
 });
 
 function collectContainerEnvPassthrough(

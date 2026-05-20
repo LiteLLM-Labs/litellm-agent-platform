@@ -638,6 +638,8 @@ export interface ServerEnv {
   WARM_POOL_MAX_PROVISIONING: number; // default 2
   WARM_POOL_TTL_MINUTES: number; // default 30
   WARM_POOL_RECENT_AGENT_HOURS: number; // default 24
+  WARM_POOL_PRIORITY_AGENT_ID?: string;
+  WARM_POOL_PRIORITY_SIZE: number; // default 1
 
   /**
    * All process.env entries whose key starts with `CONTAINER_ENV_`, with

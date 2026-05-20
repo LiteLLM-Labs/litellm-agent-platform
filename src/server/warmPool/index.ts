@@ -32,9 +32,7 @@ import {
 } from "@/server/k8s";
 import type { AgentRow, WarmTaskRow } from "@/server/types";
 
-// Per-agent target. Today we always keep 1 warm task per recently-active
-// agent up to WARM_POOL_SIZE total — keeping it >1 would let one agent
-// hog the budget.
+// Per-agent target for regular (non-priority) agents.
 const PER_AGENT_TARGET = 1;
 
 // ---------------------------------------------------------------------------
@@ -256,29 +254,54 @@ export async function topUpWarmPool(): Promise<{
   const { recycled, fallback_dead } = await recycleExpired();
 
   const stats = await loadPoolStats();
+
+  // Priority agent has a dedicated budget that sits outside WARM_POOL_SIZE so
+  // it doesn't crowd out the shared pool for other agents.
+  // Set WARM_POOL_PRIORITY_AGENT_ID + WARM_POOL_PRIORITY_SIZE to enable.
+  const priorityAgentId = env.WARM_POOL_PRIORITY_AGENT_ID;
+  const priorityTarget = env.WARM_POOL_PRIORITY_SIZE;
+  let provisioned = 0;
+  let toFire = env.WARM_POOL_MAX_PROVISIONING;
+
+  if (priorityAgentId && toFire > 0) {
+    const cur = stats.per_agent.get(priorityAgentId) ?? { warm: 0, provisioning: 0 };
+    const deficit = priorityTarget - cur.warm - cur.provisioning;
+    if (deficit > 0) {
+      const agent = await prisma.agent.findUnique({ where: { agent_id: priorityAgentId } });
+      if (agent) {
+        const fires = Math.min(deficit, toFire);
+        for (let i = 0; i < fires; i++) {
+          void provisionWarmTask(agent);
+          provisioned += 1;
+          toFire -= 1;
+        }
+      }
+    }
+  }
+
+  // Shared pool for recently-active agents (excluding the priority agent which
+  // has its own budget above).
+  const sharedWarm = stats.total_warm - (stats.per_agent.get(priorityAgentId ?? "")?.warm ?? 0);
+  const sharedProvisioning = stats.total_provisioning - (stats.per_agent.get(priorityAgentId ?? "")?.provisioning ?? 0);
   const remainingBudget = Math.max(
     0,
-    env.WARM_POOL_SIZE - stats.total_warm - stats.total_provisioning,
+    env.WARM_POOL_SIZE - sharedWarm - sharedProvisioning,
   );
-  if (remainingBudget === 0) return { provisioned: 0, recycled, fallback_dead };
 
-  // Recent-active agents form the candidate pool, capped by the size budget
-  // since we never need more candidates than open slots.
-  const candidates = await loadRecentAgents(env.WARM_POOL_SIZE);
-  let toFire = Math.min(remainingBudget, env.WARM_POOL_MAX_PROVISIONING);
-  let provisioned = 0;
+  if (remainingBudget > 0 && toFire > 0) {
+    const candidates = await loadRecentAgents(env.WARM_POOL_SIZE);
+    let sharedToFire = Math.min(remainingBudget, toFire);
 
-  for (const agent of candidates) {
-    if (toFire === 0) break;
-    const cur = stats.per_agent.get(agent.agent_id) ?? {
-      warm: 0,
-      provisioning: 0,
-    };
-    if (cur.warm + cur.provisioning >= PER_AGENT_TARGET) continue;
-    // fire-and-forget; provisionWarmTask catches its own errors.
-    void provisionWarmTask(agent);
-    provisioned += 1;
-    toFire -= 1;
+    for (const agent of candidates) {
+      if (sharedToFire === 0) break;
+      // Priority agent is handled above — skip it here.
+      if (agent.agent_id === priorityAgentId) continue;
+      const cur = stats.per_agent.get(agent.agent_id) ?? { warm: 0, provisioning: 0 };
+      if (cur.warm + cur.provisioning >= PER_AGENT_TARGET) continue;
+      void provisionWarmTask(agent);
+      provisioned += 1;
+      sharedToFire -= 1;
+    }
   }
 
   return { provisioned, recycled, fallback_dead };
