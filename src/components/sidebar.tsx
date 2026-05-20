@@ -218,7 +218,7 @@ export function Sidebar() {
       {/* Wordmark */}
       <div className="flex items-center gap-2 px-3 pt-3 pb-2">
         <Link
-          href="/agents"
+          href="/"
           aria-label="LiteLLM Agent Platform home"
           className="inline-flex shrink-0 items-center gap-1.5 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
