@@ -38,6 +38,24 @@ export async function GET(req: Request, ctx: RouteContext) {
         sandbox_url: row.sandbox_url,
         harness_session_id: row.harness_session_id,
       });
+      // If the last harness message is a user message (the agent's response
+      // hasn't been committed yet — either still in-flight or interrupted),
+      // check whether we have a partial-turn snapshot from the stream route
+      // and append it so the UI can show whatever work the agent produced
+      // before the client disconnected or the turn was interrupted.
+      const lastHarness = msgs[msgs.length - 1];
+      const lastIsUser =
+        !lastHarness || (lastHarness as { info?: { role?: string } }).info?.role === "user";
+      if (lastIsUser && Array.isArray(row.pending_assistant_parts) && row.pending_assistant_parts.length > 0) {
+        msgs.push({
+          info: {
+            id: `pending-${row.session_id}`,
+            sessionID: row.harness_session_id,
+            role: "assistant",
+          },
+          parts: row.pending_assistant_parts as { type: string; [k: string]: unknown }[],
+        });
+      }
       return Response.json(msgs);
     } catch (err) {
       console.error("harness list_messages failed, falling back to history", err);
