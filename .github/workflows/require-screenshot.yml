@@ -24,9 +24,13 @@ jobs:
           body = os.environ.get("PR_BODY", "") or ""
           number = os.environ.get("PR_NUMBER")
 
-          # Screenshot present if: markdown image, or user-attached GitHub image URL
+          # Screenshot present if: markdown image with absolute https URL, or GitHub-hosted image.
+          # Relative paths (e.g. .github/screenshots/foo.png) are rejected — they render
+          # as broken images in PR descriptions because GitHub doesn't resolve relative
+          # paths against the PR branch.
           has_screenshot = bool(re.search(
-              r'!\[.*?\]\(.*?\)|https://.*?user-attachments.*?\.(png|jpg|jpeg|gif|webp)',
+              r'!\[.*?\]\(https://[^)]+\.(png|jpg|jpeg|gif|webp)[^)]*\)'
+              r'|https://.*?user-attachments.*?\.(png|jpg|jpeg|gif|webp)',
               body, re.IGNORECASE
           ))
 
