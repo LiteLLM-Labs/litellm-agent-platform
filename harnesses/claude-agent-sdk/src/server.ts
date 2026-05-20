@@ -125,8 +125,12 @@ function emit(s: Session, type: string, props: Record<string, unknown>): void {
     type,
     properties: { ...props, sessionID: s.id },
   };
-  for (const cb of s.busSubscribers) cb(event);
-  for (const cb of globalBusSubscribers) cb(event);
+  for (const cb of s.busSubscribers) {
+    try { cb(event); } catch (err) { console.error("[emit] session subscriber threw:", err); }
+  }
+  for (const cb of globalBusSubscribers) {
+    try { cb(event); } catch (err) { console.error("[emit] global subscriber threw:", err); }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -322,6 +326,7 @@ async function runTurn(
       };
     } else {
       const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[runTurn] SDK error session=${s.id}:`, err);
       lastError = { name: "SDKError", data: { message: msg.slice(0, 500) } };
     }
   } finally {
@@ -722,8 +727,14 @@ app.post("/session/:id/abort", async (c) => {
  */
 app.get("/event", (c) =>
   streamSSE(c, async (stream) => {
+    const subscriberId = Math.random().toString(36).slice(2, 8);
+    console.log(`[event/sse] subscriber ${subscriberId} connected`);
     const cb = (e: BusEvent): void => {
-      void stream.writeSSE({ data: JSON.stringify(e) });
+      stream.writeSSE({ data: JSON.stringify(e) }).catch((err: unknown) => {
+        // Swallow write errors — subscriber may have disconnected. The
+        // heartbeat loop will detect stream.aborted and clean up.
+        console.error(`[event/sse] subscriber ${subscriberId} writeSSE failed (type=${e.type}):`, err);
+      });
     };
     globalBusSubscribers.add(cb);
     // First event the platform's stream route waits for before posting the
@@ -736,9 +747,16 @@ app.get("/event", (c) =>
       // intermediate proxies (Render, browsers) from killing idle SSE.
       while (!stream.aborted) {
         await stream.sleep(15_000);
-        await stream.writeSSE({ event: "ping", data: "" });
+        if (stream.aborted) break;
+        try {
+          await stream.writeSSE({ event: "ping", data: "" });
+        } catch (err) {
+          console.error(`[event/sse] subscriber ${subscriberId} heartbeat failed, closing:`, err);
+          break;
+        }
       }
     } finally {
+      console.log(`[event/sse] subscriber ${subscriberId} disconnected`);
       globalBusSubscribers.delete(cb);
     }
   }),

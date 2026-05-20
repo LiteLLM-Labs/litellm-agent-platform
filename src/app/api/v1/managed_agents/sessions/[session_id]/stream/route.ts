@@ -267,8 +267,15 @@ export async function GET(req: Request, ctx: RouteContext) {
           // Reader rejection during shutdown is expected when the client
           // aborts or the max-duration deadline fires; only log when we
           // weren't already tearing down.
+          const errCode = (err as { code?: string })?.code ?? (err as { cause?: { code?: string } })?.cause?.code ?? "unknown";
+          const errMsg = err instanceof Error ? err.message : String(err);
           if (!upstreamCtl.signal.aborted) {
-            console.error("harness event stream read failed", err);
+            console.error(
+              `[stream] upstream SSE dropped unexpectedly` +
+              ` session=${session_id} code=${errCode} msg=${errMsg}` +
+              ` clientAborted=${req.signal.aborted}`,
+              err,
+            );
           }
         } finally {
           clearTimeout(deadlineTimer);

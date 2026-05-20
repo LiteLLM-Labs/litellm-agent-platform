@@ -269,11 +269,19 @@ export async function POST(req: Request, ctx: RouteContext) {
           // aborts or the max-duration deadline fires; only log when we
           // weren't already tearing down. The deadline path emits its own
           // error frame so the client sees the timeout.
+          const errCode = (err as { code?: string })?.code ?? (err as { cause?: { code?: string } })?.cause?.code ?? "unknown";
+          const errMsg = err instanceof Error ? err.message : String(err);
           if (!upstreamCtl.signal.aborted) {
-            console.error("harness event stream read failed", err);
+            console.error(
+              `[message_stream] upstream SSE dropped unexpectedly` +
+              ` session=${session_id} code=${errCode} msg=${errMsg}` +
+              ` clientAborted=${req.signal.aborted}`,
+              err,
+            );
             send({ type: "error", message: "event stream interrupted" });
           } else if (!req.signal.aborted) {
             // Aborted by deadline (not by client). Surface the timeout.
+            console.warn(`[message_stream] stream deadline fired session=${session_id}`);
             send({ type: "error", message: "stream timeout" });
           }
         } finally {

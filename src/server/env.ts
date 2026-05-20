@@ -69,6 +69,8 @@ const EnvSchema = z.object({
   // memory tools were already configured against. Empty disables harness
   // phase reports — the in-sandbox curl just no-ops.
   PLATFORM_INTERNAL_URL: z.string().default(""),
+  // Local dev: skip K8s and route all sessions to this harness URL.
+  LOCAL_SANDBOX_URL: z.string().optional(),
   CONTAINER_PORT: z.coerce.number().int().positive().default(4096),
   RECONCILE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
 
@@ -137,7 +139,7 @@ function parseEnv(): ServerEnv {
   return {
     ...data,
     HARNESS_TOKEN_SIGNING_KEY: signingKey,
-    LOCAL_SANDBOX_URL: process.env.LOCAL_SANDBOX_URL,
+    LOCAL_SANDBOX_URL: data.LOCAL_SANDBOX_URL,
     containerEnvPassthrough: collectContainerEnvPassthrough(process.env),
   };
 }
