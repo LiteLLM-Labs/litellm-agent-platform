@@ -8,6 +8,7 @@
 
 import { fetch } from "undici";
 
+import { retryFetch } from "./retryFetch";
 import type {
   HarnessCreateSessionOpts,
   HarnessMessage,
@@ -99,17 +100,29 @@ export function expandMessage(
   throw new Error("message body must include 'text', 'parts', or 'attachments'");
 }
 
+/**
+ * `retryOn5xx`: opt-in for idempotent POSTs only. `harnessSendMessage`
+ * leaves it false because retrying a half-processed message risks the
+ * harness applying the user's turn twice. Connect-level failures
+ * (refused / DNS / undici timeout) are always retried — those mean the
+ * request never reached the harness, so repeat is safe regardless.
+ */
 async function postJson(
   url: string,
   body: unknown,
   timeout_ms: number,
+  opts: { retryOn5xx?: boolean; label?: string } = {},
 ): Promise<unknown> {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(timeout_ms),
-  });
+  const res = await retryFetch(
+    () =>
+      fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeout_ms),
+      }),
+    { retryOn5xx: opts.retryOn5xx, label: opts.label ?? "harness:POST" },
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new HarnessHttpError(res.status, res.statusText, text, url, "POST");
@@ -126,6 +139,11 @@ export async function harnessCreateSession(
     `${sandbox_url}/session`,
     { title, prompt: opts.prompt, files: opts.files ?? [] },
     timeout_ms,
+    // Session create can be safely retried on 5xx: a half-accepted request
+    // either creates a session we never saw (orphan — reconciler handles it)
+    // or fails at the LB before reaching the harness. Either way, retrying
+    // is strictly better than surfacing the 502 to the user.
+    { retryOn5xx: true, label: "harness:create_session" },
   );
   // Harness may return a bare object OR a single-element array (proto quirk).
   if (Array.isArray(data)) {
@@ -165,10 +183,15 @@ export async function harnessListMessages(opts: {
     timeout_ms = DEFAULT_CREATE_TIMEOUT_MS,
   } = opts;
   const url = `${sandbox_url}/session/${harness_session_id}/message`;
-  const res = await fetch(url, {
-    method: "GET",
-    signal: AbortSignal.timeout(timeout_ms),
-  });
+  // GET list is fully idempotent — retry connect-level and 5xx.
+  const res = await retryFetch(
+    () =>
+      fetch(url, {
+        method: "GET",
+        signal: AbortSignal.timeout(timeout_ms),
+      }),
+    { retryOn5xx: true, label: "harness:list_messages" },
+  );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new HarnessHttpError(res.status, res.statusText, text, url, "GET");
@@ -217,10 +240,16 @@ export async function harnessSendMessage(
     model: { providerID: "litellm", modelID: model },
     parts,
   };
+  // Connect-level retries only — a 5xx on /message can mean the harness
+  // already applied the user's turn before erroring, so retrying could
+  // double-post. Connect failures (refused, DNS, undici timeout) are still
+  // safe because the request never reached the harness. Adding an
+  // idempotency key on the harness side would unlock 5xx retries here.
   const data = await postJson(
     `${sandbox_url}/session/${harness_session_id}/message`,
     body,
     timeout_ms,
+    { label: "harness:send_message" },
   );
   return data as HarnessMessageResponse;
 }
@@ -242,15 +271,21 @@ export async function harnessPromptAsync(
     timeout_ms = DEFAULT_CREATE_TIMEOUT_MS,
   } = opts;
   const url = `${sandbox_url}/session/${harness_session_id}/prompt_async`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      model: { providerID: "litellm", modelID: model },
-      parts,
-    }),
-    signal: AbortSignal.timeout(timeout_ms),
-  });
+  // Connect-level retries only — same rationale as harnessSendMessage:
+  // a 5xx mid-prompt could mean the harness has already queued work.
+  const res = await retryFetch(
+    () =>
+      fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: { providerID: "litellm", modelID: model },
+          parts,
+        }),
+        signal: AbortSignal.timeout(timeout_ms),
+      }),
+    { label: "harness:prompt_async" },
+  );
   // 204 No Content is the documented success path; res.ok already covers it
   // (200–299), so a single `!res.ok` guard handles the error case.
   if (!res.ok) {
