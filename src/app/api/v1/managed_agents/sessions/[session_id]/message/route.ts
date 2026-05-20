@@ -89,7 +89,13 @@ export async function POST(req: Request, ctx: RouteContext) {
     const { session_id } = await ctx.params;
     const body = SendMessageBody.parse(await req.json());
 
-    const cached = await getCachedSession(session_id);
+    let cached;
+    try {
+      cached = await getCachedSession(session_id);
+    } catch (dbErr) {
+      console.error("getCachedSession DB error for session", session_id, dbErr);
+      throw new HttpError(503, "session store temporarily unavailable");
+    }
     if (!cached) {
       // Cache miss + DB row absent / not ready / not fully provisioned. We
       // collapse the prior 404 / 409 distinction into a single 404 here —

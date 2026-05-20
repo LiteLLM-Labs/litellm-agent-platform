@@ -73,6 +73,7 @@ async function hydrate(
     || row.status !== "ready"
     || !row.sandbox_url
     || !row.harness_session_id
+    || !row.agent
   ) {
     return null;
   }
