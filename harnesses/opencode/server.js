@@ -230,7 +230,7 @@ wss.on("connection", (ws) => {
     return;
   }
 
-  console.log(`[bridge] spawned ${CMD} (pid ${term.pid}) for ${ws._socket.remoteAddress}`);
+  console.log(`[bridge] spawned ${CMD} (pid ${term.pid}) for ${ws._socket?.remoteAddress ?? "unknown"}`);
 
   term.onData((data) => {
     if (ws.readyState === ws.OPEN) ws.send(data);
