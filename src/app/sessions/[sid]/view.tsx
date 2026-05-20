@@ -932,6 +932,18 @@ function MainPanel({
           )}
         </div>
         <div className="flex items-center gap-2 text-muted-foreground">
+          {session?.sandbox_url && (
+            <a
+              href={session.sandbox_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              title="Open sandbox preview in new tab"
+              className="inline-flex items-center gap-1.5 text-[12px] border border-border rounded px-2 py-1 text-muted-foreground hover:bg-muted transition-colors"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">View Preview</span>
+            </a>
+          )}
           <button
             type="button"
             onClick={() => session && setVaultOpen(!vaultOpen)}
@@ -1687,6 +1699,7 @@ function PartBlock({ part }: { part: HarnessMessagePart }) {
   }
   if (t === "thinking") {
     const text = typeof part.text === "string" ? part.text : "";
+    if (!text) return null;
     return <ThinkingBlock text={text} />;
   }
   if (t === "reasoning") {

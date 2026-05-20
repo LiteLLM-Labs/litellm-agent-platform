@@ -137,6 +137,7 @@ function parseEnv(): ServerEnv {
   return {
     ...data,
     HARNESS_TOKEN_SIGNING_KEY: signingKey,
+    LOCAL_SANDBOX_URL: process.env.LOCAL_SANDBOX_URL,
     containerEnvPassthrough: collectContainerEnvPassthrough(process.env),
   };
 }
