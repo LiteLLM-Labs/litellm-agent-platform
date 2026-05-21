@@ -34,6 +34,18 @@ fi
 # permission: allow-all so the harness runs bypass-permissions. Without it,
 # headless `opencode serve` parks forever on the first "ask" prompt with no UI
 # to approve it (opencode#16367).
+#
+# Thinking config (per Anthropic adaptive-thinking docs): opus-4-7 supports ONLY
+# the adaptive format; other Claude models use the legacy enabled+budget format
+# (what the bundled @ai-sdk/anthropic can send). Haiku / non-Claude: no thinking.
+case "$LITELLM_DEFAULT_MODEL" in
+  *opus-4-7*)
+    MODEL_OPTS='{ "options": { "thinking": { "type": "adaptive", "display": "summarized" }, "effort": "high" } }' ;;
+  *sonnet*|*opus*)
+    MODEL_OPTS='{ "options": { "thinking": { "type": "enabled", "budgetTokens": 8000 } } }' ;;
+  *)
+    MODEL_OPTS='{}' ;;
+esac
 cat > opencode.json <<EOF
 {
   "\$schema": "https://opencode.ai/config.json",
@@ -45,7 +57,7 @@ cat > opencode.json <<EOF
         "apiKey": "${LITELLM_API_KEY}"
       },
       "models": {
-        "${LITELLM_DEFAULT_MODEL}": {}
+        "${LITELLM_DEFAULT_MODEL}": ${MODEL_OPTS}
       }
     }
   },
