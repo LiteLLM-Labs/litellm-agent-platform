@@ -540,6 +540,7 @@ function extractReplText(data) {
     .map(p => p.text);
   if (texts.length > 0) return texts.join("\n");
   if (typeof data?.text === "string") return data.text;
+  if (typeof data?.response === "string") return data.response;
   return JSON.stringify(data, null, 2);
 }
 
