@@ -5,7 +5,14 @@ import Link from "next/link";
 import { ChevronDown, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { AdminStats, ApiError, getAdminStats } from "@/lib/api";
+import {
+  AdminStats,
+  ApiError,
+  InlineHarnessStatus,
+  getAdminStats,
+  getInlineHarnessStatus,
+  setInlineHarnessEnabled,
+} from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const POLL_INTERVAL_MS = 5000;
@@ -208,6 +215,9 @@ export default function SettingsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
+  const [harnessStatus, setHarnessStatus] = useState<InlineHarnessStatus | null>(null);
+  const [harnessToggling, setHarnessToggling] = useState(false);
+
   const load = useCallback(async (background = false) => {
     if (!background) setLoading(true);
     setRefreshing(true);
@@ -229,11 +239,39 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadHarness = useCallback(async () => {
+    try {
+      const s = await getInlineHarnessStatus();
+      setHarnessStatus(s);
+    } catch {
+      // non-fatal: settings page still works without harness status
+    }
+  }, []);
+
   useEffect(() => {
     load();
     const interval = setInterval(() => load(true), POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [load]);
+
+  useEffect(() => {
+    loadHarness();
+    const interval = setInterval(loadHarness, POLL_INTERVAL_MS);
+    return () => clearInterval(interval);
+  }, [loadHarness]);
+
+  async function toggleHarness() {
+    if (!harnessStatus || harnessToggling) return;
+    setHarnessToggling(true);
+    try {
+      const next = await setInlineHarnessEnabled(!harnessStatus.exists);
+      setHarnessStatus(next);
+    } catch {
+      // ignore — next poll will refresh
+    } finally {
+      setHarnessToggling(false);
+    }
+  }
 
   const pool = stats ? poolHealth(stats) : null;
   const sand = stats ? sandboxHealth(stats) : null;
@@ -292,6 +330,65 @@ export default function SettingsPage() {
               subtitle={sand.subtitle}
             />
           </div>
+
+          {/* Inline harness */}
+          {harnessStatus !== null ? (
+            <div className="mt-4 rounded-lg border border-border bg-card p-5">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                    Inline harness
+                  </div>
+                  <div className="mt-1 flex items-center gap-2">
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "size-2 rounded-full",
+                        harnessStatus.exists && harnessStatus.readyReplicas > 0
+                          ? "bg-emerald-500"
+                          : harnessStatus.exists
+                            ? "bg-amber-500"
+                            : "bg-muted-foreground",
+                      )}
+                    />
+                    <span
+                      className={cn(
+                        "text-sm font-medium",
+                        harnessStatus.exists && harnessStatus.readyReplicas > 0
+                          ? "text-emerald-700 dark:text-emerald-400"
+                          : harnessStatus.exists
+                            ? "text-amber-700 dark:text-amber-400"
+                            : "text-muted-foreground",
+                      )}
+                    >
+                      {harnessStatus.exists && harnessStatus.readyReplicas > 0
+                        ? "Running"
+                        : harnessStatus.exists
+                          ? "Starting…"
+                          : "Stopped"}
+                    </span>
+                  </div>
+                  {harnessStatus.exists ? (
+                    <div className="mt-1 font-mono text-xs text-muted-foreground break-all">
+                      {harnessStatus.url}
+                    </div>
+                  ) : null}
+                </div>
+                <Button
+                  size="sm"
+                  variant={harnessStatus.exists ? "outline" : "default"}
+                  onClick={() => void toggleHarness()}
+                  disabled={harnessToggling}
+                >
+                  {harnessToggling
+                    ? "…"
+                    : harnessStatus.exists
+                      ? "Disable"
+                      : "Enable"}
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           {/* Single supporting visual */}
           <div className="mt-6 rounded-lg border border-border bg-card p-5">

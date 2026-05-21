@@ -31,6 +31,7 @@ import { assertAuth } from "@/server/auth";
 import { prisma } from "@/server/db";
 import { env } from "@/server/env";
 import {
+  inlineHarnessUrl,
   runTask,
   waitHttpReady,
   waitRunningGetUrl,
@@ -511,7 +512,12 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
 
   // Fast path for brain-inline: no pod needed — delegate to a shared harness server.
   if (agent.harness_id === HARNESS_BRAIN_INLINE) {
-    const inlineUrl = process.env.CLAUDE_CODE_INLINE_URL;
+    // Prefer an explicit env var override (local dev / EKS with manual config).
+    // Fall back to the deterministic cluster-internal DNS for the brain-inline
+    // Deployment that the admin settings page can create on demand.
+    const inlineUrl =
+      process.env.CLAUDE_CODE_INLINE_URL ??
+      (env.IN_CLUSTER ? inlineHarnessUrl() : null);
     if (!inlineUrl) {
       await prisma.session.update({
         where: { session_id: session.session_id },

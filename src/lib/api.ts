@@ -1215,6 +1215,22 @@ export function getAdminStats(): Promise<AdminStats> {
   return api<AdminStats>("GET", "/v1/admin/stats");
 }
 
+// ---------- Inline Harness ----------
+
+export interface InlineHarnessStatus {
+  exists: boolean;
+  readyReplicas: number;
+  url: string;
+}
+
+export function getInlineHarnessStatus(): Promise<InlineHarnessStatus> {
+  return api<InlineHarnessStatus>("GET", "/v1/admin/inline-harness");
+}
+
+export function setInlineHarnessEnabled(enable: boolean): Promise<InlineHarnessStatus> {
+  return api<InlineHarnessStatus>("POST", "/v1/admin/inline-harness", { enable });
+}
+
 // ---------- Templates ----------
 
 export interface TemplateFile {
