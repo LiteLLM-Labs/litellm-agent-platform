@@ -959,17 +959,15 @@ function MainPanel({
             />
           ))}
 
-          {/* Waiting on the agent: show a spinner until the first assistant
-              part streams in (the thread is the single source of truth). */}
-          {hasInProgress &&
-            permissions.length === 0 &&
-            (messages.length === 0 ||
-              messages[messages.length - 1].role === "user") && (
-              <div className="flex items-center gap-2 text-[14px] text-muted-foreground leading-relaxed">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                thinking…
-              </div>
-            )}
+          {/* Persistent "still working" indicator — shows the whole time the
+              turn is in progress (through reasoning, tools, and the reply) so
+              it's always clear the agent is still going, even on long thinks. */}
+          {hasInProgress && permissions.length === 0 && (
+            <div className="flex items-center gap-2 text-[14px] text-muted-foreground leading-relaxed">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              thinking…
+            </div>
+          )}
 
           {/*
             Vault interceptions live in the top-level Vault side panel —
@@ -1558,7 +1556,7 @@ function PartBlock({ part }: { part: HarnessMessagePart }) {
 
 function ReasoningBlock({ text }: { text: string }) {
   const [open, setOpen] = useState(false);
-  const preview = text.length > 120 ? text.slice(0, 120) + "…" : text;
+  const preview = text.length > 360 ? text.slice(0, 360) + "…" : text;
   return (
     <div className="border-l-2 border-border pl-3 text-[13px] text-muted-foreground italic leading-relaxed">
       <button
@@ -1571,9 +1569,7 @@ function ReasoningBlock({ text }: { text: string }) {
             open ? "" : "-rotate-90"
           }`}
         />
-        <span className="whitespace-pre-wrap">
-          {open ? text : preview}
-        </span>
+        <span className="whitespace-pre-wrap">{open ? text : preview}</span>
       </button>
     </div>
   );
