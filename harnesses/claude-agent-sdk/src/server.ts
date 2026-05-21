@@ -43,6 +43,10 @@ import {
   buildRecordingMcpServer,
   RECORDING_TOOL_NAMES,
 } from "./recording-tool.js";
+import {
+  buildSandboxMcpServer,
+  SANDBOX_TOOL_NAMES,
+} from "./sandbox-mcp.js";
 
 // SDK's auto-resolution of the Claude Code native binary fails when
 // `process.cwd()` differs from the SDK's install location (we run with
@@ -108,6 +112,13 @@ interface BusEvent {
   properties: Record<string, unknown> & { sessionID: string };
 }
 
+interface SandboxProject {
+  id: string;
+  name: string;
+  description: string;
+  repo_url?: string;
+}
+
 interface Session {
   id: string;                          // our session id (returned to platform)
   system_prompt: string;               // per-session override from agent.prompt
@@ -117,6 +128,8 @@ interface Session {
   busSubscribers: Set<(e: BusEvent) => void>;
   pending_prompt: string | null;       // for prompt_async → bus consumer pickup
   pending_kick: (() => void) | null;
+  sandbox_tools: boolean;              // when true: restrict to sandbox MCP tools
+  projects: SandboxProject[];          // available project templates (sandbox mode)
 }
 
 const sessions = new Map<string, Session>();
@@ -252,13 +265,34 @@ async function runTurn(
     emit(s, "message.part.updated", { messageID: userMessage.info.id, part });
   }
 
+  // Sandbox mode: a per-session MCP server exposing provision + execute,
+  // built lazily on each turn (it's stateless — only needs session_id).
+  // Returns null when LAP_BASE_URL/LAP_AUTH_TOKEN aren't set.
+  const sandboxMcp = s.sandbox_tools ? buildSandboxMcpServer(s.id) : null;
+
+  // Build the system prompt, appending available project templates when
+  // running in sandbox mode so the model knows which IDs to pass to provision().
+  let effectiveSystemPrompt = (s.system_prompt || SYSTEM_PROMPT) || undefined;
+  if (s.sandbox_tools && s.projects.length > 0) {
+    const projectList = s.projects
+      .map(
+        (p) =>
+          `- ID: ${p.id} | ${p.name}${p.description ? " — " + p.description : ""}${p.repo_url ? " (" + p.repo_url + ")" : ""}`,
+      )
+      .join("\n");
+    const sandboxHint =
+      `\n\nAvailable sandbox templates:\n${projectList}\n\n` +
+      `To use a sandbox: call provision({ name: "<label>", project_id: "<ID>" }), then execute({ sandbox_name: "<label>", cmd: "..." })`;
+    effectiveSystemPrompt = (effectiveSystemPrompt ?? "") + sandboxHint;
+  }
+
   const options: Options = {
     cwd: REPO_DIR,
     model: modelId,
     // Request extended thinking so the SDK emits thinking blocks (rendered as
     // ThinkingBlock in the UI). Without this the model never thinks.
     ...thinkingOptionsFor(modelId),
-    systemPrompt: (s.system_prompt || SYSTEM_PROMPT) || undefined,
+    systemPrompt: effectiveSystemPrompt,
     permissionMode: "bypassPermissions",
     abortController: ac,
     // Token-level streaming. Without this, the SDK only emits one `assistant`
@@ -274,16 +308,32 @@ async function runTurn(
     // surfaces render answerable question cards.
     disallowedTools: ["AskUserQuestion"],
     ...(CLAUDE_BIN ? { pathToClaudeCodeExecutable: CLAUDE_BIN } : {}),
-    mcpServers: {
-      ...(MEMORY_MCP ? { "lap-memory": MEMORY_MCP } : {}),
-      "lap-screenshot": SCREENSHOT_MCP,
-      "lap-recording": RECORDING_MCP,
-    },
-    allowedTools: [
-      ...(MEMORY_MCP ? [...MEMORY_TOOL_NAMES] : []),
-      ...SCREENSHOT_TOOL_NAMES,
-      ...RECORDING_TOOL_NAMES,
-    ],
+    ...(s.sandbox_tools
+      ? {
+          // Sandbox mode: restrict built-in tools to safe read-only web tools
+          // and expose only the provision/execute MCP tools.
+          allowedTools: [
+            "WebFetch",
+            "WebSearch",
+            ...(sandboxMcp ? [...SANDBOX_TOOL_NAMES] : []),
+          ],
+          mcpServers: {
+            ...(sandboxMcp ? { "lap-sandbox": sandboxMcp } : {}),
+          },
+        }
+      : {
+          // Normal mode: full memory + screenshot + recording tool set.
+          mcpServers: {
+            ...(MEMORY_MCP ? { "lap-memory": MEMORY_MCP } : {}),
+            "lap-screenshot": SCREENSHOT_MCP,
+            "lap-recording": RECORDING_MCP,
+          },
+          allowedTools: [
+            ...(MEMORY_MCP ? [...MEMORY_TOOL_NAMES] : []),
+            ...SCREENSHOT_TOOL_NAMES,
+            ...RECORDING_TOOL_NAMES,
+          ],
+        }),
     // Resume the SDK's persisted session if we have one — that's how the
     // SDK stitches turn N+1 onto turn N's history without us tracking it.
     ...(s.sdk_session_id ? { resume: s.sdk_session_id } : {}),
@@ -633,15 +683,21 @@ app.post("/session", async (c) => {
   let title: string | undefined;
   let prompt: string | undefined;
   let files: Array<{ sandbox_path: string; content: string }> = [];
+  let sandbox_tools = false;
+  let projects: SandboxProject[] = [];
   try {
     const body = (await c.req.json()) as {
       title?: string;
       prompt?: string;
       files?: Array<{ sandbox_path: string; content: string }>;
+      sandbox_tools?: boolean;
+      projects?: Array<{ id: string; name: string; description: string; repo_url?: string }>;
     };
     title = body?.title;
     prompt = body?.prompt;
     files = Array.isArray(body?.files) ? body.files : [];
+    sandbox_tools = body?.sandbox_tools === true;
+    projects = Array.isArray(body?.projects) ? body.projects : [];
   } catch {
     // empty body is fine — opencode accepts that too.
   }
@@ -664,6 +720,8 @@ app.post("/session", async (c) => {
     busSubscribers: new Set(),
     pending_prompt: null,
     pending_kick: null,
+    sandbox_tools,
+    projects,
   });
   return c.json({ id, title: title ?? null });
 });

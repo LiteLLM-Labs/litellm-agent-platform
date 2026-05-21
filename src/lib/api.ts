@@ -469,6 +469,15 @@ export interface McpAllowedTools {
   tools: string[];
 }
 
+export interface ProjectConfig {
+  id: string;
+  name: string;
+  description: string;
+  repo_url?: string;
+  branch?: string;
+  setup_cmd?: string;
+}
+
 export interface CreateAgentRequest {
   name?: string;
   model: string;
@@ -491,6 +500,8 @@ export interface CreateAgentRequest {
   skill_ids?: string[];
   /** Template this agent is derived from — stored for Helm-style version tracking. */
   template_id?: string;
+  /** Projects to attach when using the claude-code-brain-inline harness. */
+  projects?: ProjectConfig[];
 }
 
 export interface UpdateAgentRequest {
@@ -508,6 +519,8 @@ export interface UpdateAgentRequest {
   model?: string;
   branch?: string;
   preload_memory_limit?: number;
+  /** Projects to attach when using the claude-code-brain-inline harness. */
+  projects?: ProjectConfig[];
 }
 
 export function listAgents(): Promise<AgentRow[]> {

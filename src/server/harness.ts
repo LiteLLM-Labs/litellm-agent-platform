@@ -122,9 +122,17 @@ export async function harnessCreateSession(
 ): Promise<string> {
   const { sandbox_url, title = "default", timeout_ms = DEFAULT_CREATE_TIMEOUT_MS } =
     opts;
+  const body: Record<string, unknown> = {
+    title,
+    prompt: opts.prompt,
+    files: opts.files ?? [],
+  };
+  if (opts.sandbox_tools !== undefined) body.sandbox_tools = opts.sandbox_tools;
+  if (opts.projects !== undefined) body.projects = opts.projects;
+  if (opts.agent_id !== undefined) body.agent_id = opts.agent_id;
   let data = await postJson(
     `${sandbox_url}/session`,
-    { title, prompt: opts.prompt, files: opts.files ?? [] },
+    body,
     timeout_ms,
   );
   // Harness may return a bare object OR a single-element array (proto quirk).
