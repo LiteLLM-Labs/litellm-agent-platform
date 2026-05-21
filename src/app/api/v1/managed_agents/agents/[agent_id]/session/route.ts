@@ -122,7 +122,9 @@ async function resolveAgentMcpServers(
       specs.push({
         name,
         url: `${litellmBase}/mcp/${encodeURIComponent(name)}`,
-        transport: "sse",
+        // LiteLLM exposes MCP via streamable-HTTP (POST + SSE response).
+        // The Claude SDK maps this to type:"http", not the legacy type:"sse".
+        transport: "http",
       });
     }
     return specs;

@@ -86,20 +86,22 @@ test.describe("inline harness session — tool access and MCP usage", () => {
   test("1. session creates successfully", async () => {
     const session = await apiGet(`sessions/${sessionId}`);
     expect(session.status).toBe("ready");
-    expect(session.harness_id ?? (session as Record<string, unknown>).harness_id).toBeDefined();
+    expect(session.harness_session_id).toBeDefined();
   });
 
   test("2. agent has sandbox tools but NOT Bash", async () => {
     const reply = await sendMessage(
       sessionId,
-      "List every tool you have access to. Be specific — include all MCP tools and built-in tools by name.",
+      "Reply with a JSON object: { \"has_bash\": true/false, \"has_provision\": true/false, \"has_execute\": true/false, \"has_linear\": true/false }. Set each field based on whether that tool is in your available toolset right now.",
     );
-    expect(reply.toLowerCase()).not.toMatch(/\bbash\b/);
-    // Should mention provision or execute (the sandbox MCP tools)
-    // OR mention linear (from the attached Linear MCP)
-    const hasSandboxOrMcp =
-      /provision|execute|linear|mcp/i.test(reply);
-    expect(hasSandboxOrMcp).toBe(true);
+    // Extract the JSON from the reply
+    const jsonMatch = reply.match(/\{[^}]+\}/s);
+    expect(jsonMatch, "agent should return a JSON object").not.toBeNull();
+    const toolFlags = JSON.parse(jsonMatch![0]) as Record<string, boolean>;
+    expect(toolFlags.has_bash).toBe(false);
+    // Should have at least one of the expected MCP tools
+    const hasMcpTools = toolFlags.has_provision || toolFlags.has_execute || toolFlags.has_linear;
+    expect(hasMcpTools).toBe(true);
   }, TURN_TIMEOUT_MS);
 
   test("3. agent describes LIT-3198 via Linear MCP (not via Bash or file tools)", async () => {
