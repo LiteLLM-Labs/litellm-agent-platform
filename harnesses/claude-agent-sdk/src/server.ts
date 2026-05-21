@@ -199,6 +199,20 @@ interface ImageContentBlock {
   };
 }
 
+// Extended-thinking config, model-aware (per Anthropic adaptive-thinking docs):
+// opus-4-7 / opus-4-6 / sonnet-4-6 support adaptive; older Claude models use the
+// legacy enabled+budget format; haiku / non-Claude get none. display:"summarized"
+// so the thinking TEXT (not just the encrypted signature) comes back to render.
+function thinkingOptionsFor(modelId: string): Partial<Options> {
+  const m = modelId.toLowerCase();
+  if (m.includes("haiku")) return {};
+  if (/opus-4-7|opus-4-6|sonnet-4-6/.test(m))
+    return { thinking: { type: "adaptive", display: "summarized" }, effort: "high" };
+  if (/claude|sonnet|opus/.test(m))
+    return { thinking: { type: "enabled", budgetTokens: 8000, display: "summarized" } };
+  return {};
+}
+
 async function runTurn(
   s: Session,
   userText: string,
@@ -231,10 +245,19 @@ async function runTurn(
   };
   s.history.push(userMessage);
   emit(s, "message.updated", { info: userMessage.info });
+  // `message.updated` only carries `info` — emit each user part too so the
+  // event-driven UI renders the prompt text live (opencode does the same).
+  // Without this the live user bubble is empty until a history re-seed.
+  for (const part of userParts) {
+    emit(s, "message.part.updated", { messageID: userMessage.info.id, part });
+  }
 
   const options: Options = {
     cwd: REPO_DIR,
     model: modelId,
+    // Request extended thinking so the SDK emits thinking blocks (rendered as
+    // ThinkingBlock in the UI). Without this the model never thinks.
+    ...thinkingOptionsFor(modelId),
     systemPrompt: (s.system_prompt || SYSTEM_PROMPT) || undefined,
     permissionMode: "bypassPermissions",
     abortController: ac,
@@ -461,7 +484,9 @@ function handleSdkEvent(
         const streamAccum = turn.thinkingAccum.get(thinkingKey) ?? "";
         const part: PlatformPart = {
           id: partId,
-          type: "thinking",
+          // Match the opencode schema: reasoning is a "reasoning" part so the
+          // UI renders it identically across harnesses (ReasoningBlock).
+          type: "reasoning",
           text: (block.thinking as string | undefined) || streamAccum,
         };
         parts.push(part);
@@ -579,7 +604,8 @@ function handleSdkEvent(
           messageID: msgId,
           partID,
           delta: inner.delta.thinking,
-          field: "thinking",
+          // "reasoning" to match the opencode schema (see the part type above).
+          field: "reasoning",
         });
       }
     }
