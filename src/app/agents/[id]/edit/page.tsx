@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { AgentFormFields, DEFAULT_HARNESS_ID } from "@/components/agent-form-fields";
 import { EnabledTools, EnabledToolsUpdater } from "@/components/mcp-tools-picker";
-import { AgentRow, ApiError, McpAllowedTools, ProjectConfig, createSkill, getAgent, updateAgent } from "@/lib/api";
-import { BRAIN_INLINE_HARNESS_ID, PROJECTS_STORAGE_KEY } from "@/lib/constants";
+import { AgentRow, ApiError, McpAllowedTools, ProjectConfig, createSkill, getAgent, listProjects, updateAgent } from "@/lib/api";
+import { BRAIN_INLINE_HARNESS_ID } from "@/lib/constants";
 
 interface LocalProject {
   id: string;
@@ -98,12 +98,16 @@ export default function EditAgentPage({ params }: PageProps) {
       .finally(() => setLoading(false));
   }, [id]);
 
-  // Load projects from localStorage
+  // Load projects from API
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(PROJECTS_STORAGE_KEY);
-      if (raw) setAvailableProjects(JSON.parse(raw) as LocalProject[]);
-    } catch { /* ignore */ }
+    listProjects()
+      .then((res) => setAvailableProjects(res.data.map((p) => ({
+        id: p.project_id,
+        name: p.name,
+        description: p.description ?? undefined,
+        repo_url: p.repo_url ?? undefined,
+      }))))
+      .catch(() => { /* ignore */ });
   }, []);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {

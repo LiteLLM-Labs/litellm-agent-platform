@@ -15,7 +15,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { PROJECTS_STORAGE_KEY } from "@/lib/constants";
+import { type ProjectRow, deleteProject, listProjects } from "@/lib/api";
 
 export interface SandboxFile {
   name: string;
@@ -25,6 +25,10 @@ export interface SandboxFile {
   size: number;
 }
 
+// Kept for backwards-compat with agents/new and agents/[id]/edit which pass
+// LocalProject to the project selector. These fields are the agent-template
+// fields that were folded into LocalProject historically; the DB Project only
+// carries the sandbox-config subset.
 export interface LocalProject {
   id: string;
   name: string;
@@ -32,7 +36,6 @@ export interface LocalProject {
   env_vars?: Record<string, string>;
   allow_out?: string[];
   deny_out?: string[];
-  // retained for AgentTemplate compat when passed to agents/new
   description: string;
   icon: string;
   tags: string[];
@@ -47,19 +50,7 @@ export interface LocalProject {
   source: "local";
 }
 
-function loadLocalProjects(): LocalProject[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(PROJECTS_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as LocalProject[]) : [];
-  } catch { return []; }
-}
-
-function saveLocalProjects(ts: LocalProject[]): void {
-  try { window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(ts)); } catch { /* ignore */ }
-}
-
-function ProjectCard({ project, onDelete }: { project: LocalProject; onDelete?: () => void; }) {
+function ProjectCard({ project, onDelete }: { project: ProjectRow; onDelete?: () => void; }) {
   const envKeys = Object.keys(project.env_vars ?? {});
   const allowOut = project.allow_out ?? [];
   const denyOut = project.deny_out ?? [];
@@ -77,7 +68,7 @@ function ProjectCard({ project, onDelete }: { project: LocalProject; onDelete?: 
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Link
-            href={`/projects/${project.id}/edit`}
+            href={`/projects/${project.project_id}/edit`}
             aria-label={`Edit ${project.name}`}
             className="inline-flex h-6 w-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
           >
@@ -172,16 +163,19 @@ function ProjectCard({ project, onDelete }: { project: LocalProject; onDelete?: 
 }
 
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<LocalProject[]>([]);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  useEffect(() => { setProjects(loadLocalProjects()); }, []);
+  useEffect(() => {
+    listProjects()
+      .then((res) => setProjects(res.data))
+      .catch(() => {/* silently stay empty */})
+      .finally(() => setLoading(false));
+  }, []);
 
-  function deleteProject(id: string) {
-    setProjects((prev) => {
-      const next = prev.filter((t) => t.id !== id);
-      saveLocalProjects(next);
-      return next;
-    });
+  async function handleDelete(id: string) {
+    await deleteProject(id).catch(() => {/* ignore */});
+    setProjects((prev) => prev.filter((p) => p.project_id !== id));
   }
 
   return (
@@ -199,7 +193,13 @@ export default function ProjectsPage() {
         </Link>
       </div>
 
-      {projects.length === 0 && (
+      {loading && (
+        <div className="rounded-lg border border-dashed bg-muted/30 px-6 py-12 text-center">
+          <p className="text-[13px] text-muted-foreground">Loading…</p>
+        </div>
+      )}
+
+      {!loading && projects.length === 0 && (
         <div className="rounded-lg border border-dashed bg-muted/30 px-6 py-12 text-center">
           <p className="text-[13px] text-muted-foreground">No projects yet.</p>
           <p className="mt-1 text-[12px] text-muted-foreground">
@@ -210,13 +210,13 @@ export default function ProjectsPage() {
         </div>
       )}
 
-      {projects.length > 0 && (
+      {!loading && projects.length > 0 && (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((t) => (
+          {projects.map((p) => (
             <ProjectCard
-              key={t.id}
-              project={t}
-              onDelete={() => deleteProject(t.id)}
+              key={p.project_id}
+              project={p}
+              onDelete={() => handleDelete(p.project_id)}
             />
           ))}
         </div>

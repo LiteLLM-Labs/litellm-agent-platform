@@ -19,7 +19,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AgentFormFields, DEFAULT_HARNESS_ID } from "@/components/agent-form-fields";
 import { EnabledTools, EnabledToolsUpdater } from "@/components/mcp-tools-picker";
-import { BRAIN_INLINE_HARNESS_ID, PROJECTS_STORAGE_KEY } from "@/lib/constants";
+import { BRAIN_INLINE_HARNESS_ID } from "@/lib/constants";
 import {
   AgentTemplate,
   ApiError,
@@ -29,6 +29,7 @@ import {
   createAgent,
   createSkill,
   getPreinstalledGithubRepo,
+  listProjects,
   listTemplates,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -75,10 +76,19 @@ export default function NewAgentPage() {
   const [selectedProjects, setSelectedProjects] = useState<LocalProject[]>([]);
 
   useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(PROJECTS_STORAGE_KEY);
-      if (raw) setProjects(JSON.parse(raw) as LocalProject[]);
-    } catch { /* ignore */ }
+    listProjects()
+      .then((res) => setProjects(res.data.map((p) => ({
+        id: p.project_id,
+        name: p.name,
+        description: p.description ?? undefined,
+        repo_url: p.repo_url ?? undefined,
+        env_vars: p.env_vars,
+        allow_out: p.allow_out,
+        deny_out: p.deny_out,
+        files: p.files,
+      })))
+      )
+      .catch(() => { /* ignore */ });
   }, []);
 
   function applyProject(id: string | null) {
