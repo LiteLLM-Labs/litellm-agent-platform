@@ -440,6 +440,11 @@ async function finishBringUp(
 // rejection here would be unhandled (the caller doesn't await this).
 // ---------------------------------------------------------------------------
 
+// last_seen_at heartbeat cadence while the initial agent task runs. Must stay
+// comfortably below SESSION_IDLE_TIMEOUT_MS (reconcile.ts) so an in-flight turn
+// is never mistaken for an idle session by the reconciler.
+const INITIAL_TASK_HEARTBEAT_MS = 60_000;
+
 async function runInitialPrompt(
   agent: AgentRow,
   session_id: string,
@@ -448,6 +453,23 @@ async function runInitialPrompt(
   initial_prompt: string,
   initial_attachments?: InitialAttachment[],
 ): Promise<void> {
+  // Keep last_seen_at fresh while the (2-15 min) initial agent task runs.
+  // Without this, last_seen_at stays pinned at session-creation time and the
+  // idle reaper (see SESSION_IDLE_TIMEOUT_MS in reconcile.ts) kills the session
+  // mid-task — even though the agent is actively working. The timer is unref'd
+  // so it can never keep the process alive on its own.
+  const heartbeat: NodeJS.Timeout = setInterval(() => {
+    void prisma.session
+      .update({ where: { session_id }, data: { last_seen_at: new Date() } })
+      .catch((err) => {
+        console.warn(
+          `initial_prompt heartbeat failed for ${session_id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
+  }, INITIAL_TASK_HEARTBEAT_MS);
+  // Don't keep the event loop alive solely for this timer.
+  if (typeof heartbeat.unref === "function") heartbeat.unref();
+
   try {
     // Build Claude-format multimodal parts when attachments are present.
     // Text part first, then each image as a base64 source — matches the
@@ -478,6 +500,7 @@ async function runInitialPrompt(
       where: { session_id },
       data: {
         response: response as unknown as Prisma.InputJsonValue,
+        last_seen_at: new Date(),
       },
     });
   } catch (err) {
@@ -498,6 +521,8 @@ async function runInitialPrompt(
           `failed to record initial_prompt failure for ${session_id}: ${dbErr instanceof Error ? dbErr.message : String(dbErr)}`,
         );
       });
+  } finally {
+    clearInterval(heartbeat);
   }
 }
 
