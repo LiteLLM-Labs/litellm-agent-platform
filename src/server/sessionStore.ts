@@ -18,7 +18,7 @@
 import type { Prisma, PrismaClient, SessionMessage } from "@prisma/client";
 
 import { prisma } from "@/server/db";
-import { formatHistoryAsText } from "@/server/harness";
+import { formatHistoryAsText, harnessListMessages } from "@/server/harness";
 import type {
   HarnessMessage,
   HarnessMessagePart,
@@ -487,6 +487,8 @@ export async function getSessionLog(
       stopped_at: true,
       failure_reason: true,
       history: true,
+      sandbox_url: true,
+      harness_session_id: true,
     },
   });
   if (!session) return [];
@@ -496,9 +498,30 @@ export async function getSessionLog(
     { id: `${session_id}:created`, kind: "created", at: createdAt, title: "Session created" },
   ];
 
-  const thread = Array.isArray(session.history)
-    ? (session.history as unknown as HarnessMessage[])
-    : null;
+  // Prefer the LIVE harness thread for a ready session so the Log reflects an
+  // in-flight run in real time (server-side automation turns aren't snapshotted
+  // to history until a heartbeat/completion). Fall back to the persisted history
+  // blob (reaped/dead sessions), then the collapsed durable log.
+  let thread: HarnessMessage[] | null = null;
+  if (
+    session.status === "ready" &&
+    session.sandbox_url &&
+    session.harness_session_id
+  ) {
+    try {
+      thread = await harnessListMessages({
+        sandbox_url: session.sandbox_url,
+        harness_session_id: session.harness_session_id,
+      });
+    } catch {
+      thread = null; // harness unreachable — fall back to persisted state
+    }
+  }
+  if (!thread || thread.length === 0) {
+    thread = Array.isArray(session.history)
+      ? (session.history as unknown as HarnessMessage[])
+      : null;
+  }
   if (thread && thread.length > 0) {
     events.push(...eventsFromThread(thread, createdAt));
   } else {
