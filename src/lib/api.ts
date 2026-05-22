@@ -1029,10 +1029,19 @@ export async function getSessionInterceptions(
 // SessionLogEvent in src/server/sessionStore.ts.
 export interface SessionLogEvent {
   id: string;
-  kind: "created" | "user" | "assistant" | "recovered" | "ended";
+  kind:
+    | "created"
+    | "user"
+    | "thinking"
+    | "tool"
+    | "response"
+    | "assistant"
+    | "recovered"
+    | "ended";
   at: string;
   title: string;
   detail?: string;
+  meta?: string;
   status?: string;
 }
 
