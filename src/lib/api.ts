@@ -1096,6 +1096,30 @@ export async function getSessionLog(
   return body as SessionLogEvent[];
 }
 
+// Persisted thread for a session: the /messages route returns the live harness
+// thread when reachable, else the last-known Session.history snapshot. Used as
+// the chat seed fallback so reaped / automation sessions still render history.
+export async function getSessionThread(
+  sessionId: string,
+  opts: { signal?: AbortSignal } = {},
+): Promise<unknown[]> {
+  const path = `/v1/managed_agents/sessions/${encodeURIComponent(sessionId)}/messages`;
+  const auth = authHeader();
+  const headers: Record<string, string> = {};
+  if (auth) headers["Authorization"] = auth;
+  const res = await fetch(`${PROXY_PREFIX}${path}`, {
+    method: "GET",
+    headers,
+    signal: opts.signal,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new ApiError(res.status, text, text || `session thread ${res.status}`);
+  }
+  const body = (await res.json()) as unknown;
+  return Array.isArray(body) ? body : [];
+}
+
 // ---------- Session messages (passthrough to harness) ----------
 
 /**
