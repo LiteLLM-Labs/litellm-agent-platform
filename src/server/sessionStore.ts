@@ -18,7 +18,7 @@
 import type { Prisma, PrismaClient, SessionMessage } from "@prisma/client";
 
 import { prisma } from "@/server/db";
-import { formatHistoryAsText } from "@/server/harness";
+import { formatHistoryAsText, harnessListMessages } from "@/server/harness";
 import type {
   HarnessMessage,
   HarnessMessagePart,
@@ -26,6 +26,18 @@ import type {
 } from "@/server/types";
 
 export type SessionMessageRow = SessionMessage;
+
+// Newest message timestamp in a harness thread — used as a monotonic version
+// to skip stale history snapshots (and stays monotonic across rehydration).
+function threadMaxCreated(thread: HarnessMessage[]): number {
+  let max = 0;
+  for (const m of thread) {
+    const t = (m.info as { time?: { created?: number } } | undefined)?.time
+      ?.created;
+    if (typeof t === "number" && t > max) max = t;
+  }
+  return max;
+}
 
 // Prisma transaction client (the `tx` handed to an interactive transaction).
 type Tx = Omit<
@@ -210,20 +222,47 @@ export async function syncSessionThread(opts: {
 }): Promise<void> {
   const { session_id, harness_session_id, thread } = opts;
   try {
-    await prisma.session.update({
-      where: { session_id },
-      data: { history: thread as unknown as Prisma.InputJsonValue },
+    // Guarded history write. Snapshots are fire-and-forget, so a slow snapshot
+    // for an earlier turn could otherwise clobber the fuller thread a faster
+    // later snapshot already wrote (lost update → transiently incomplete log).
+    // Serialize per-session on the same advisory lock used for seq allocation,
+    // and skip a write whose newest message predates what's already stored.
+    // Max message time (not length) is the version, so this also stays correct
+    // across rehydration, where the fresh sandbox's messages are newer.
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${session_id}))`;
+      const current = await tx.session.findUnique({
+        where: { session_id },
+        select: { history: true },
+      });
+      const existing = Array.isArray(current?.history)
+        ? (current.history as unknown as HarnessMessage[])
+        : [];
+      const incomingMax = threadMaxCreated(thread);
+      const existingMax = threadMaxCreated(existing);
+      // An incoming snapshot with no timestamps can't be proven newer — don't
+      // let it clobber an existing snapshot that does have timestamps.
+      if (incomingMax === 0 && existingMax > 0) return;
+      if (incomingMax > 0 && incomingMax < existingMax) return;
+      await tx.session.update({
+        where: { session_id },
+        data: { history: thread as unknown as Prisma.InputJsonValue },
+      });
     });
   } catch (err) {
     console.warn(`syncSessionThread: history update failed for ${session_id}:`, err);
   }
 
   try {
-    const last = await prisma.sessionMessage.findFirst({
-      where: { session_id },
-      orderBy: { seq: "desc" },
+    // The OLDEST still-pending user turn is the one that just settled — opencode
+    // processes turns serially (one session.idle per turn). Ordering DESC would
+    // wrongly pick a just-queued second message and attach this turn's reply to
+    // it; filtering to the oldest pending user row is race-safe.
+    const pendingUser = await prisma.sessionMessage.findFirst({
+      where: { session_id, role: "user", status: "pending" },
+      orderBy: { seq: "asc" },
     });
-    if (!last || last.role !== "user" || last.status !== "pending") return;
+    if (!pendingUser) return;
 
     const lastAssistant = [...thread]
       .reverse()
@@ -232,7 +271,7 @@ export async function syncSessionThread(opts: {
 
     await completeAssistantMessage({
       session_id,
-      user_message_id: last.message_id,
+      user_message_id: pendingUser.message_id,
       harness_session_id,
       response: { parts: lastAssistant.parts ?? [] },
     });
@@ -452,6 +491,8 @@ export async function getSessionLog(
       stopped_at: true,
       failure_reason: true,
       history: true,
+      sandbox_url: true,
+      harness_session_id: true,
     },
   });
   if (!session) return [];
@@ -461,9 +502,34 @@ export async function getSessionLog(
     { id: `${session_id}:created`, kind: "created", at: createdAt, title: "Session created" },
   ];
 
-  const thread = Array.isArray(session.history)
-    ? (session.history as unknown as HarnessMessage[])
-    : null;
+  // Prefer the LIVE harness thread for a ready session so the Log reflects an
+  // in-flight run in real time (server-side automation turns aren't snapshotted
+  // to history until a heartbeat/completion). Fall back to the persisted history
+  // blob (reaped/dead sessions), then the collapsed durable log.
+  let thread: HarnessMessage[] | null = null;
+  if (
+    session.status === "ready" &&
+    session.sandbox_url &&
+    session.harness_session_id
+  ) {
+    try {
+      thread = await harnessListMessages({
+        sandbox_url: session.sandbox_url,
+        harness_session_id: session.harness_session_id,
+        // Short read timeout: this is a UI log-panel request, so a slow-but-live
+        // sandbox should fall back to persisted history fast rather than stall
+        // the response for the default 60s.
+        timeout_ms: 5_000,
+      });
+    } catch {
+      thread = null; // harness unreachable/slow — fall back to persisted state
+    }
+  }
+  if (!thread || thread.length === 0) {
+    thread = Array.isArray(session.history)
+      ? (session.history as unknown as HarnessMessage[])
+      : null;
+  }
   if (thread && thread.length > 0) {
     events.push(...eventsFromThread(thread, createdAt));
   } else {
