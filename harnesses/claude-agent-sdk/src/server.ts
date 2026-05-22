@@ -36,6 +36,10 @@ import {
   MEMORY_TOOL_NAMES,
 } from "./memory-tools.js";
 import {
+  buildAutomationsMcpServer,
+  AUTOMATION_TOOL_NAMES,
+} from "./automations-tools.js";
+import {
   buildScreenshotMcpServer,
   SCREENSHOT_TOOL_NAMES,
 } from "./screenshot-tool.js";
@@ -76,6 +80,9 @@ const CLAUDE_BIN = resolveClaudeBinary();
 const MEMORY_MCP = buildMemoryMcpServer();
 const SCREENSHOT_MCP = buildScreenshotMcpServer();
 const RECORDING_MCP = buildRecordingMcpServer();
+// In-process MCP exposing create_automation + list_automations so the agent
+// can schedule itself. Null when the LAP env isn't set (same as memory).
+const AUTOMATIONS_MCP = buildAutomationsMcpServer();
 
 // ---------------------------------------------------------------------------
 // Config
@@ -370,14 +377,16 @@ async function runTurn(
           };
         })()
       : {
-          // Normal mode: full memory + screenshot + recording tool set.
+          // Normal mode: full memory + automations + screenshot + recording set.
           mcpServers: {
             ...(MEMORY_MCP ? { "lap-memory": MEMORY_MCP } : {}),
+            ...(AUTOMATIONS_MCP ? { "lap-automations": AUTOMATIONS_MCP } : {}),
             "lap-screenshot": SCREENSHOT_MCP,
             "lap-recording": RECORDING_MCP,
           },
           allowedTools: [
             ...(MEMORY_MCP ? [...MEMORY_TOOL_NAMES] : []),
+            ...(AUTOMATIONS_MCP ? [...AUTOMATION_TOOL_NAMES] : []),
             ...SCREENSHOT_TOOL_NAMES,
             ...RECORDING_TOOL_NAMES,
           ],

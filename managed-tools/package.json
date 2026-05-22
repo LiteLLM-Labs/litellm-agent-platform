@@ -13,6 +13,10 @@
     "./memory": {
       "types": "./dist/memory.d.ts",
       "default": "./dist/memory.js"
+    },
+    "./automations": {
+      "types": "./dist/automations.d.ts",
+      "default": "./dist/automations.js"
     }
   },
   "files": ["dist", "src"],

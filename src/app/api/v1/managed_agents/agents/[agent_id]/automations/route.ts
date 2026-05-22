@@ -6,9 +6,13 @@
  *         and pre-computes next_run_at so the worker query stays a plain
  *         range scan. A disabled automation gets a null next_run_at so it's
  *         never claimed until re-enabled.
+ *
+ * Auth: master key (UI) OR a scoped agent token (scope "automations"), so the
+ * in-sandbox agent can list/create its own schedules via the managed-tools
+ * create_automation / list_automations tools.
  */
 
-import { assertAuth } from "@/server/auth";
+import { assertAgentTokenOrMaster } from "@/server/auth";
 import { computeNextRunAt } from "@/server/automations";
 import { prisma } from "@/server/db";
 import {
@@ -26,8 +30,8 @@ interface RouteContext {
 }
 
 export const GET = wrap<RouteContext>(async (req, ctx) => {
-  assertAuth(req);
   const { agent_id } = await ctx.params;
+  assertAgentTokenOrMaster(req, { scope: "automations", agent_id });
   const agent = await prisma.agent.findUnique({ where: { agent_id } });
   if (agent === null) httpError(404, `agent '${agent_id}' not found`);
 
@@ -39,8 +43,11 @@ export const GET = wrap<RouteContext>(async (req, ctx) => {
 });
 
 export const POST = wrap<RouteContext>(async (req, ctx) => {
-  const identity = assertAuth(req);
   const { agent_id } = await ctx.params;
+  const identity = assertAgentTokenOrMaster(req, {
+    scope: "automations",
+    agent_id,
+  });
   const body = CreateAutomationBody.parse(await req.json());
 
   const agent = await prisma.agent.findUnique({ where: { agent_id } });
@@ -64,7 +71,8 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
       name: body.name ?? null,
       enabled,
       next_run_at: nextRunAt,
-      created_by: identity.user_id,
+      // "agent" when the in-sandbox agent scheduled itself, "ui" for the master key.
+      created_by: identity.source === "agent" ? "agent" : "ui",
     },
   });
   return Response.json(toApiAutomation(created), { status: 201 });
