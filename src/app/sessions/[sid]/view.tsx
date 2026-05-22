@@ -32,6 +32,7 @@ import {
   Trash2,
   MessageSquare,
   ExternalLink,
+  FileText,
   Paperclip,
   Square,
   X,
@@ -45,6 +46,7 @@ import {
   SendMessageAttachment,
   SessionOrigin,
   SessionRow,
+  SkillRow,
   api,
   abortSession,
   deleteSession,
@@ -52,6 +54,7 @@ import {
   getDiagnose,
   getSandboxLogs,
   getSession,
+  listSkills,
 } from "@/lib/api";
 import { type AgentMessage, type PermissionRequest } from "@/lib/agent-state";
 import { AgentAvatar } from "@/components/agent-avatar";
@@ -283,6 +286,9 @@ export default function SessionThreadView() {
   // attachments) in the thread so the user can scroll back and see what they
   // sent.
   const [attachments, setAttachments] = useState<SendMessageAttachment[]>([]);
+  // Skill slash-command state — shared with Composer
+  const [skills, setSkills] = useState<SkillRow[]>([]);
+  const [activeSkill, setActiveSkill] = useState<SkillRow | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [restarting, setRestarting] = useState<boolean>(false);
@@ -394,6 +400,10 @@ export default function SessionThreadView() {
     void loadSession();
   }, [loadSession]);
 
+  useEffect(() => {
+    listSkills().then(setSkills).catch(() => {});
+  }, []);
+
   // Restart a dead/failed session. The backend POST takes 60-120s while a
   // fresh Fargate task spins up; keep the UI responsive (the button shows a
   // spinner) and re-fetch the session once it returns so the new ready state
@@ -486,7 +496,7 @@ export default function SessionThreadView() {
   // Fire the prompt and clear the composer. The user echo and the assistant
   // reply both arrive over the thread subscription — no optimistic rows.
   const handleSend = useCallback(() => {
-    const content = draft.trim();
+    let content = draft.trim();
     if (!content && attachments.length === 0) return;
     if (session?.status !== "ready") {
       setError(
@@ -495,6 +505,15 @@ export default function SessionThreadView() {
       return;
     }
     setError(null);
+    // Inject skill content when a skill was selected via slash-command.
+    if (activeSkill && content) {
+      const prefix = `/${activeSkill.name} `;
+      const userText = content.startsWith(prefix)
+        ? content.slice(prefix.length).trim()
+        : content;
+      content = `<skill name="${activeSkill.name}">\n${activeSkill.content}\n</skill>\n\n${userText}`;
+      setActiveSkill(null);
+    }
     const parts: SendParts = [];
     if (content) parts.push({ type: "text", text: content });
     for (const a of attachments) {
@@ -522,7 +541,7 @@ export default function SessionThreadView() {
           : undefined,
       )
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
-  }, [draft, attachments, session, thread, currentModel]);
+  }, [draft, attachments, session, thread, currentModel, activeSkill]);
 
 
   const handleKeyDown = useCallback(
@@ -593,6 +612,9 @@ export default function SessionThreadView() {
         setVaultOpen={setVaultOpen}
         logOpen={logOpen}
         setLogOpen={setLogOpen}
+        skills={skills}
+        activeSkill={activeSkill}
+        setActiveSkill={setActiveSkill}
       />
       <SessionSidebar tasks={sessionTasks} />
       <SessionLogPanel
@@ -654,6 +676,9 @@ interface MainPanelProps {
   setVaultOpen: (v: boolean) => void;
   logOpen: boolean;
   setLogOpen: (v: boolean) => void;
+  skills: SkillRow[];
+  activeSkill: SkillRow | null;
+  setActiveSkill: (s: SkillRow | null) => void;
 }
 
 function MainPanel({
@@ -686,6 +711,9 @@ function MainPanel({
   setVaultOpen,
   logOpen,
   setLogOpen,
+  skills,
+  activeSkill,
+  setActiveSkill,
 }: MainPanelProps) {
   const sessionShortId = session?.id ? session.id.slice(0, 8) : "—";
   const statusLabel = session?.status ?? "unknown";
@@ -1045,6 +1073,9 @@ function MainPanel({
             handleSend={handleSend}
             handleKeyDown={handleKeyDown}
             onAbort={handleAbort}
+            skills={skills}
+            activeSkill={activeSkill}
+            setActiveSkill={setActiveSkill}
           />
         </div>
       </div>
@@ -1846,6 +1877,9 @@ interface ComposerProps {
   handleSend: () => void;
   handleKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
   onAbort?: () => void;
+  skills: SkillRow[];
+  activeSkill: SkillRow | null;
+  setActiveSkill: (s: SkillRow | null) => void;
 }
 
 // Convert a clipboard / file blob into the SendMessageAttachment wire shape:
@@ -1891,9 +1925,69 @@ function Composer({
   handleSend,
   handleKeyDown,
   onAbort,
+  skills,
+  activeSkill,
+  setActiveSkill,
 }: ComposerProps) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [slashOpen, setSlashOpen] = useState(false);
+  const [slashFilter, setSlashFilter] = useState("");
+  const [slashIndex, setSlashIndex] = useState(0);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const filteredSkills = skills.filter(
+    (s) =>
+      s.name.toLowerCase().includes(slashFilter.toLowerCase()) ||
+      (s.description ?? "").toLowerCase().includes(slashFilter.toLowerCase()),
+  );
+
+  function selectSkill(skill: SkillRow) {
+    setActiveSkill(skill);
+    setDraft(`/${skill.name} `);
+    setSlashOpen(false);
+    setSlashFilter("");
+  }
+
+  function handleDraftChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    const val = e.target.value;
+    setDraft(val);
+
+    if (!val.startsWith("/")) {
+      setSlashOpen(false);
+      setSlashFilter("");
+      if (activeSkill) setActiveSkill(null);
+      return;
+    }
+    const afterSlash = val.slice(1);
+    const firstSpace = afterSlash.indexOf(" ");
+    if (firstSpace === -1) {
+      setSlashFilter(afterSlash);
+      setSlashOpen(true);
+      setSlashIndex(0);
+      if (activeSkill && afterSlash !== activeSkill.name) setActiveSkill(null);
+    } else {
+      setSlashOpen(false);
+      const typedName = afterSlash.slice(0, firstSpace);
+      if (!activeSkill || activeSkill.name !== typedName) {
+        const matched = skills.find(
+          (s) => s.name.toLowerCase() === typedName.toLowerCase(),
+        );
+        setActiveSkill(matched ?? null);
+      }
+    }
+  }
+
+  function composerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (slashOpen && filteredSkills.length > 0) {
+      if (e.key === "ArrowDown") { e.preventDefault(); setSlashIndex((i) => Math.min(i + 1, filteredSkills.length - 1)); return; }
+      if (e.key === "ArrowUp") { e.preventDefault(); setSlashIndex((i) => Math.max(i - 1, 0)); return; }
+      if (e.key === "Tab") { e.preventDefault(); selectSkill(filteredSkills[slashIndex] ?? filteredSkills[0]); return; }
+      if (e.key === "Escape") { e.preventDefault(); setSlashOpen(false); return; }
+      if (e.key === "Enter") { e.preventDefault(); if (filteredSkills[slashIndex]) selectSkill(filteredSkills[slashIndex]); return; }
+    }
+    handleKeyDown(e);
+  }
 
   // Submitting while a previous message is in flight is supported — the new
   // message lands in the FIFO queue and the drain effect picks it up. So the
@@ -2033,7 +2127,7 @@ function Composer({
 
   return (
     <div
-      className={`border rounded-xl shadow-sm bg-background overflow-hidden focus-within:ring-1 focus-within:ring-ring focus-within:border-ring transition-all ${
+      className={`relative border rounded-xl shadow-sm bg-background overflow-hidden focus-within:ring-1 focus-within:ring-ring focus-within:border-ring transition-all ${
         isDragOver
           ? "border-ring ring-1 ring-ring"
           : "border-border"
@@ -2042,6 +2136,47 @@ function Composer({
       onDragLeave={handleDragLeave}
       onDrop={(e) => { void handleDrop(e); }}
     >
+      {/* Skill slash-command dropdown */}
+      {slashOpen && (
+        <div
+          ref={dropdownRef}
+          className="absolute bottom-full left-0 right-0 mb-2 z-50 rounded-xl border border-border bg-background shadow-lg overflow-hidden"
+        >
+          {filteredSkills.length === 0 ? (
+            <p className="px-4 py-3 text-[12px] text-muted-foreground">No skills match &ldquo;{slashFilter}&rdquo;</p>
+          ) : (
+            <>
+              <div className="px-3 pt-2.5 pb-1">
+                <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground/60">Skills</span>
+              </div>
+              {filteredSkills.slice(0, 8).map((sk, i) => (
+                <button
+                  key={sk.id}
+                  type="button"
+                  onMouseDown={() => selectSkill(sk)}
+                  onMouseEnter={() => setSlashIndex(i)}
+                  className={`flex w-full items-start gap-3 px-3 py-2.5 text-left transition-colors ${i === slashIndex ? "bg-muted" : "hover:bg-muted/50"}`}
+                >
+                  <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${i === slashIndex ? "border-primary/30 bg-primary/10 text-primary" : "border-border bg-muted/50 text-muted-foreground"}`}>
+                    <FileText className="size-3" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-foreground">{sk.name}</span>
+                    {sk.description && <span className="block truncate text-[11px] text-muted-foreground mt-0.5">{sk.description}</span>}
+                  </div>
+                  {i === slashIndex && <span className="shrink-0 self-center rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">↵</span>}
+                </button>
+              ))}
+              <div className="border-t border-border px-3 py-2 flex items-center gap-3">
+                <span className="text-[10px] text-muted-foreground/50">↑↓ navigate</span>
+                <span className="text-[10px] text-muted-foreground/50">↵ select</span>
+                <span className="text-[10px] text-muted-foreground/50">esc dismiss</span>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 px-3 pt-3">
           {attachments.map((a, i) => (
@@ -2055,20 +2190,34 @@ function Composer({
       )}
       <textarea
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        onKeyDown={handleKeyDown}
+        onChange={handleDraftChange}
+        onKeyDown={composerKeyDown}
         onPaste={handlePaste}
-        placeholder={placeholder}
+        placeholder={activeSkill ? `Ask ${activeSkill.name} anything…` : placeholder}
         disabled={disabled}
         rows={1}
         className="w-full p-4 outline-none resize-none text-[15px] placeholder:text-muted-foreground bg-transparent"
       />
       <div className="flex items-center justify-between px-4 pb-3 text-xs text-muted-foreground">
-        <span className="mono">
+        <span className="mono flex items-center gap-2">
           {error ? (
             <span className="text-red-600">{error}</span>
           ) : (
             currentModel || "Enter to send · Shift+Enter for newline · paste or drag images"
+          )}
+          {activeSkill && (
+            <span className="flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 dark:border-blue-800 dark:bg-blue-950">
+              <FileText className="size-3 text-blue-600 dark:text-blue-400" />
+              <span className="text-[11px] font-medium text-blue-700 dark:text-blue-300">{activeSkill.name}</span>
+              <button
+                type="button"
+                onClick={() => { setActiveSkill(null); setDraft(draft.replace(/^\/[^\s]*\s*/, "")); }}
+                className="ml-0.5 text-blue-500 hover:text-blue-700 dark:text-blue-400"
+                aria-label="Remove skill"
+              >
+                <X className="size-2.5" />
+              </button>
+            </span>
           )}
         </span>
         <div className="flex items-center gap-2">
