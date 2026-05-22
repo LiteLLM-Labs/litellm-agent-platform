@@ -12,6 +12,7 @@ import {
   type PermissionRequest,
 } from "@/lib/agent-state";
 import { browserOpencodeClient } from "@/lib/opencode-client";
+import { getSessionThread } from "@/lib/api";
 import { ensureUiCookie } from "@/lib/ui-cookie";
 
 export type SendParts = Array<
@@ -76,8 +77,37 @@ export function useOpencodeThread(
     () => new Map(),
   );
   const [busy, setBusy] = useState(false);
+  // Persisted thread (Session.history) seeded independently of the live stream.
+  // Rendered as a fallback when the live thread is empty — e.g. a reaped sandbox
+  // or a finished automation run, where there's no live harness to seed from.
+  const [dbHistory, setDbHistory] = useState<AgentMessage[]>([]);
   const ocRef = useRef<ReturnType<typeof browserOpencodeClient> | null>(null);
   const fetchedRef = useRef<Set<string>>(new Set());
+
+  // Seed the DB history once per session, keyed only on sessionId so it runs
+  // even when the session isn't `ready` and has no live harness_session_id
+  // (reaped / automation sessions). The /messages route returns the live thread
+  // when reachable, else the last-known Session.history snapshot.
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const persisted = await getSessionThread(sessionId);
+        if (cancelled || persisted.length === 0) return;
+        setDbHistory(
+          seedFromHistory(
+            persisted as unknown as Parameters<typeof seedFromHistory>[0],
+          ).messages,
+        );
+      } catch {
+        // no persisted history — nothing to fall back to
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionId]);
 
   useEffect(() => {
     if (!enabled || !sessionId || !harnessSessionId) return;
@@ -236,7 +266,10 @@ export function useOpencodeThread(
   );
 
   return {
-    messages: parent.messages,
+    // Prefer the live thread; fall back to the persisted DB history when there
+    // is none (reaped sandbox / finished automation run) so the chat still
+    // renders the conversation instead of an empty thread.
+    messages: parent.messages.length > 0 ? parent.messages : dbHistory,
     subThreads,
     permissions,
     busy,
