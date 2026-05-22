@@ -238,13 +238,19 @@ function AutomationItem({
   onToggle,
   onDelete,
 }: ItemProps) {
+  const [expanded, setExpanded] = useState(false);
+
   return (
     <li className="px-4 py-3">
       {/* Top row: title + status on the left, actions on the right — both
           vertically centered on the same line so nothing staggers. */}
       <div className="flex items-center justify-between gap-4">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-sm font-medium">
+        <div
+          className="flex min-w-0 cursor-pointer items-center gap-2"
+          onClick={() => setExpanded((v) => !v)}
+          title="Click to expand"
+        >
+          <span className={`text-sm font-medium${expanded ? "" : " truncate"}`}>
             {automation.name || automation.instruction}
           </span>
           {automation.enabled ? (
@@ -311,7 +317,7 @@ function AutomationItem({
         )}
       </div>
       {automation.name && (
-        <div className="mt-0.5 truncate text-xs text-muted-foreground">
+        <div className={`mt-0.5 text-xs text-muted-foreground${expanded ? "" : " truncate"}`}>
           {automation.instruction}
         </div>
       )}
