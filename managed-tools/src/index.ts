@@ -25,3 +25,13 @@ export {
   type CreateAutomationInput,
   type ListAutomationsInput,
 } from "./automations.js";
+
+export {
+  slackEnv,
+  postSlackMessageSchema,
+  postSlackMessageDescription,
+  callPostSlackMessage,
+  type SlackEnv,
+  type SlackToolResult,
+  type PostSlackMessageInput,
+} from "./slack.js";

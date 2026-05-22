@@ -50,6 +50,10 @@ import {
 import {
   buildSandboxMcpServer,
 } from "./sandbox-mcp.js";
+import {
+  buildSlackMcpServer,
+  SLACK_TOOL_NAMES,
+} from "./slack-tools.js";
 
 // SDK's auto-resolution of the Claude Code native binary fails when
 // `process.cwd()` differs from the SDK's install location (we run with
@@ -83,6 +87,9 @@ const RECORDING_MCP = buildRecordingMcpServer();
 // In-process MCP exposing create_automation + list_automations so the agent
 // can schedule itself. Null when the LAP env isn't set (same as memory).
 const AUTOMATIONS_MCP = buildAutomationsMcpServer();
+// In-process MCP exposing post_slack_message so the agent can send Slack
+// updates. Null when SLACK_BOT_TOKEN is not set (set via CONTAINER_ENV_SLACK_BOT_TOKEN).
+const SLACK_MCP = buildSlackMcpServer();
 
 // ---------------------------------------------------------------------------
 // Config
@@ -386,18 +393,20 @@ async function runTurn(
           };
         })()
       : {
-          // Normal mode: full memory + automations + screenshot + recording set.
+          // Normal mode: full memory + automations + screenshot + recording + slack set.
           mcpServers: {
             ...(MEMORY_MCP ? { "lap-memory": MEMORY_MCP } : {}),
             ...(AUTOMATIONS_MCP ? { "lap-automations": AUTOMATIONS_MCP } : {}),
             "lap-screenshot": SCREENSHOT_MCP,
             "lap-recording": RECORDING_MCP,
+            ...(SLACK_MCP ? { "lap-slack": SLACK_MCP } : {}),
           },
           allowedTools: [
             ...(MEMORY_MCP ? [...MEMORY_TOOL_NAMES] : []),
             ...(AUTOMATIONS_MCP ? [...AUTOMATION_TOOL_NAMES] : []),
             ...SCREENSHOT_TOOL_NAMES,
             ...RECORDING_TOOL_NAMES,
+            ...(SLACK_MCP ? [...SLACK_TOOL_NAMES] : []),
           ],
         }),
     // Resume the SDK's persisted session if we have one — that's how the

@@ -17,6 +17,10 @@
     "./automations": {
       "types": "./dist/automations.d.ts",
       "default": "./dist/automations.js"
+    },
+    "./slack": {
+      "types": "./dist/slack.d.ts",
+      "default": "./dist/slack.js"
     }
   },
   "files": ["dist", "src"],
