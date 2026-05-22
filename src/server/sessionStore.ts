@@ -219,11 +219,15 @@ export async function syncSessionThread(opts: {
   }
 
   try {
-    const last = await prisma.sessionMessage.findFirst({
-      where: { session_id },
-      orderBy: { seq: "desc" },
+    // The OLDEST still-pending user turn is the one that just settled — opencode
+    // processes turns serially (one session.idle per turn). Ordering DESC would
+    // wrongly pick a just-queued second message and attach this turn's reply to
+    // it; filtering to the oldest pending user row is race-safe.
+    const pendingUser = await prisma.sessionMessage.findFirst({
+      where: { session_id, role: "user", status: "pending" },
+      orderBy: { seq: "asc" },
     });
-    if (!last || last.role !== "user" || last.status !== "pending") return;
+    if (!pendingUser) return;
 
     const lastAssistant = [...thread]
       .reverse()
@@ -232,7 +236,7 @@ export async function syncSessionThread(opts: {
 
     await completeAssistantMessage({
       session_id,
-      user_message_id: last.message_id,
+      user_message_id: pendingUser.message_id,
       harness_session_id,
       response: { parts: lastAssistant.parts ?? [] },
     });
