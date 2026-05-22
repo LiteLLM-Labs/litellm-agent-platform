@@ -60,7 +60,7 @@ export async function provisionSandbox(
     where: { session_id },
     // Cast required: Prisma client types pre-date the `sandboxes` column
     // migration. Remove the cast after `prisma generate` is re-run.
-    data: { sandbox_url, sandboxes: merged } as Prisma.SessionUpdateInput,
+    data: { sandboxes: merged } as Prisma.SessionUpdateInput,
   });
 
   sandboxMap.set(mapKey(session_id, name), sandbox_url);
