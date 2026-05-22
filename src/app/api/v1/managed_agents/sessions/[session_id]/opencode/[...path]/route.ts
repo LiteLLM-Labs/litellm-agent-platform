@@ -127,19 +127,47 @@ async function proxy(req: Request, ctx: RouteContext): Promise<Response> {
       });
     }
 
+    // For GET session/:id/message, catch both network failures (unreachable pod)
+    // and 404 (pod restarted, session lost from memory) and fall back to the DB
+    // history snapshot so the UI can still render the conversation.
+    const isMessageHistory =
+      req.method === "GET" && /^session\/[^/]+\/message$/.test(tail);
+
     let upstream: Response;
-    try {
-      upstream = await fetch(target, init);
-    } catch (err) {
-      // Harness unreachable — flag the just-recorded user turn `failed` so it
-      // isn't replayed as a phantom unanswered turn on the next recovery.
-      if (sentUserMsgId) await markUserMessageFailed(sentUserMsgId);
-      throw err;
+    if (isMessageHistory) {
+      try {
+        upstream = await fetch(target, init);
+      } catch {
+        upstream = new Response(JSON.stringify({ error: "not found" }), { status: 404 });
+      }
+    } else {
+      try {
+        upstream = await fetch(target, init);
+      } catch (err) {
+        // Harness unreachable — flag the just-recorded user turn `failed` so it
+        // isn't replayed as a phantom unanswered turn on the next recovery.
+        if (sentUserMsgId) await markUserMessageFailed(sentUserMsgId);
+        throw err;
+      }
     }
+
     // Non-2xx from the harness (rate limit, bad request, …): same cleanup. The
     // error status is still proxied back to the client below.
     if (sentUserMsgId && !upstream.ok) {
       await markUserMessageFailed(sentUserMsgId);
+    }
+
+    // When the harness doesn't know about this session (pod restarted, in-memory
+    // state lost) it returns 404 for GET session/:id/message. Fall back to the
+    // last-snapshotted history so the UI can still render the conversation.
+    if (isMessageHistory && upstream.status === 404) {
+      const row = await prisma.session.findUnique({
+        where: { session_id },
+        select: { history: true },
+      });
+      if (Array.isArray(row?.history) && (row.history as unknown[]).length > 0) {
+        return Response.json(row.history);
+      }
     }
 
     const ct = upstream.headers.get("content-type") ?? "application/json";
