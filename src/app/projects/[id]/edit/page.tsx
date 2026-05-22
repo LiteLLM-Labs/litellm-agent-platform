@@ -8,24 +8,8 @@ import { Tooltip } from "@base-ui/react/tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { LocalProject, SandboxFile } from "../../page";
-import { PROJECTS_STORAGE_KEY } from "@/lib/constants";
-
-function loadLocalProjects(): LocalProject[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(PROJECTS_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as LocalProject[]) : [];
-  } catch { return []; }
-}
-
-function saveLocalProjects(ts: LocalProject[]): void {
-  try { window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(ts)); } catch { /* ignore */ }
-}
-
-function generateId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-}
+import { getProject, updateProject } from "@/lib/api";
+import type { SandboxFileSpec } from "@/lib/api";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -40,6 +24,10 @@ interface FileDraft {
   content: string;
   content_type: string;
   size: number;
+}
+
+function generateId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 function TagInput({
@@ -87,8 +75,6 @@ export default function EditProjectPage() {
   const params = useParams<{ id: string }>();
 
   const [notFound, setNotFound] = useState(false);
-  const [originalId, setOriginalId] = useState<string | null>(null);
-
   const [name, setName] = useState("");
   const [repoUrl, setRepoUrl] = useState("");
   const [envVars, setEnvVars] = useState<[string, string][]>([["", ""]]);
@@ -96,32 +82,31 @@ export default function EditProjectPage() {
   const [denyOut, setDenyOut] = useState<string[]>([]);
   const [fileDrafts, setFileDrafts] = useState<FileDraft[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const templates = loadLocalProjects();
-    const t = templates.find((x) => x.id === params.id);
-    if (!t) { setNotFound(true); return; }
-
-    setOriginalId(t.id);
-    setName(t.name);
-    setRepoUrl(t.repo_url ?? "");
-    setAllowOut(t.allow_out ?? []);
-    setDenyOut(t.deny_out ?? []);
-
-    const pairs: [string, string][] = Object.entries(t.env_vars ?? {});
-    setEnvVars(pairs.length > 0 ? pairs : [["", ""]]);
-
-    setFileDrafts(
-      (t.files ?? []).map((f: SandboxFile) => ({
-        id: generateId(),
-        name: f.name,
-        sandbox_path: f.sandbox_path,
-        content: f.content,
-        content_type: f.content_type,
-        size: f.size,
-      }))
-    );
+    getProject(params.id)
+      .then((p) => {
+        setName(p.name);
+        setRepoUrl(p.repo_url ?? "");
+        setAllowOut(p.allow_out ?? []);
+        setDenyOut(p.deny_out ?? []);
+        const pairs: [string, string][] = Object.entries(p.env_vars ?? {});
+        setEnvVars(pairs.length > 0 ? pairs : [["", ""]]);
+        setFileDrafts(
+          (p.files ?? []).map((f: SandboxFileSpec) => ({
+            id: generateId(),
+            name: f.name,
+            sandbox_path: f.sandbox_path,
+            content: f.content,
+            content_type: f.content_type,
+            size: f.size,
+          }))
+        );
+      })
+      .catch(() => setNotFound(true))
+      .finally(() => setLoading(false));
   }, [params.id]);
 
   function addFileDraft() {
@@ -193,39 +178,42 @@ export default function EditProjectPage() {
   function setKey(i: number, k: string) { setEnvVars((p) => p.map((r, j) => j === i ? [k, r[1]] : r)); }
   function setVal(i: number, v: string) { setEnvVars((p) => p.map((r, j) => j === i ? [r[0], v] : r)); }
 
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     if (!name.trim()) { setError("Name is required."); return; }
-    if (!originalId) return;
     setSubmitting(true);
 
     const envVarsRecord: Record<string, string> = {};
     for (const [k, v] of envVars) { if (k.trim()) envVarsRecord[k.trim()] = v; }
 
-    const files: SandboxFile[] = fileDrafts
+    const files: SandboxFileSpec[] = fileDrafts
       .filter(fd => fd.content)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       .map(({ id: _id, ...fd }) => fd);
 
-    const existing = loadLocalProjects();
-    const idx = existing.findIndex((t) => t.id === originalId);
-    if (idx === -1) { setError("Project not found — it may have been deleted."); setSubmitting(false); return; }
+    try {
+      await updateProject(params.id, {
+        name: name.trim(),
+        repo_url: repoUrl.trim() || undefined,
+        env_vars: envVarsRecord,
+        allow_out: allowOut,
+        deny_out: denyOut,
+        files,
+      });
+      router.push("/projects");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save project.");
+      setSubmitting(false);
+    }
+  }
 
-    const updated: LocalProject = {
-      ...existing[idx],
-      name: name.trim(),
-      repo_url: repoUrl.trim() || undefined,
-      env_vars: envVarsRecord,
-      allow_out: allowOut.length > 0 ? allowOut : undefined,
-      deny_out: denyOut.length > 0 ? denyOut : undefined,
-      files: files.length > 0 ? files : undefined,
-    };
-
-    const next = [...existing];
-    next[idx] = updated;
-    saveLocalProjects(next);
-    router.push("/projects");
+  if (loading) {
+    return (
+      <div className="mx-auto w-full max-w-2xl px-6 py-8">
+        <p className="text-[13px] text-muted-foreground">Loading…</p>
+      </div>
+    );
   }
 
   if (notFound) {

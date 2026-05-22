@@ -1447,3 +1447,58 @@ export function harnessResponseText(
   }
   return out.join("");
 }
+
+// ---------- Projects ----------
+
+export interface ProjectRow {
+  project_id: string;
+  name: string;
+  description: string | null;
+  repo_url: string | null;
+  env_vars: Record<string, string>;
+  allow_out: string[];
+  deny_out: string[];
+  files: SandboxFileSpec[];
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface CreateProjectRequest {
+  name: string;
+  description?: string;
+  repo_url?: string;
+  env_vars?: Record<string, string>;
+  allow_out?: string[];
+  deny_out?: string[];
+  files?: SandboxFileSpec[];
+}
+
+export interface UpdateProjectRequest {
+  name?: string;
+  description?: string;
+  repo_url?: string;
+  env_vars?: Record<string, string>;
+  allow_out?: string[];
+  deny_out?: string[];
+  files?: SandboxFileSpec[];
+}
+
+export function listProjects(): Promise<{ data: ProjectRow[] }> {
+  return api<{ data: ProjectRow[] }>("GET", "/v1/managed_agents/projects");
+}
+
+export function getProject(projectId: string): Promise<ProjectRow> {
+  return api<ProjectRow>("GET", `/v1/managed_agents/projects/${projectId}`);
+}
+
+export function createProject(req: CreateProjectRequest): Promise<ProjectRow> {
+  return api<ProjectRow>("POST", "/v1/managed_agents/projects", req);
+}
+
+export function updateProject(projectId: string, req: UpdateProjectRequest): Promise<ProjectRow> {
+  return api<ProjectRow>("PATCH", `/v1/managed_agents/projects/${projectId}`, req);
+}
+
+export function deleteProject(projectId: string): Promise<void> {
+  return api<void>("DELETE", `/v1/managed_agents/projects/${projectId}`);
+}

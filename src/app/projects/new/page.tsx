@@ -8,24 +8,8 @@ import { Tooltip } from "@base-ui/react/tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { LocalProject, SandboxFile } from "../page";
-import { PROJECTS_STORAGE_KEY } from "@/lib/constants";
-
-function loadLocalProjects(): LocalProject[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(PROJECTS_STORAGE_KEY);
-    return raw ? (JSON.parse(raw) as LocalProject[]) : [];
-  } catch { return []; }
-}
-
-function saveLocalProjects(ts: LocalProject[]): void {
-  try { window.localStorage.setItem(PROJECTS_STORAGE_KEY, JSON.stringify(ts)); } catch { /* ignore */ }
-}
-
-function generateId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-}
+import { createProject } from "@/lib/api";
+import type { SandboxFileSpec } from "@/lib/api";
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -40,6 +24,10 @@ interface FileDraft {
   content: string;
   content_type: string;
   size: number;
+}
+
+function generateId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
 function TagInput({
@@ -132,10 +120,8 @@ export default function NewProjectPage() {
         if (!trimmed || trimmed.startsWith("#")) continue;
         const eq = trimmed.indexOf("=");
         if (eq === -1) continue;
-        // Strip leading `export ` (bash-style env files)
         const key = trimmed.slice(0, eq).trim().replace(/^export\s+/, "");
         let val = trimmed.slice(eq + 1).trim();
-        // Quoted value: extract content between first pair of matching quotes
         if (val.startsWith('"')) {
           const end = val.indexOf('"', 1);
           val = end !== -1 ? val.slice(1, end) : val.slice(1);
@@ -143,7 +129,6 @@ export default function NewProjectPage() {
           const end = val.indexOf("'", 1);
           val = end !== -1 ? val.slice(1, end) : val.slice(1);
         } else {
-          // Unquoted: strip inline comments (must be preceded by whitespace)
           val = val.replace(/\s+#.*$/, "");
         }
         if (key) pairs.push([key, val]);
@@ -166,7 +151,7 @@ export default function NewProjectPage() {
   function setKey(i: number, k: string) { setEnvVars((p) => p.map((r, j) => j === i ? [k, r[1]] : r)); }
   function setVal(i: number, v: string) { setEnvVars((p) => p.map((r, j) => j === i ? [r[0], v] : r)); }
 
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
+  async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
     if (!name.trim()) { setError("Name is required."); return; }
@@ -175,35 +160,25 @@ export default function NewProjectPage() {
     const envVarsRecord: Record<string, string> = {};
     for (const [k, v] of envVars) { if (k.trim()) envVarsRecord[k.trim()] = v; }
 
-    const files: SandboxFile[] = fileDrafts
+    const files: SandboxFileSpec[] = fileDrafts
       .filter(fd => fd.content)
       // eslint-disable-next-line @typescript-eslint/no-unused-vars
       .map(({ id: _id, ...fd }) => fd);
 
-    const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-    const project: LocalProject = {
-      id: `${slug}-${generateId()}`,
-      name: name.trim(),
-      description: "",
-      icon: "🤖",
-      tags: [],
-      harness_id: "opencode",
-      model: "",
-      repo_url: repoUrl.trim() || undefined,
-      env_vars: envVarsRecord,
-      allow_out: allowOut.length > 0 ? allowOut : undefined,
-      deny_out: denyOut.length > 0 ? denyOut : undefined,
-      files: files.length > 0 ? files : undefined,
-      prompt: "",
-      skill_name: "",
-      skill: "",
-      tools: [],
-      requirements: null,
-      source: "local",
-    };
-
-    saveLocalProjects([...loadLocalProjects(), project]);
-    router.push("/projects");
+    try {
+      await createProject({
+        name: name.trim(),
+        repo_url: repoUrl.trim() || undefined,
+        env_vars: envVarsRecord,
+        allow_out: allowOut.length > 0 ? allowOut : [],
+        deny_out: denyOut.length > 0 ? denyOut : [],
+        files: files.length > 0 ? files : [],
+      });
+      router.push("/projects");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to create project.");
+      setSubmitting(false);
+    }
   }
 
   return (
