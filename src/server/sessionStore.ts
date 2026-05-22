@@ -27,6 +27,18 @@ import type {
 
 export type SessionMessageRow = SessionMessage;
 
+// Newest message timestamp in a harness thread — used as a monotonic version
+// to skip stale history snapshots (and stays monotonic across rehydration).
+function threadMaxCreated(thread: HarnessMessage[]): number {
+  let max = 0;
+  for (const m of thread) {
+    const t = (m.info as { time?: { created?: number } } | undefined)?.time
+      ?.created;
+    if (typeof t === "number" && t > max) max = t;
+  }
+  return max;
+}
+
 // Prisma transaction client (the `tx` handed to an interactive transaction).
 type Tx = Omit<
   PrismaClient,
@@ -210,9 +222,28 @@ export async function syncSessionThread(opts: {
 }): Promise<void> {
   const { session_id, harness_session_id, thread } = opts;
   try {
-    await prisma.session.update({
-      where: { session_id },
-      data: { history: thread as unknown as Prisma.InputJsonValue },
+    // Guarded history write. Snapshots are fire-and-forget, so a slow snapshot
+    // for an earlier turn could otherwise clobber the fuller thread a faster
+    // later snapshot already wrote (lost update → transiently incomplete log).
+    // Serialize per-session on the same advisory lock used for seq allocation,
+    // and skip a write whose newest message predates what's already stored.
+    // Max message time (not length) is the version, so this also stays correct
+    // across rehydration, where the fresh sandbox's messages are newer.
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${session_id}))`;
+      const current = await tx.session.findUnique({
+        where: { session_id },
+        select: { history: true },
+      });
+      const existing = Array.isArray(current?.history)
+        ? (current.history as unknown as HarnessMessage[])
+        : [];
+      const incomingMax = threadMaxCreated(thread);
+      if (incomingMax > 0 && incomingMax < threadMaxCreated(existing)) return;
+      await tx.session.update({
+        where: { session_id },
+        data: { history: thread as unknown as Prisma.InputJsonValue },
+      });
     });
   } catch (err) {
     console.warn(`syncSessionThread: history update failed for ${session_id}:`, err);
