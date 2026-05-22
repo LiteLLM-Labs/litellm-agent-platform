@@ -12,8 +12,9 @@
  * with what the existing UI sends.
  */
 
-import type { Agent, Memory, Session, WarmTask } from "@prisma/client";
+import type { Agent, Automation, Memory, Session, WarmTask } from "@prisma/client";
 import { z } from "zod";
+import { isValidCron } from "@/server/automations";
 import { decrypt, encrypt } from "@/server/integrations/core/crypto";
 import type { SessionOrigin } from "@/server/integrations/core/origin";
 import { parseAttachedSkillIds } from "@/server/skill-prompt";
@@ -27,6 +28,7 @@ export type AgentRow = Agent;
 export type SessionRow = Session;
 export type WarmTaskRow = WarmTask;
 export type MemoryRow = Memory;
+export type AutomationRow = Automation;
 
 export type SessionStatus = "creating" | "ready" | "failed" | "dead";
 export type WarmTaskStatus = "provisioning" | "warm" | "claimed" | "dead";
@@ -230,6 +232,35 @@ export const UpdateAgentBody = z.object({
     ),
 });
 export type UpdateAgentBody = z.infer<typeof UpdateAgentBody>;
+
+// ============================================================================
+// Automations (scheduled session triggers — see src/server/automations.ts)
+// ============================================================================
+
+// Bound the prompt so a single automation can't blow up the session-create
+// body. Generous — these are task instructions, not whole documents.
+const AUTOMATION_INSTRUCTION_MAX = 8_000;
+
+const cronExpr = z
+  .string()
+  .min(1)
+  .refine(isValidCron, { message: "invalid cron expression" });
+
+export const CreateAutomationBody = z.object({
+  instruction: z.string().min(1).max(AUTOMATION_INSTRUCTION_MAX),
+  cron_expr: cronExpr,
+  name: z.string().max(200).optional(),
+  enabled: z.boolean().optional(),
+});
+export type CreateAutomationBody = z.infer<typeof CreateAutomationBody>;
+
+export const UpdateAutomationBody = z.object({
+  instruction: z.string().min(1).max(AUTOMATION_INSTRUCTION_MAX).optional(),
+  cron_expr: cronExpr.optional(),
+  name: z.string().max(200).nullable().optional(),
+  enabled: z.boolean().optional(),
+});
+export type UpdateAutomationBody = z.infer<typeof UpdateAutomationBody>;
 
 export const CreateSkillBody = z.object({
   name: z.string().min(1),
@@ -457,6 +488,18 @@ export interface ApiMemory {
   source_thread_ts: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ApiAutomation {
+  id: string;
+  agent_id: string;
+  name: string | null;
+  instruction: string;
+  cron_expr: string;
+  enabled: boolean;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  created_at: string;
 }
 
 export interface ApiSession {
@@ -936,6 +979,20 @@ export function toApiMemory(row: MemoryRow): ApiMemory {
     source_thread_ts: row.source_thread_ts ?? null,
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
+  };
+}
+
+export function toApiAutomation(row: AutomationRow): ApiAutomation {
+  return {
+    id: row.automation_id,
+    agent_id: row.agent_id,
+    name: row.name ?? null,
+    instruction: row.instruction,
+    cron_expr: row.cron_expr,
+    enabled: row.enabled,
+    next_run_at: row.next_run_at ? row.next_run_at.toISOString() : null,
+    last_run_at: row.last_run_at ? row.last_run_at.toISOString() : null,
+    created_at: row.created_at.toISOString(),
   };
 }
 
