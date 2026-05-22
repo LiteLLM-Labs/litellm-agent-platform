@@ -15,6 +15,7 @@ import { appendSkillBlock } from "@/server/skill-prompt";
 import { getTemplate, listTemplates } from "@/server/templates";
 import {
   CreateAgentBody,
+  HARNESS_BRAIN_INLINE,
   HARNESS_OPENCODE,
   KNOWN_HARNESSES,
   encryptEnvVars,
@@ -105,6 +106,12 @@ export const POST = wrap(async (req: Request) => {
   if (!KNOWN_HARNESSES.has(harness_id)) {
     httpError(400, {
       error: `unknown harness_id "${harness_id}". Valid: ${[...KNOWN_HARNESSES].join(", ")}`,
+    });
+  }
+
+  if (harness_id === HARNESS_BRAIN_INLINE && (!body.projects || body.projects.length === 0)) {
+    httpError(400, {
+      error: `harness_id "${HARNESS_BRAIN_INLINE}" requires at least one project entry in "projects"`,
     });
   }
 

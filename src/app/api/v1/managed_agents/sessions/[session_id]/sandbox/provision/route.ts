@@ -84,8 +84,8 @@ export async function POST(req: Request, ctx: RouteContext) {
 
     // Shallow-clone the agent row, overriding repo_url / branch with the
     // project's values so the sandbox pod clones the correct repository.
-    const projectRepoUrl = project.repo_url as string;
-    const projectBranch = typeof project.branch === "string" ? project.branch : "main";
+    const projectRepoUrl = project!.repo_url as string;
+    const projectBranch = typeof project!.branch === "string" ? project!.branch : "main";
     const agentWithProject = {
       ...agent,
       repo_url: projectRepoUrl,

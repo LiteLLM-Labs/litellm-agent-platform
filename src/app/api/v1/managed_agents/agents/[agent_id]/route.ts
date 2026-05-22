@@ -12,6 +12,7 @@ import { prisma } from "@/server/db";
 import { invalidateWarmTasks } from "@/server/memory";
 import {
   encryptEnvVars,
+  HARNESS_BRAIN_INLINE,
   httpError,
   RESERVED_ENV_KEYS,
   toApiAgent,
@@ -55,6 +56,16 @@ export const PATCH = wrap<RouteContext>(async (req, ctx) => {
 
   const existing = await prisma.agent.findUnique({ where: { agent_id } });
   if (existing === null) httpError(404, `agent '${agent_id}' not found`);
+
+  if (
+    existing!.harness_id === HARNESS_BRAIN_INLINE &&
+    body.projects !== undefined &&
+    body.projects.length === 0
+  ) {
+    httpError(400, {
+      error: `harness_id "${HARNESS_BRAIN_INLINE}" requires at least one project entry in "projects"`,
+    });
+  }
 
   // env_vars replace flow: user supplies the new user-editable map; we
   // preserve any reserved-key entries already on the row (e.g.
