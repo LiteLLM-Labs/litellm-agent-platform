@@ -126,7 +126,15 @@ export async function tickAutomations(): Promise<AutomationTickResult> {
       const nextRunAt = computeNextRunAt(auto.cron_expr, now);
       await tx.automation.update({
         where: { automation_id: auto.automation_id },
-        data: { last_run_at: now, next_run_at: nextRunAt },
+        data: {
+          last_run_at: now,
+          next_run_at: nextRunAt,
+          // A cron with no further occurrence (e.g. a date that has now
+          // passed) yields a null next_run_at. Disable the row so it doesn't
+          // sit "Enabled" forever with no next fire — the worker query filters
+          // out null next_run_at, so it'd otherwise be silently stuck.
+          ...(nextRunAt === null ? { enabled: false } : {}),
+        },
       });
     }
     return rows;
