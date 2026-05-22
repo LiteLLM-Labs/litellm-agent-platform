@@ -182,15 +182,35 @@ export interface AgentRow {
    * Empty array when the agent has no skills.
    */
   attached_skill_ids?: string[];
+  /** Template this agent was derived from. Null if not template-derived. */
+  template_id?: string | null;
+  /** Version of the template at last sync. Null if not template-derived. */
+  template_version?: number | null;
+  /** Current version of the referenced template. Null if not template-derived or template deleted. */
+  template_latest_version?: number | null;
+  /** False when template_version < template_latest_version — "sync available". */
+  template_in_sync?: boolean;
+  /** Snapshot of template.prompt at last creation/sync — "before" side of the diff. */
+  template_prompt?: string | null;
+  /** Current template prompt text — "after" side of the diff. */
+  template_latest_prompt?: string | null;
   created_at?: string | null;
   session_count?: number;
   has_active_session?: boolean;
+  /** GitHub / git repository URL the agent is connected to. */
+  repo_url?: string | null;
+  /** Projects attached to this agent (brain-inline harness only). */
+  projects?: ProjectConfig[];
 }
 
 export interface SessionRow {
   id: string;
   agent_id: string;
   sandbox_url?: string | null;
+  // opencode/harness session id inside the pod. Used by the browser opencode
+  // SDK to address session.prompt / session.messages. Null until bring-up
+  // creates the harness session.
+  harness_session_id?: string | null;
   // Browser-accessible WS base URL for TUI harnesses. Non-null when the
   // session is ready and the platform can supply a reachable endpoint:
   // - IN_CLUSTER: a relative path through the platform TCP proxy.
@@ -453,6 +473,15 @@ export interface McpAllowedTools {
   tools: string[];
 }
 
+export interface ProjectConfig {
+  id: string;
+  name: string;
+  description: string;
+  repo_url?: string;
+  branch?: string;
+  setup_cmd?: string;
+}
+
 export interface CreateAgentRequest {
   name?: string;
   model: string;
@@ -473,6 +502,10 @@ export interface CreateAgentRequest {
   sandbox_files?: SandboxFileSpec[];
   /** Library skill IDs to attach at create time (in order). Each is materialized inside the sandbox as ~/.claude/skills/<slug>/SKILL.md on session boot. */
   skill_ids?: string[];
+  /** Template this agent is derived from — stored for Helm-style version tracking. */
+  template_id?: string;
+  /** Projects to attach when using the claude-code-brain-inline harness. */
+  projects?: ProjectConfig[];
 }
 
 export interface UpdateAgentRequest {
@@ -490,6 +523,8 @@ export interface UpdateAgentRequest {
   model?: string;
   branch?: string;
   preload_memory_limit?: number;
+  /** Projects to attach when using the claude-code-brain-inline harness. */
+  projects?: ProjectConfig[];
 }
 
 export function listAgents(): Promise<AgentRow[]> {
@@ -549,6 +584,20 @@ export function updateAgent(
 
 export function deleteAgent(id: string): Promise<void> {
   return api<void>("DELETE", `/v1/managed_agents/agents/${encodeURIComponent(id)}`);
+}
+
+export interface TemplateSyncResult {
+  template_id: string;
+  previous_version: number;
+  new_version: number;
+  status: "synced" | "already_up_to_date";
+}
+
+export function syncAgentTemplate(id: string): Promise<TemplateSyncResult> {
+  return api<TemplateSyncResult>(
+    "POST",
+    `/v1/managed_agents/agents/${encodeURIComponent(id)}/template`,
+  );
 }
 
 // ---------- Memory ----------
@@ -697,6 +746,18 @@ export function restartSession(
   return api<SessionRow>(
     "POST",
     `/v1/managed_agents/sessions/${encodeURIComponent(id)}/restart`,
+    undefined,
+    init,
+  );
+}
+
+export function abortSession(
+  id: string,
+  init?: ApiInit,
+): Promise<{ ok: boolean }> {
+  return api<{ ok: boolean }>(
+    "POST",
+    `/v1/managed_agents/sessions/${encodeURIComponent(id)}/abort`,
     undefined,
     init,
   );
@@ -1156,6 +1217,22 @@ export function getAdminStats(): Promise<AdminStats> {
   return api<AdminStats>("GET", "/v1/admin/stats");
 }
 
+// ---------- Inline Harness ----------
+
+export interface InlineHarnessStatus {
+  exists: boolean;
+  readyReplicas: number;
+  url: string;
+}
+
+export function getInlineHarnessStatus(): Promise<InlineHarnessStatus> {
+  return api<InlineHarnessStatus>("GET", "/v1/admin/inline-harness");
+}
+
+export function setInlineHarnessEnabled(enable: boolean): Promise<InlineHarnessStatus> {
+  return api<InlineHarnessStatus>("POST", "/v1/admin/inline-harness", { enable });
+}
+
 // ---------- Templates ----------
 
 export interface TemplateFile {
@@ -1273,6 +1350,75 @@ export function updateSkill(id: string, req: UpdateSkillRequest): Promise<SkillR
 
 export function deleteSkill(id: string): Promise<void> {
   return api<void>("DELETE", `/v1/skills/${encodeURIComponent(id)}`);
+}
+
+// ---------- Automations ----------
+
+export interface AutomationRow {
+  automation_id: string;
+  agent_id: string;
+  name: string | null;
+  instruction: string;
+  cron_expr: string;
+  enabled: boolean;
+  last_run_at: string | null;
+  next_run_at: string | null;
+  created_at: string;
+  created_by: string | null;
+}
+
+export interface CreateAutomationRequest {
+  name?: string;
+  instruction: string;
+  cron_expr: string;
+  enabled?: boolean;
+}
+
+export interface UpdateAutomationRequest {
+  name?: string | null;
+  instruction?: string;
+  cron_expr?: string;
+  enabled?: boolean;
+}
+
+export function listAutomations(agentId: string): Promise<AutomationRow[]> {
+  return api<{ data: AutomationRow[] }>(
+    "GET",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/automations`,
+  ).then((r) => r.data);
+}
+
+export function createAutomation(
+  agentId: string,
+  req: CreateAutomationRequest,
+): Promise<AutomationRow> {
+  return api<AutomationRow>(
+    "POST",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/automations`,
+    req,
+  );
+}
+
+export function updateAutomation(
+  agentId: string,
+  automationId: string,
+  req: UpdateAutomationRequest,
+): Promise<AutomationRow> {
+  return api<AutomationRow>(
+    "PATCH",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/automations/${encodeURIComponent(automationId)}`,
+    req,
+  );
+}
+
+export function deleteAutomation(
+  agentId: string,
+  automationId: string,
+): Promise<{ deleted: number }> {
+  return api<{ deleted: number }>(
+    "DELETE",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/automations/${encodeURIComponent(automationId)}`,
+  );
 }
 
 // ---------- Integrations / Channels ----------

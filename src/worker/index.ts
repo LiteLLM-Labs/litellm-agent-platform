@@ -21,8 +21,95 @@ import { env } from "@/server/env";
 import { reconcileOrphans } from "@/server/reconcile";
 import { topUpWarmPool } from "@/server/warmPool";
 import { registry } from "@/server/metrics";
+import { nextRunAt } from "@/server/automations";
 
 const intervalMs = env.RECONCILE_INTERVAL_SECONDS * 1000;
+
+// ---------------------------------------------------------------------------
+// Automation runner — fires due automations as new Sessions.
+// ---------------------------------------------------------------------------
+
+/**
+ * Spawn one session for an automation via the v1 session-create endpoint.
+ * Uses the same in-process fetch pattern as the integrations dispatcher so
+ * warm-pool claim + cold-fallback logic isn't duplicated here.
+ */
+async function spawnAutomationSession(
+  agent_id: string,
+  automation_id: string,
+  instruction: string,
+): Promise<void> {
+  const baseUrl = process.env.BASE_URL ?? "http://localhost:3000";
+  const url = `${baseUrl}/api/v1/managed_agents/agents/${encodeURIComponent(agent_id)}/session`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${env.MASTER_KEY}`,
+    },
+    body: JSON.stringify({
+      initial_prompt: instruction,
+      title: `automation:${automation_id.slice(0, 8)}`,
+    }),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`session create failed (${res.status}): ${text}`);
+  }
+}
+
+/**
+ * Tick: find all enabled automations whose next_run_at has passed, spawn a
+ * session for each, then advance next_run_at to the following cron occurrence.
+ * Each automation is handled independently so one failure doesn't block others.
+ */
+async function tickAutomations(): Promise<void> {
+  const now = new Date();
+  const due = await prisma.automation.findMany({
+    where: {
+      enabled: true,
+      next_run_at: { lte: now },
+    },
+    select: {
+      automation_id: true,
+      agent_id: true,
+      instruction: true,
+      cron_expr: true,
+    },
+  });
+
+  if (due.length === 0) return;
+
+  await Promise.allSettled(
+    due.map(async (a) => {
+      try {
+        await spawnAutomationSession(a.agent_id, a.automation_id, a.instruction);
+        const nextRun = nextRunAt(a.cron_expr);
+        await prisma.automation.update({
+          where: { automation_id: a.automation_id },
+          data: { last_run_at: now, next_run_at: nextRun },
+        });
+        console.log(
+          `automation: fired automation_id=${a.automation_id} agent_id=${a.agent_id} next_run_at=${nextRun.toISOString()}`,
+        );
+      } catch (e) {
+        console.error(
+          `automation: failed to run automation_id=${a.automation_id} agent_id=${a.agent_id}: ${e instanceof Error ? e.message : String(e)}`,
+        );
+        // Still advance next_run_at so we don't retry every tick.
+        try {
+          const nextRun = nextRunAt(a.cron_expr);
+          await prisma.automation.update({
+            where: { automation_id: a.automation_id },
+            data: { last_run_at: now, next_run_at: nextRun },
+          });
+        } catch {
+          // If even the update fails, the automation will retry on the next tick.
+        }
+      }
+    }),
+  );
+}
 
 async function tick() {
   const tickStart = Date.now();
@@ -50,6 +137,13 @@ async function tick() {
     } catch (e) {
       console.error("warm_pool tick failed:", e);
     }
+  }
+
+  // Fire any due automations (independent of warm pool or K8s state).
+  try {
+    await tickAutomations();
+  } catch (e) {
+    console.error("automation tick failed:", e);
   }
 
   const elapsed = Date.now() - tickStart;
