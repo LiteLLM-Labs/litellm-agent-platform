@@ -530,6 +530,19 @@ jobs:
             -n default \
             --timeout=300s
 
+      - name: Update brain-inline-harness deployment image
+        run: |
+          SDK_IMAGE="${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ secrets.AWS_REGION }}.amazonaws.com/litellm-agent-platform:harness-claude-sdk-${{ github.sha }}"
+          kubectl set image deployment/brain-inline-harness \
+            harness="$SDK_IMAGE" \
+            -n default
+
+      - name: Wait for brain-inline-harness rollout
+        run: |
+          kubectl rollout status deployment/brain-inline-harness \
+            -n default \
+            --timeout=300s
+
       - name: Smoke test — platform health + TTY auth
         env:
           MASTER_KEY: ${{ secrets.MASTER_KEY }}
