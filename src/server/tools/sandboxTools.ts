@@ -47,10 +47,16 @@ export async function provisionSandbox(
 
   const { task_arn } = await runTask({ agent: { ...agent, harness_id: HARNESS_EXECUTOR }, session_id });
 
-  await prisma.session.update({
-    where: { session_id },
-    data: { task_arn },
-  });
+  // Only write task_arn for non-brain-inline sessions. brain-inline sessions
+  // use a shared harness pod — writing the sandbox pod's task_arn causes the
+  // reconciler ghost sweep to kill the brain-inline session when the sandbox
+  // pod dies from idle timeout.
+  if (agent.harness_id !== "claude-code-brain-inline") {
+    await prisma.session.update({
+      where: { session_id },
+      data: { task_arn },
+    });
+  }
 
   const sandbox_url = await waitRunningGetUrl(task_arn, agent);
   await waitHttpReady(sandbox_url);

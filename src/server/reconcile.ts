@@ -34,6 +34,7 @@ import {
 import { env } from "@/server/env";
 import { registry } from "@/server/metrics";
 import {
+  HARNESS_BRAIN_INLINE,
   RECONCILE_NEW_TASK_GRACE_MS,
   SESSION_CREATING_TIMEOUT_MS,
   SESSION_IDLE_TIMEOUT_MS,
@@ -380,7 +381,15 @@ export async function reconcileOrphans(): Promise<ReconcileResult> {
       .filter((a): a is string => !!a),
   );
   const readyRows = await prisma.session.findMany({
-    where: { status: "ready", task_arn: { not: null } },
+    where: {
+      status: "ready",
+      task_arn: { not: null },
+      // brain-inline sessions use a shared harness pod — their task_arn is a
+      // sandbox pod that dies on idle timeout. Excluding them prevents the
+      // cascade kill where a dead sandbox pod triggers the session's death.
+      agent: { harness_id: { not: HARNESS_BRAIN_INLINE } },
+    },
+    include: { agent: false },
   });
   let ghost_killed = 0;
   const ghostGraceCutoff = new Date(now - RECONCILE_NEW_TASK_GRACE_MS);
