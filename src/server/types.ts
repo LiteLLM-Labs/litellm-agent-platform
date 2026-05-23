@@ -1251,6 +1251,10 @@ export const TAG_WARM_TASK_ID = "litellm_warm_task_id";
 export const HARNESS_OPENCODE = "opencode";
 export const HARNESS_CLAUDE_SDK = "claude-agent-sdk";
 export const HARNESS_BRAIN_INLINE = "claude-code-brain-inline";
+// opencode running as a shared inline harness (no per-session pod) — peer of
+// HARNESS_BRAIN_INLINE but backed by an `opencode serve` instance instead of
+// the claude-agent-sdk inline server. Sessions route to OPENCODE_INLINE_URL.
+export const HARNESS_OPENCODE_BRAIN_INLINE = "opencode-brain-inline";
 // TUI harnesses — pod exposes /tty (WebSocket) instead of the JSON message API.
 // The session view attaches xterm.js directly.
 export const HARNESS_CLAUDE_CODE = "claude-code";
@@ -1273,11 +1277,35 @@ export const KNOWN_HARNESSES: ReadonlySet<string> = new Set([
   HARNESS_OPENCODE,
   HARNESS_CLAUDE_SDK,
   HARNESS_BRAIN_INLINE,
+  HARNESS_OPENCODE_BRAIN_INLINE,
   HARNESS_CLAUDE_CODE,
   HARNESS_CODEX,
   HARNESS_HERMES,
   HARNESS_GEMINI,
 ]);
+
+// Inline harnesses run as a shared long-lived `*_INLINE_URL` server instead of
+// a per-session sandbox pod (no runTask). Session create + rehydrate take the
+// fast path: point sandbox_url at the inline server and skip pod bring-up.
+export function isInlineHarness(harness_id: string): boolean {
+  return (
+    harness_id === HARNESS_BRAIN_INLINE ||
+    harness_id === HARNESS_OPENCODE_BRAIN_INLINE
+  );
+}
+
+// Resolve the configured inline-server URL for an inline harness, or null when
+// it isn't set. claude-code-brain-inline → CLAUDE_CODE_INLINE_URL,
+// opencode-brain-inline → OPENCODE_INLINE_URL.
+export function inlineHarnessUrlEnv(harness_id: string): string | null {
+  if (harness_id === HARNESS_OPENCODE_BRAIN_INLINE) {
+    return process.env.OPENCODE_INLINE_URL || null;
+  }
+  if (harness_id === HARNESS_BRAIN_INLINE) {
+    return process.env.CLAUDE_CODE_INLINE_URL || null;
+  }
+  return null;
+}
 
 // Resolves the container image for a harness at runtime from env vars.
 // Called at session-creation time (not agent-creation time) so image updates
