@@ -252,6 +252,7 @@ async function runTurn(
   userText: string,
   modelId: string,
   images?: ImageContentBlock[],
+  _retriedFresh = false,
 ): Promise<PlatformMessage> {
   const startedAt = Date.now();
   const ac = new AbortController();
@@ -483,6 +484,18 @@ async function runTurn(
       };
     } else {
       const msg = err instanceof Error ? err.message : String(err);
+      // Stale bridge session: Anthropic returns "Blocked" when the resume
+      // target is expired or was aborted. Clear the pointer and retry once
+      // as a fresh session so the user's message still goes through.
+      // _retriedFresh guards against infinite recursion when the real key
+      // is blocked (fresh start would also fail).
+      if (!_retriedFresh && s.sdk_session_id && msg.includes("Blocked")) {
+        console.warn(`[runTurn] stale bridge session on resume (session=${s.id}), retrying fresh`);
+        s.sdk_session_id = null;
+        // Remove the user message we already pushed — runTurn will re-push it.
+        s.history.pop();
+        return runTurn(s, userText, modelId, images, true);
+      }
       console.error(`[runTurn] SDK error session=${s.id}:`, err);
       lastError = { name: "SDKError", data: { message: msg.slice(0, 500) } };
     }
@@ -902,6 +915,10 @@ app.post("/session/:id/abort", async (c) => {
     s.abortController.abort();
     emit(s, "session.aborted", {});
   }
+  // Clear the stored bridge session ID so the next turn starts fresh.
+  // An aborted run leaves the Anthropic bridge session in an inconsistent
+  // state — resuming it returns "Blocked" on every subsequent attempt.
+  s.sdk_session_id = null;
   return c.json({ ok: true });
 });
 
