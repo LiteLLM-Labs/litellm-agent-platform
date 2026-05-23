@@ -514,9 +514,21 @@ async function buildContainerEnv(
   return Object.entries(merged).map(([name, value]) => ({ name, value }));
 }
 
+/** Hostname of a URL, or null when unset/unparseable. */
+function hostFromUrl(u: string | undefined | null): string | null {
+  if (!u) return null;
+  try {
+    return new URL(u).hostname || null;
+  } catch {
+    return null;
+  }
+}
+
 // Sidecar env. Each entry from the agent's encrypted env_vars surfaces as
 // REAL_<KEY> here — vault holds the real value while the harness only ever
-// sees a freshly minted stub.
+// sees a freshly minted stub. A credential bound to host(s) in env_var_hosts
+// also gets a HOST_<KEY> so the vault only swaps it into requests for those
+// hosts (host-scoped swap); platform creds are auto-bound to their upstreams.
 function buildVaultEnv(opts: RunTaskOpts): Array<{ name: string; value: string }> {
   const { agent } = opts;
   const raw =
@@ -525,6 +537,16 @@ function buildVaultEnv(opts: RunTaskOpts): Array<{ name: string; value: string }
     !Array.isArray(agent.env_vars)
       ? (agent.env_vars as Record<string, string>)
       : {};
+  const envVarHosts =
+    (agent as Record<string, unknown>).env_var_hosts &&
+    typeof (agent as Record<string, unknown>).env_var_hosts === "object" &&
+    !Array.isArray((agent as Record<string, unknown>).env_var_hosts)
+      ? ((agent as Record<string, unknown>).env_var_hosts as Record<string, unknown>)
+      : {};
+  const hostsForKey = (k: string): string[] =>
+    Array.isArray(envVarHosts[k])
+      ? (envVarHosts[k] as unknown[]).filter((h): h is string => typeof h === "string")
+      : [];
   // Strip LITELLM_API_KEY from agent env_vars before mapping — we push it
   // explicitly below as the platform key, so including it from agent.env_vars
   // would produce two REAL_LITELLM_API_KEY entries with non-deterministic
@@ -534,6 +556,8 @@ function buildVaultEnv(opts: RunTaskOpts): Array<{ name: string; value: string }
     if (k === "LITELLM_API_KEY") continue;
     try {
       out.push({ name: `REAL_${k}`, value: decrypt(v) });
+      const hosts = hostsForKey(k);
+      if (hosts.length > 0) out.push({ name: `HOST_${k}`, value: hosts.join(",") });
     } catch (e) {
       // Only tolerate decrypt failures when ENCRYPTION_KEY is absent — that's
       // the local-dev path where encrypted values can't be opened. If the key
@@ -554,6 +578,10 @@ function buildVaultEnv(opts: RunTaskOpts): Array<{ name: string; value: string }
   // appears in the process environment. Outbound API calls carry the stub in
   // Authorization headers; vault swaps it for the real key at the wire.
   out.push({ name: "REAL_LITELLM_API_KEY", value: env.LITELLM_API_KEY });
+  // Auto-bind the platform key to the model endpoint so the stub is only ever
+  // swapped on calls to the LiteLLM proxy, never reflected off a third party.
+  const litellmHost = hostFromUrl(env.LITELLM_API_BASE);
+  if (litellmHost) out.push({ name: "HOST_LITELLM_API_KEY", value: litellmHost });
 
   // Per-pod scoped tokens for the harness's calls back into LAP. The access
   // token is short-lived (15min); the refresh token lives ~24h. Both are
@@ -583,12 +611,32 @@ function buildVaultEnv(opts: RunTaskOpts): Array<{ name: string; value: string }
         scope: agentScopes,
       }),
     });
+    // Bind the LAP tokens to the platform host so they're only swapped on
+    // callbacks to LAP itself.
+    const lapHost = hostFromUrl(env.LAP_BASE_URL);
+    if (lapHost) {
+      out.push({ name: "HOST_LAP_ACCESS_TOKEN", value: lapHost });
+      out.push({ name: "HOST_LAP_REFRESH_TOKEN", value: lapHost });
+    }
   }
 
   // Egress enforcement — vault checks these before proxying each CONNECT.
   const allowOut = Array.isArray(agent.allow_out) ? (agent.allow_out as string[]) : [];
   const denyOut = Array.isArray(agent.deny_out) ? (agent.deny_out as string[]) : [];
-  if (allowOut.length > 0) out.push({ name: "EGRESS_ALLOW_OUT", value: allowOut.join(",") });
+  // Only emit an allowlist when the agent opted into one. Auto-add the agent's
+  // own infra (model endpoint + LAP) and every per-credential bound host so
+  // flipping deny-by-default never strands the harness's own calls. An agent
+  // with no allow_out keeps allow-all in legacy mode; once EGRESS_DEFAULT_DENY
+  // is on the vault denies it until it's backfilled (see phased rollout).
+  if (allowOut.length > 0) {
+    const boundHosts = Object.values(envVarHosts)
+      .flatMap((v) => (Array.isArray(v) ? v : []))
+      .filter((h): h is string => typeof h === "string");
+    const infraHosts = [hostFromUrl(env.LITELLM_API_BASE), hostFromUrl(env.LAP_BASE_URL)]
+      .filter((h): h is string => h !== null);
+    const effectiveAllow = [...new Set([...allowOut, ...boundHosts, ...infraHosts])];
+    out.push({ name: "EGRESS_ALLOW_OUT", value: effectiveAllow.join(",") });
+  }
   if (denyOut.length > 0) out.push({ name: "EGRESS_DENY_OUT", value: denyOut.join(",") });
 
   return out;
