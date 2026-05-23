@@ -35,17 +35,32 @@ fi
 # headless `opencode serve` parks forever on the first "ask" prompt with no UI
 # to approve it (opencode#16367).
 #
-# Thinking config (per Anthropic adaptive-thinking docs): opus-4-7 supports ONLY
-# the adaptive format; other Claude models use the legacy enabled+budget format
-# (what the bundled @ai-sdk/anthropic can send). Haiku / non-Claude: no thinking.
-case "$LITELLM_DEFAULT_MODEL" in
-  *opus-4-7*)
-    MODEL_OPTS='{ "options": { "thinking": { "type": "adaptive", "display": "summarized" }, "effort": "high" } }' ;;
-  *sonnet*|*opus*)
-    MODEL_OPTS='{ "options": { "thinking": { "type": "enabled", "budgetTokens": 8000 } } }' ;;
-  *)
-    MODEL_OPTS='{}' ;;
-esac
+# Register every Claude model the gateway serves, not just the boot default, so
+# the per-agent model the LAP selects "just works" — opencode rejects any model
+# absent from this map (that's the haiku-works / opus-4-7-fails bug).
+#
+# The whole map is built in ONE jq pass (no shell loop) so it's robust across
+# shells, and per-model thinking opts are computed in jq:
+#   opus-4-7 -> adaptive thinking (the ONLY format opus-4-7 accepts)
+#   other sonnet/opus -> legacy enabled+budget thinking
+#   haiku / everything else -> no thinking
+# Discovery (GET ${BASE}/models) is best-effort; on any failure we fall back to
+# just the boot default so the harness still comes up.
+opts_for='
+  def opts(id):
+    if (id|test("opus-4-7")) then {options:{thinking:{type:"adaptive",display:"summarized"},effort:"high"}}
+    elif (id|test("sonnet")) or (id|test("opus")) then {options:{thinking:{type:"enabled",budgetTokens:8000}}}
+    else {} end;'
+MODELS_JSON=$(
+  curl -fsS --max-time 10 -H "Authorization: Bearer ${LITELLM_API_KEY}" "${BASE}/models" 2>/dev/null \
+    | jq -c "${opts_for} [ .data[].id | select(test(\"claude|opus|sonnet|haiku\")) ] | unique | map({ (.): opts(.) }) | add // {}" 2>/dev/null \
+    || printf '%s' '{}'
+)
+# Guarantee the boot default is present even if discovery returned nothing.
+[ -n "$MODELS_JSON" ] || MODELS_JSON='{}'
+MODELS_JSON=$(printf '%s' "$MODELS_JSON" \
+  | jq -c "${opts_for} if has(\"${LITELLM_DEFAULT_MODEL}\") then . else . + {\"${LITELLM_DEFAULT_MODEL}\": opts(\"${LITELLM_DEFAULT_MODEL}\")} end")
+echo "[entrypoint] registered models: $(printf '%s' "$MODELS_JSON" | jq -r 'keys | join(", ")')"
 # Sandbox tools: when E2B is configured, mount the bundled stdio MCP that
 # exposes provision/execute (same tool surface as the claude-agent-sdk harness).
 # Lives at /opt/lap/opencode-sandbox-mcp with its own node_modules baked in.
@@ -72,9 +87,7 @@ ${MCP_BLOCK}
         "baseURL": "${BASE}",
         "apiKey": "${LITELLM_API_KEY}"
       },
-      "models": {
-        "${LITELLM_DEFAULT_MODEL}": ${MODEL_OPTS}
-      }
+      "models": ${MODELS_JSON}
     }
   },
   "model": "litellm/${LITELLM_DEFAULT_MODEL}",
