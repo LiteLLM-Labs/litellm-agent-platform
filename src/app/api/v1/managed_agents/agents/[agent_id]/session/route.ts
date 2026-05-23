@@ -51,7 +51,9 @@ import {
 } from "@/server/harness";
 import {
   CreateSessionBody,
-  HARNESS_BRAIN_INLINE,
+  HARNESS_OPENCODE_BRAIN_INLINE,
+  inlineHarnessUrlEnv,
+  isInlineHarness,
   HttpError,
   httpError,
   toApiSession,
@@ -664,22 +666,27 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
     httpError(500, `session create failed: ${e instanceof Error ? e.message : String(e)}`);
   }
 
-  // Fast path for brain-inline: no pod needed — delegate to a shared harness server.
-  if (agent.harness_id === HARNESS_BRAIN_INLINE) {
-    // Prefer an explicit env var override (local dev / EKS with manual config).
-    // In-cluster: resolve to the specific pod IP so this session is pinned to
-    // the currently-active pod. The reconciler uses sandbox_url to detect when
-    // a pod is fully drained and safe to delete after a rolling deploy.
+  // Fast path for inline harnesses (claude-code-brain-inline, opencode-brain-inline):
+  // no pod needed — delegate to a shared `*_INLINE_URL` server.
+  if (isInlineHarness(agent.harness_id)) {
+    const isOpencodeInline = agent.harness_id === HARNESS_OPENCODE_BRAIN_INLINE;
+    // Prefer the harness-specific env var. For claude-code-brain-inline,
+    // in-cluster also resolves to the active pod IP so the session is pinned
+    // to it (the reconciler uses sandbox_url to detect a drained pod). The
+    // opencode inline server is configured purely via OPENCODE_INLINE_URL.
     const inlineUrl =
-      process.env.CLAUDE_CODE_INLINE_URL ||
-      (env.IN_CLUSTER ? await getInlineHarnessPodUrl() : null);
+      inlineHarnessUrlEnv(agent.harness_id) ||
+      (!isOpencodeInline && env.IN_CLUSTER ? await getInlineHarnessPodUrl() : null);
+    const inlineEnvName = isOpencodeInline
+      ? "OPENCODE_INLINE_URL"
+      : "CLAUDE_CODE_INLINE_URL";
     if (!inlineUrl) {
       await prisma.session.update({
         where: { session_id: session.session_id },
-        data: { status: "failed", failure_reason: "CLAUDE_CODE_INLINE_URL not configured" },
+        data: { status: "failed", failure_reason: `${inlineEnvName} not configured` },
       });
       return Response.json(
-        { error: "CLAUDE_CODE_INLINE_URL not configured" },
+        { error: `${inlineEnvName} not configured` },
         { status: 503 }
       );
     }
