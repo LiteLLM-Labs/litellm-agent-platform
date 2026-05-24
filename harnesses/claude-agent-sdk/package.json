@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
-    "build:render": "cd ../../managed-tools && npm install && npm run build && cd ../harnesses/claude-agent-sdk && npm install && npm run build",
+    "build:render": "cd ../../managed-tools && npm install && npm run build && cd ../harnesses/claude-agent-sdk && npm install && npm install --cpu=x64 --os=linux @anthropic-ai/claude-agent-sdk-linux-x64@0.2.138 && npm run build",
     "start": "node dist/server.js"
   },
   "dependencies": {
