@@ -334,7 +334,7 @@ async function leafFor(host: string) {
       new x509.ExtendedKeyUsageExtension(["1.3.6.1.5.5.7.3.1"], true),
       new x509.SubjectAlternativeNameExtension([{ type: "dns", value: host }]),
       await x509.SubjectKeyIdentifierExtension.create(k.publicKey),
-      await x509.AuthorityKeyIdentifierExtension.create(caCert, false),
+      await x509.AuthorityKeyIdentifierExtension.create(caCert, true),
     ],
   });
   const keyDer = await crypto.subtle.exportKey("pkcs8", k.privateKey);
