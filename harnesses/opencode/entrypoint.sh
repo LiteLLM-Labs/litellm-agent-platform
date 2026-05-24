@@ -31,9 +31,11 @@ fi
 # tool then goes silent. The Anthropic path doesn't. We keep the provider id
 # "litellm" so UI/CLI/Slack model references (providerID:"litellm") still match.
 #
-# permission: allow-all so the harness runs bypass-permissions. Without it,
-# headless `opencode serve` parks forever on the first "ask" prompt with no UI
-# to approve it (opencode#16367).
+# permission: every tool is "allow" or "deny" — never "ask", since headless
+# `opencode serve` parks forever on the first "ask" prompt with no UI to approve
+# it (opencode#16367). bash + edit are denied so the agent does its work in the
+# E2B sandbox (provision/execute) and through MCP tools, not on the shared
+# harness host.
 #
 # Register every Claude model the gateway serves, not just the boot default, so
 # the per-agent model the LAP selects "just works" — opencode rejects any model
@@ -94,8 +96,8 @@ ${MCP_BLOCK}
   },
   "model": "litellm/${LITELLM_DEFAULT_MODEL}",
   "permission": {
-    "edit": "allow",
-    "bash": "allow",
+    "edit": "deny",
+    "bash": "deny",
     "webfetch": "allow",
     "doom_loop": "allow",
     "external_directory": "allow"
