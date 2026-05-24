@@ -43,8 +43,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # node_modules/@lap/managed-tools → ../../../../managed-tools resolves correctly.
 WORKDIR /build/harnesses/claude-agent-sdk
 
-COPY --from=builder /build/managed-tools/dist/ /build/managed-tools/dist/
-COPY --from=builder /build/managed-tools/package.json /build/managed-tools/package.json
+COPY --from=builder /build/managed-tools/ /build/managed-tools/
 COPY --from=builder /build/harnesses/claude-agent-sdk/dist/ ./dist/
 COPY --from=builder /build/harnesses/claude-agent-sdk/node_modules/ ./node_modules/
 
