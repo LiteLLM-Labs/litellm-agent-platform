@@ -29,7 +29,9 @@ const ALG: RsaHashedKeyGenParams = {
   hash: "SHA-256",
 };
 
-const PORT = Number(process.env.VAULT_PORT ?? 14322);
+// Railway injects PORT; VAULT_PORT is for K8s sidecar. Prefer PORT so Railway
+// routes traffic correctly.
+const PORT = Number(process.env.PORT ?? process.env.VAULT_PORT ?? 14322);
 const SHARED = process.env.VAULT_SHARED_DIR ?? "/lap-shared";
 const CA_DIR = process.env.VAULT_CA_DIR ?? "/etc/vault-ca";
 
@@ -221,8 +223,18 @@ function pemDer(pem: string, label: string): ArrayBuffer {
   const b = Buffer.from(m[1].replace(/\s+/g, ""), "base64");
   return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength);
 }
-const caCertPem = await fs.readFile(`${CA_DIR}/tls.crt`, "utf8");
-const caKeyPem = await fs.readFile(`${CA_DIR}/tls.key`, "utf8");
+// Accept CA cert/key from env vars (Railway: VAULT_CA_CRT / VAULT_CA_KEY)
+// with fallback to VAULT_CA_DIR files for K8s sidecar.
+const caCertPem = process.env.VAULT_CA_CRT
+  ?? process.env.VAULT_CA_CERT_PEM
+  ?? await fs.readFile(`${CA_DIR}/tls.crt`, "utf8").catch(() => {
+    throw new Error(`CA cert not found: set VAULT_CA_CRT env var or mount ${CA_DIR}/tls.crt`);
+  });
+const caKeyPem = process.env.VAULT_CA_KEY
+  ?? process.env.VAULT_CA_KEY_PEM
+  ?? await fs.readFile(`${CA_DIR}/tls.key`, "utf8").catch(() => {
+    throw new Error(`CA key not found: set VAULT_CA_KEY env var or mount ${CA_DIR}/tls.key`);
+  });
 const caCert = new x509.X509Certificate(caCertPem);
 // WebCrypto only imports PKCS#8. OpenSSL 1.1.x's `openssl req -newkey` emits
 // PKCS#1 (`BEGIN RSA PRIVATE KEY`) by default — refuse with a clear remediation
