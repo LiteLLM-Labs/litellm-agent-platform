@@ -84,6 +84,7 @@ const EnvSchema = z.object({
   SANDBOX_CHOICE: z.enum(["e2b"]).optional(),
   VAULT_URL: z.string().url().optional(),
   VAULT_PROXY_TOKEN: z.string().min(1).optional(),
+  VAULT_CA_CRT: z.string().min(1).optional(),
   CONTAINER_PORT: z.coerce.number().int().positive().default(4096),
   RECONCILE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),
 

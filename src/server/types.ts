@@ -790,6 +790,7 @@ export interface ServerEnv {
   SANDBOX_CHOICE?: "e2b";
   VAULT_URL?: string;
   VAULT_PROXY_TOKEN?: string;
+  VAULT_CA_CRT?: string;
   CONTAINER_PORT: number; // default 4096
   RECONCILE_INTERVAL_SECONDS: number; // default 60
   // Warm pool. WARM_POOL_SIZE = 0 disables the feature entirely; default of

@@ -56,11 +56,38 @@ export class E2bProvider extends SandboxProvider {
       proxyEnv["HTTP_PROXY"] = env.VAULT_URL;
     }
 
+    // If vault CA cert is configured, point SSL tools at a combined bundle
+    // that we'll write after sandbox creation. E2B strips Dockerfile ENV vars
+    // at runtime, so we set these at Sandbox.create() time instead.
+    const vaultCaEnv: Record<string, string> = {};
+    if (env.VAULT_CA_CRT && env.VAULT_URL) {
+      vaultCaEnv["GIT_SSL_CAINFO"] = "/tmp/vault-ca.crt";
+      vaultCaEnv["CURL_CA_BUNDLE"] = "/tmp/vault-ca.crt";
+      vaultCaEnv["NODE_EXTRA_CA_CERTS"] = "/tmp/vault-ca.crt";
+      vaultCaEnv["SSL_CERT_FILE"] = "/tmp/vault-ca.crt";
+    }
+
     const sandbox = await Sandbox.create(this.template, {
       apiKey: this.apiKey,
       timeoutMs: 24 * 60 * 60 * 1000,
-      envs: { ...stubEnv, ...proxyEnv },
+      envs: { ...stubEnv, ...proxyEnv, ...vaultCaEnv },
     });
+
+    // Write combined CA bundle (system + vault CA) so git/curl/node trust vault's MITM certs
+    if (env.VAULT_CA_CRT && env.VAULT_URL) {
+      try {
+        const caCrt = env.VAULT_CA_CRT.replace(/\\n/g, "\n");
+        await (sandbox as unknown as { files: { write: (p: string, c: string) => Promise<void> } }).files.write("/tmp/vault-ca.crt", caCrt);
+        // Prepend system CA bundle so all existing certs still work
+        await sandbox.commands.run(
+          "cat /etc/ssl/certs/ca-certificates.crt /tmp/vault-ca.crt > /tmp/combined-ca.crt && mv /tmp/combined-ca.crt /tmp/vault-ca.crt",
+          { timeoutMs: 10000 },
+        );
+      } catch {
+        // Non-fatal — sandbox still works, just TLS verify may fail for vault-proxied requests
+      }
+    }
+
     return sandbox.sandboxId;
   }
 
