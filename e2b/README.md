@@ -15,22 +15,24 @@ uses when it spins up a sandbox.
 - **All `litellm[proxy]` deps pre-installed** — no per-session install wait.
 - **Global pip.conf** always points at `https://pypi.org/simple` with the combined CA cert — no `--trusted-host` / `--index-url` flags ever needed.
 - **`uv` pre-installed** via pip (not the curl/astral installer) so `uv_build` resolves cleanly.
-- **PostgreSQL cluster** owned by `user` at `/home/user/pgdata`, dev db `litellm` pre-created.
-- **`/usr/local/bin/dev-up`**: one command to start the proxy stack.
+- **PostgreSQL cluster** owned by `user` at `/home/user/pgdata`, dev db `litellm` pre-created — **auto-started on sandbox boot** (`start_cmd` in `e2b.toml`).
+- **`DATABASE_URL` (and proxy creds) baked in as image `ENV`** — available to every command, no setup step. E2B runs each command in a fresh shell, so `source dev-up` exports wouldn't carry across commands; image `ENV` does.
+- **`/usr/local/bin/dev-up`**: convenience for an interactive shell (starts postgres + echoes env).
 
 Both repos are public, so no token is baked into the image.
 
 ## Standing up the proxy (from inside a sandbox)
 
-```bash
-# Start postgres + export env vars into your shell
-source /usr/local/bin/dev-up
+Postgres is already running and `DATABASE_URL` is already set — just boot the proxy:
 
-# Run the proxy
+```bash
 cd ~/litellm && python -m litellm.proxy.proxy_cli --port 4000 --detailed_debug
 ```
 
-Dev credentials baked into `dev-up`:
+In an interactive shell you can `source /usr/local/bin/dev-up` to print the env
+and ensure postgres is up, but it's not required.
+
+Dev credentials baked into the image as `ENV` (and echoed by `dev-up`):
 
 | Var | Value |
 |-----|-------|
