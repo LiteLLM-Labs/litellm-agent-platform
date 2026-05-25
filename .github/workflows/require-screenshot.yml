@@ -16,6 +16,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_BODY: ${{ github.event.pull_request.body }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_LABELS: ${{ toJson(github.event.pull_request.labels) }}
           REPO: ${{ github.repository }}
         run: |
           python3 << 'EOF'
@@ -33,6 +34,14 @@ jobs:
               r'|https://.*?user-attachments.*?\.(png|jpg|jpeg|gif|webp)',
               body, re.IGNORECASE
           ))
+
+          # Backend-only PRs (no UI change) may carry a "no-screenshot" label
+          # instead of an image. Accept that as an explicit opt-out.
+          import json
+          labels_json = os.environ.get("PR_LABELS", "[]")
+          labels = [l.get("name", "") for l in json.loads(labels_json)]
+          if "no-screenshot" in labels:
+              has_screenshot = True
 
           def gh(cmd):
               subprocess.run(["gh"] + cmd, check=True,
