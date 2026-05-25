@@ -21,12 +21,16 @@
 
 const out = {};
 
+// Path where local stdio MCP scripts live. In Docker: /opt/lap/opencode-sandbox-mcp.
+// In local dev: set LAP_MCP_DIR to the harness directory.
+const MCP_DIR = (process.env.LAP_MCP_DIR || "/opt/lap/opencode-sandbox-mcp").replace(/\/+$/, "");
+
 // --- E2B sandbox MCP (local) ---
 const e2bKey = process.env.E2B_API_KEY;
 if (e2bKey) {
   out.sandbox = {
     type: "local",
-    command: ["node", "/opt/lap/opencode-sandbox-mcp/sandbox-mcp.mjs"],
+    command: ["node", `${MCP_DIR}/sandbox-mcp.mjs`],
     enabled: true,
     environment: {
       E2B_API_KEY: e2bKey,
@@ -52,7 +56,7 @@ const memAccess = process.env.LAP_ACCESS_TOKEN || process.env.LAP_AUTH_TOKEN || 
 if (memBase && memAgent && memAccess) {
   out["lap-memory"] = {
     type: "local",
-    command: ["node", "/opt/lap/opencode-sandbox-mcp/memory-mcp.mjs"],
+    command: ["node", `${MCP_DIR}/memory-mcp.mjs`],
     enabled: true,
     environment: {
       LAP_BASE_URL: memBase,
@@ -62,6 +66,27 @@ if (memBase && memAgent && memAccess) {
       ...(process.env.SESSION_ID && { SESSION_ID: process.env.SESSION_ID }),
       // Pass proxy + CA so the vault sidecar can swap stub creds on the wire,
       // exactly as the in-process shared client does.
+      ...(process.env.HTTPS_PROXY && { HTTPS_PROXY: process.env.HTTPS_PROXY }),
+      ...(process.env.NODE_EXTRA_CA_CERTS && { NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS }),
+    },
+  };
+}
+
+// --- LAP issue reporter MCP (local) ---
+// Tool is always exposed when LAP_BASE_URL + token are set. SESSION_ID is not
+// required at boot — it's passed as a tool parameter when missing from env.
+const issueBase = (process.env.LAP_BASE_URL || "").replace(/\/+$/, "");
+const issueAccess = process.env.LAP_ACCESS_TOKEN || process.env.LAP_AUTH_TOKEN || "";
+if (issueBase && issueAccess) {
+  out["lap-issue-reporter"] = {
+    type: "local",
+    command: ["node", `${MCP_DIR}/report-issue-mcp.mjs`],
+    enabled: true,
+    environment: {
+      LAP_BASE_URL: issueBase,
+      LAP_ACCESS_TOKEN: issueAccess,
+      ...(process.env.AGENT_ID && { AGENT_ID: process.env.AGENT_ID }),
+      ...(process.env.LAP_REFRESH_TOKEN && { LAP_REFRESH_TOKEN: process.env.LAP_REFRESH_TOKEN }),
       ...(process.env.HTTPS_PROXY && { HTTPS_PROXY: process.env.HTTPS_PROXY }),
       ...(process.env.NODE_EXTRA_CA_CERTS && { NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS }),
     },
