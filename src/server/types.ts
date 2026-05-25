@@ -14,6 +14,7 @@
 
 import type {
   Agent,
+  AgentIssue,
   Automation,
   AutomationRun,
   Memory,
@@ -36,6 +37,7 @@ export type AgentRow = Agent;
 export type SessionRow = Session;
 export type WarmTaskRow = WarmTask;
 export type MemoryRow = Memory;
+export type IssueRow = AgentIssue;
 export type AutomationRow = Automation;
 export type AutomationRunRow = AutomationRun;
 
@@ -563,6 +565,50 @@ export interface ApiAutomationRun {
   automation_cron?: string | null;
 }
 
+export interface ApiIssueComment {
+  id: string;
+  issue_id: string;
+  session_id: string | null;
+  body: string;
+  created_at: string;
+}
+
+export function toApiIssueComment(row: { comment_id: string; issue_id: string; session_id: string | null; body: string; created_at: Date }): ApiIssueComment {
+  return {
+    id: row.comment_id,
+    issue_id: row.issue_id,
+    session_id: row.session_id ?? null,
+    body: row.body,
+    created_at: row.created_at.toISOString(),
+  };
+}
+
+export interface ApiIssue {
+  id: string;
+  agent_id: string;
+  session_id: string | null;
+  title: string;
+  body: string | null;
+  severity: string;
+  status: string;
+  times_seen: number;
+  comments?: ApiIssueComment[];
+  created_at: string;
+}
+
+export const CreateIssueBody = z.object({
+  title: z.string().min(1, "title required").max(500),
+  body: z.string().max(10000).optional(),
+  severity: z.enum(["info", "warning", "error", "critical"]).optional(),
+});
+export type CreateIssueBody = z.infer<typeof CreateIssueBody>;
+
+export const UpdateIssueBody = z.object({
+  status: z.enum(["open", "resolved", "dismissed"]).optional(),
+  severity: z.enum(["info", "warning", "error", "critical"]).optional(),
+});
+export type UpdateIssueBody = z.infer<typeof UpdateIssueBody>;
+
 export interface ApiSession {
   id: string;
   agent_id: string;
@@ -1088,6 +1134,21 @@ export function toApiMemory(row: MemoryRow): ApiMemory {
     source_thread_ts: row.source_thread_ts ?? null,
     created_at: row.created_at.toISOString(),
     updated_at: row.updated_at.toISOString(),
+  };
+}
+
+export function toApiIssue(row: IssueRow): ApiIssue {
+  return {
+    id: row.issue_id,
+    agent_id: row.agent_id,
+    session_id: row.session_id ?? null,
+    title: row.title,
+    body: row.body ?? null,
+    severity: row.severity,
+    status: row.status,
+    times_seen: row.times_seen,
+    comments: undefined,
+    created_at: row.created_at.toISOString(),
   };
 }
 

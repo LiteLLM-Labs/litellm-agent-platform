@@ -1759,3 +1759,69 @@ export function updateProject(projectId: string, req: UpdateProjectRequest): Pro
 export function deleteProject(projectId: string): Promise<void> {
   return api<void>("DELETE", `/v1/managed_agents/projects/${projectId}`);
 }
+
+// ---------------------------------------------------------------------------
+// Issues
+// ---------------------------------------------------------------------------
+
+export interface IssueComment {
+  id: string;
+  issue_id: string;
+  session_id: string | null;
+  body: string;
+  created_at: string;
+}
+
+export interface IssueRow {
+  id: string;
+  agent_id: string;
+  session_id: string | null;
+  title: string;
+  body: string | null;
+  severity: string;
+  status: string;
+  times_seen: number;
+  comments?: IssueComment[];
+  created_at: string;
+}
+
+export function getIssue(agentId: string, issueId: string): Promise<IssueRow> {
+  return api<IssueRow>(
+    "GET",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}`,
+  );
+}
+
+export function listIssues(
+  agentId: string,
+  opts: { status?: string; severity?: string; include_comments?: boolean } = {},
+): Promise<IssueRow[]> {
+  const qs = new URLSearchParams();
+  if (opts.status) qs.set("status", opts.status);
+  if (opts.severity) qs.set("severity", opts.severity);
+  if (opts.include_comments) qs.set("include_comments", "true");
+  const suffix = qs.toString() ? `?${qs.toString()}` : "";
+  return api<IssueRow[]>(
+    "GET",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/issues${suffix}`,
+  );
+}
+
+export function listIssueComments(agentId: string, issueId: string): Promise<IssueComment[]> {
+  return api<IssueComment[]>(
+    "GET",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}/comments`,
+  );
+}
+
+export function updateIssue(
+  agentId: string,
+  issueId: string,
+  req: { status?: string; severity?: string },
+): Promise<IssueRow> {
+  return api<IssueRow>(
+    "PATCH",
+    `/v1/managed_agents/agents/${encodeURIComponent(agentId)}/issues/${encodeURIComponent(issueId)}`,
+    req,
+  );
+}

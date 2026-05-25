@@ -65,6 +65,7 @@ model Agent {
   sessions             Session[]
   warm_tasks           WarmTask[]
   memories             Memory[]
+  issues               AgentIssue[]
   integration_bindings AgentIntegrationBinding[]
   automations          Automation[]
 
@@ -281,6 +282,40 @@ model Memory {
   @@index([agent_id, disabled, priority])
   @@index([agent_id, pinned], map: "Memory_agent_pinned_idx")
   @@map("managed_agent_memory")
+}
+
+// Issues reported by the agent via the `report_issue` MCP tool. One row per
+// issue. The UI surfaces these on the agent detail page so operators can see
+// every problem the agent reported across all its sessions in one place.
+model AgentIssue {
+  issue_id    String   @id @default(uuid())
+  agent_id    String
+  session_id  String?  // which session reported it; no FK — issues outlive sessions
+  title       String
+  body        String?
+  severity    String   @default("info")  // info | warning | error | critical
+  status      String   @default("open")  // open | resolved | dismissed
+  times_seen  Int      @default(1)
+  created_at  DateTime @default(now())
+
+  agent    Agent               @relation(fields: [agent_id], references: [agent_id], onDelete: Cascade)
+  comments AgentIssueComment[]
+
+  @@index([agent_id, status, created_at])
+  @@map("managed_agent_issue")
+}
+
+model AgentIssueComment {
+  comment_id  String   @id @default(uuid())
+  issue_id    String
+  session_id  String?
+  body        String
+  created_at  DateTime @default(now())
+
+  issue AgentIssue @relation(fields: [issue_id], references: [issue_id], onDelete: Cascade)
+
+  @@index([issue_id, created_at])
+  @@map("managed_agent_issue_comment")
 }
 
 // =============================================================================

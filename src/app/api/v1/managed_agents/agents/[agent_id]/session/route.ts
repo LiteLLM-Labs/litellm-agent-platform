@@ -402,7 +402,8 @@ async function finishBringUp(
   const skillEditingBlock = body.skill_ids?.length
     ? `\n\n## Skill editing\nYou can update a skill's content when the user asks you to improve it.\nRead the skill_id from the skill's SKILL.md frontmatter, then run:\n\`\`\`bash\ncurl -s -X PATCH "$PLATFORM_URL/api/v1/skills/<skill_id>" \\\n  -H "Authorization: Bearer $LAP_ACCESS_TOKEN" \\\n  -H "Content-Type: application/json" \\\n  -H "x-session-id: $SESSION_ID" \\\n  -d "{\"content\": \"<new content>\"}"\n\`\`\`\nAlways show the user what you plan to change and get their confirmation first.`
     : "";
-  const effectivePrompt = (agent.prompt ?? "") + skillEditingBlock;
+  const sessionContextBlock = `\n\n## Session context\nYour agent_id is \`${agent.agent_id}\`.\nYour session_id is \`${session_id}\`.\nPass these when calling tools that require them (e.g. report_issue).`;
+  const effectivePrompt = (agent.prompt ?? "") + skillEditingBlock + sessionContextBlock;
 
   // Resolve the agent's attached MCP server IDs → {name, url} specs and forward
   // them to the harness so external MCPs (Linear, GitHub, etc.) are wired into

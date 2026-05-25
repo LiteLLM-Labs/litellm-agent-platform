@@ -415,6 +415,13 @@ export default function AgentDetailPage({ params }: PageProps) {
               </Button>
               <Button
                 size="sm"
+                variant="outline"
+                onClick={() => router.push(`/agents/${id}/issues`)}
+              >
+                Issues
+              </Button>
+              <Button
+                size="sm"
                 onClick={() => void handleSpawn()}
                 disabled={spawning}
               >
