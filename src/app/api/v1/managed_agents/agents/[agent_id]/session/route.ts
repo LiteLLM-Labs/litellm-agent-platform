@@ -139,8 +139,12 @@ async function resolveAgentMcpServers(
     const byId = new Map(servers.map((s) => [s.server_id, s]));
     // One scoped token for all of this session's brokered MCP calls. It only
     // works against the LAP platform's /sessions/{id}/mcp/* broker — never the
-    // gateway directly — so the gateway key never reaches the agent.
-    const token = mintAgentAccessToken({ agent_id, scope: ["mcp"] });
+    // gateway directly — so the gateway key never reaches the agent. TTL is
+    // aligned to the sandbox's max lifetime (24h, the e2b timeout) so MCP tools
+    // don't start 401-ing 15 min into a long session; the token is read-scoped
+    // to one agent's own brokered MCP servers, so a longer life is low-risk.
+    const MCP_TOKEN_TTL_SEC = 24 * 60 * 60;
+    const token = mintAgentAccessToken({ agent_id, scope: ["mcp"], ttl_sec: MCP_TOKEN_TTL_SEC });
     const specs: HarnessMcpServerSpec[] = [];
     for (const id of serverIds) {
       const s = byId.get(id);
@@ -729,6 +733,7 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
       ? (agent.mcp_servers as unknown[]).filter((v): v is string => typeof v === "string")
       : [];
     const { specs: mcpServers, warning: mcpWarning } = await resolveAgentMcpServers(rawMcpServerIds, session.session_id, agent.agent_id);
+    if (mcpWarning) console.warn(`inline session_id=${session.session_id}: ${mcpWarning}`);
 
     // Skills for an inline session: the per-session skill_ids PLUS the agent's
     // attached skills. On the pod-per-session path the latter ride along in
