@@ -138,5 +138,5 @@ USER sandbox
 # single opencode serve and scopes skills per agent) instead of opencode serve.
 ENV OPENCODE_SHARED_INLINE=1
 
-EXPOSE 4096
+EXPOSE 10000
 ENTRYPOINT ["/entrypoint.sh"]
