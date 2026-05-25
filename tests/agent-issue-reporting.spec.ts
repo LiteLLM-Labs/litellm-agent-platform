@@ -156,14 +156,13 @@ test.describe.serial("agent issue reporting — implicit behavior", () => {
     const browser = await chromium.launch({ headless: false });
     const page = await browser.newPage();
     await page.setViewportSize({ width: 1400, height: 900 });
-    await page.goto(`${BASE_URL}/login`, { waitUntil: "domcontentloaded" });
-    await page.fill("input", MASTER_KEY);
-    await page.click('button[type="submit"]');
-    await page.waitForTimeout(1500);
+    // Set localStorage auth directly — more reliable than form submit across environments
+    await page.goto(`${BASE_URL}/`, { waitUntil: "domcontentloaded", timeout: 15000 });
+    await page.evaluate((key) => localStorage.setItem("ui_master_key", key), MASTER_KEY);
 
-    // Issues list
-    await page.goto(`${BASE_URL}/agents/${AGENT_ID}/issues`, { waitUntil: "domcontentloaded" });
-    await page.waitForTimeout(2000);
+    // Issues list — networkidle ensures the API fetch completes before asserting
+    await page.goto(`${BASE_URL}/agents/${AGENT_ID}/issues`, { waitUntil: "networkidle", timeout: 20000 });
+    await page.waitForTimeout(1000);
     // Find the row for this specific issue and check it has ×3 badge
     const issueRow = page.locator(`tr:has-text("${jiraIssueTitle}")`).first();
     await expect(issueRow.locator("text=×3")).toBeVisible();
