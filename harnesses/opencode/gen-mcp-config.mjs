@@ -49,7 +49,9 @@ if (e2bKey) {
 const memBase = (process.env.LAP_BASE_URL || "").replace(/\/+$/, "");
 const memAgent = process.env.AGENT_ID || "";
 const memAccess = process.env.LAP_ACCESS_TOKEN || process.env.LAP_AUTH_TOKEN || "";
+const memMaster = process.env.MASTER_KEY || "";
 if (memBase && memAgent && memAccess) {
+  // Per-agent mode: a per-session harness with AGENT_ID + a scoped token in env.
   out["lap-memory"] = {
     type: "local",
     command: ["node", "/opt/lap/opencode-sandbox-mcp/memory-mcp.mjs"],
@@ -62,6 +64,24 @@ if (memBase && memAgent && memAccess) {
       ...(process.env.SESSION_ID && { SESSION_ID: process.env.SESSION_ID }),
       // Pass proxy + CA so the vault sidecar can swap stub creds on the wire,
       // exactly as the in-process shared client does.
+      ...(process.env.HTTPS_PROXY && { HTTPS_PROXY: process.env.HTTPS_PROXY }),
+      ...(process.env.NODE_EXTRA_CA_CERTS && { NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS }),
+    },
+  };
+} else if (memBase && !memAgent && (memAccess || memMaster)) {
+  // Session-scoped mode: the SHARED inline harness has no per-agent AGENT_ID.
+  // Run memory session-scoped — the tools take a session_id (from
+  // <lap_session_id>) and the platform resolves the agent. Auth with the access
+  // token if present, else MASTER_KEY (which the inline harness always has).
+  out["lap-memory"] = {
+    type: "local",
+    command: ["node", "/opt/lap/opencode-sandbox-mcp/memory-mcp.mjs"],
+    enabled: true,
+    environment: {
+      LAP_BASE_URL: memBase,
+      LAP_MEMORY_SESSION_SCOPED: "1",
+      ...(memAccess && { LAP_ACCESS_TOKEN: memAccess }),
+      ...(memMaster && { MASTER_KEY: memMaster }),
       ...(process.env.HTTPS_PROXY && { HTTPS_PROXY: process.env.HTTPS_PROXY }),
       ...(process.env.NODE_EXTRA_CA_CERTS && { NODE_EXTRA_CA_CERTS: process.env.NODE_EXTRA_CA_CERTS }),
     },
