@@ -43,11 +43,17 @@ const ACCESS_TOKEN_TTL_SEC = 15 * 60;
 // reaper plus a generous slack. When the pod dies the token is moot.
 const REFRESH_TOKEN_TTL_SEC = 24 * 60 * 60;
 
-// Scopes we currently mint. The full set is just "memory" until we
-// extend the JWT path to other route classes; keeping this a string-array
-// so the call site reads naturally (`scope: ["memory"]`) and so we don't
-// have to migrate token payloads when we add the second one.
-export type AgentScope = "memory";
+// Scopes we currently mint. "artifacts" is the most recent addition for
+// the S3 artifact upload route. Keep this list synchronised with the
+// scopes minted in k8s.ts at pod-spawn time — adding a route that asserts
+// a scope not present on existing pod tokens silently 401s every harness
+// until a session is restarted.
+export type AgentScope =
+  | "memory"
+  | "automations"
+  | "skills"
+  | "issues"
+  | "artifacts";
 
 interface BaseClaims {
   /** "access" — a regular bearer that authorizes requests under `scope`. */
