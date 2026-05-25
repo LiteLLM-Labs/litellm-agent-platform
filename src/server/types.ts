@@ -843,7 +843,11 @@ export interface ServerEnv {
   EXECUTOR_SECRET?: string;
   E2B_API_KEY?: string;
   E2B_TEMPLATE: string;
-  SANDBOX_CHOICE?: "e2b";
+  DAYTONA_API_KEY?: string;
+  DAYTONA_API_URL?: string;
+  DAYTONA_SNAPSHOT?: string;
+  DAYTONA_IMAGE?: string;
+  SANDBOX_CHOICE?: "e2b" | "daytona";
   VAULT_URL?: string;
   VAULT_PROXY_TOKEN?: string;
   VAULT_CA_CRT?: string;
