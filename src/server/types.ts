@@ -531,6 +531,13 @@ export interface ApiDockerfile {
 export interface HarnessMessagePart {
   type: string;
   text?: string;
+  artifact?: {
+    id: string;
+    name: string;
+    mime_type: string;
+    size: number;
+    url: string;
+  };
   [key: string]: unknown;
 }
 
@@ -634,6 +641,10 @@ export interface ServerEnv {
   WARM_POOL_MAX_PROVISIONING: number; // default 2
   WARM_POOL_TTL_MINUTES: number; // default 30
   WARM_POOL_RECENT_AGENT_HOURS: number; // default 24
+  // S3 artifact storage configuration
+  ARTIFACT_STORAGE: "s3";
+  AWS_S3_BUCKET: string;
+  AWS_REGION?: string;
 
   /**
    * All process.env entries whose key starts with `CONTAINER_ENV_`, with
