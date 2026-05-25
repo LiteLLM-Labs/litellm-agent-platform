@@ -503,6 +503,7 @@ async function snapshotThreadToHistory(
 ): Promise<void> {
   try {
     const msgs = await harnessListMessages({ sandbox_url, harness_session_id });
+    console.log(`[heartbeat] session=${session_id} snapshot msgs=${msgs.length}`);
     if (msgs.length === 0) return;
     await prisma.session.update({
       where: { session_id },
@@ -510,7 +511,7 @@ async function snapshotThreadToHistory(
     });
   } catch (err) {
     console.warn(
-      `initial_prompt history snapshot failed for ${session_id}: ${err instanceof Error ? err.message : String(err)}`,
+      `[heartbeat] session=${session_id} snapshot failed: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 }

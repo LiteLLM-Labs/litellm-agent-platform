@@ -78,6 +78,7 @@ async function persistHistorySnapshot(opts: {
       sandbox_url: opts.sandbox_url,
       harness_session_id: opts.harness_session_id,
     });
+    console.log(`[heartbeat] session=${opts.session_id} snapshot msgs=${msgs.length}`);
     await prisma.session.update({
       where: { session_id: opts.session_id },
       data: {
@@ -86,7 +87,7 @@ async function persistHistorySnapshot(opts: {
     });
   } catch (err) {
     console.warn(
-      `history snapshot failed for session ${opts.session_id}:`,
+      `[heartbeat] session=${opts.session_id} snapshot failed:`,
       err,
     );
   }
