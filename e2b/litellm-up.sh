@@ -57,7 +57,7 @@ fail() {
 # 4. Wait up to ~150s for readiness; detect a dead process immediately.
 for _ in $(seq 1 75); do
   kill -0 "$PID" 2>/dev/null || fail "proxy process exited before becoming ready."
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/health/readiness" 2>/dev/null || echo 000)
+  code=$(curl -s --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/health/readiness" 2>/dev/null || echo 000)
   if [ "$code" = "200" ]; then
     echo "$PORT" > "$LOGDIR/current_port"   # so litellm-status can find us
     printf '{"port":%s,"master_key":"%s","url":"http://127.0.0.1:%s"}\n' "$PORT" "$LITELLM_MASTER_KEY" "$PORT"
