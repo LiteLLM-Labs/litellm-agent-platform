@@ -109,14 +109,18 @@ export class E2bProvider extends SandboxProvider {
     const setupEntry = sandboxFiles.find((f) => f.name === "setup.sh");
     let envMap: Record<string, string> = {};
     if (setupEntry) {
-      const script = Buffer.from(setupEntry.content, "base64").toString("utf-8");
-      await (sandbox as unknown as { files: { write: (p: string, c: string) => Promise<void> } }).files.write("/lap/setup.sh", script);
-      const result = await sandbox.commands.run("bash /lap/setup.sh", { timeoutMs: 120_000 });
-      if (result.exitCode !== 0) {
+      try {
+        const script = Buffer.from(setupEntry.content, "base64").toString("utf-8");
+        await (sandbox as unknown as { files: { write: (p: string, c: string) => Promise<void> } }).files.write("/lap/setup.sh", script);
+        const result = await sandbox.commands.run("bash /lap/setup.sh", { timeoutMs: 120_000 });
+        if (result.exitCode !== 0) {
+          throw new Error(`setup.sh failed (exit ${result.exitCode}): ${result.stderr ?? result.stdout ?? "(no output)"}`);
+        }
+        envMap = await readEnvMap(sandbox);
+      } catch (err) {
         await sandbox.kill();
-        throw new Error(`setup.sh failed (exit ${result.exitCode}): ${result.stderr ?? result.stdout ?? "(no output)"}`);
+        throw err;
       }
-      envMap = await readEnvMap(sandbox);
     }
 
     return { id: sandbox.sandboxId, envMap };

@@ -181,7 +181,10 @@ export default function AgentDetailPage({ params }: PageProps) {
   function currentSetupScript(a: typeof agent): string {
     const entry = (a?.sandbox_files ?? []).find((f) => f.name === "setup.sh");
     if (!entry) return "";
-    try { return atob(entry.content); } catch { return entry.content; }
+    try {
+      const bytes = Uint8Array.from(atob(entry.content), (c) => c.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    } catch { return entry.content; }
   }
 
   function openSetupScriptEditor() {
@@ -587,18 +590,23 @@ export default function AgentDetailPage({ params }: PageProps) {
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-start gap-2">
-                    {currentSetupScript(agent) ? (
-                      <pre className="max-h-32 flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground">
-                        {currentSetupScript(agent)}
-                      </pre>
-                    ) : (
-                      <span className="text-[13px] text-muted-foreground">None</span>
-                    )}
-                    <Button size="sm" variant="ghost" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={openSetupScriptEditor}>
-                      <Pencil className="size-3.5" />
-                    </Button>
-                  </div>
+                  (() => {
+                    const script = currentSetupScript(agent);
+                    return (
+                      <div className="flex items-start gap-2">
+                        {script ? (
+                          <pre className="max-h-32 flex-1 overflow-y-auto whitespace-pre-wrap break-words rounded-md bg-muted/40 px-3 py-2 font-mono text-[11px] leading-relaxed text-foreground">
+                            {script}
+                          </pre>
+                        ) : (
+                          <span className="text-[13px] text-muted-foreground">None</span>
+                        )}
+                        <Button size="sm" variant="ghost" className="shrink-0 text-muted-foreground hover:text-foreground" onClick={openSetupScriptEditor}>
+                          <Pencil className="size-3.5" />
+                        </Button>
+                      </div>
+                    );
+                  })()
                 )}
               </dd>
 
