@@ -117,6 +117,11 @@ const EnvSchema = z.object({
   ARTIFACT_STORAGE: z.enum(["s3"]).optional(),
   AWS_S3_BUCKET: z.string().min(1).optional(),
   AWS_REGION: z.string().min(1).default("us-east-1"),
+  // Custom S3 endpoint for S3-compatible providers (e.g. Cloudflare R2:
+  // https://<account_id>.r2.cloudflarestorage.com). Unset → real AWS S3.
+  // Use AWS_REGION="auto" with R2. Credentials come from the standard
+  // AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY env (R2 issues these).
+  AWS_S3_ENDPOINT: z.string().url().optional(),
 });
 
 function collectContainerEnvPassthrough(
