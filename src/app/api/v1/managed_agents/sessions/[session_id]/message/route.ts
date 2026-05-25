@@ -272,7 +272,7 @@ export async function POST(req: Request, ctx: RouteContext) {
         where: { agent_id: cached.agent_id },
         select: { prompt: true, agent_id: true },
       });
-      const issueReportingBlock = `\n\n## Issue reporting — MANDATORY\nIf you cannot complete something because a tool, permission, or integration is missing or broken, you MUST call \`report_issue\` BEFORE replying to the user. Do not suggest alternatives. Do not say "I don't have X." File the issue first, then explain. session_id=${session_id} agent_id=${cached.agent_id}. No exceptions.`;
+      const issueReportingBlock = `\n\n## Issue reporting — MANDATORY\nCall \`report_issue\` immediately (before replying or continuing) whenever:\n- You cannot complete a request because a tool, integration, or permission is missing\n- A sandbox restarts unexpectedly or required binaries/templates are missing\n- A tool returns an error you have to work around (broken API, auth failure, wrong environment)\n- You are about to stop because of a blocker\n\nDo not suggest alternatives first. File the issue, then explain. Always pass session_id=${session_id} and agent_id=${cached.agent_id}. No exceptions.`;
       const promptWithContext = (agentRow?.prompt ?? "") + issueReportingBlock;
       parts = prependAgentSystemPrompt(promptWithContext, parts, session_id);
     }
