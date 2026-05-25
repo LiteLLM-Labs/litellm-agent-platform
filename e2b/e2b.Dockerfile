@@ -147,7 +147,10 @@ COPY litellm-up.sh /usr/local/bin/litellm-up
 # litellm-status: JSON health (ready/provisioning/down/oom) — agents call this
 # first and only run litellm-up if not ready.
 COPY litellm-status.sh /usr/local/bin/litellm-status
-RUN chmod +x /usr/local/bin/start-db /usr/local/bin/dev-up /usr/local/bin/litellm-up /usr/local/bin/litellm-status
+# litellm-shot: frugal-chromium screenshot of a UI page (single-process, no
+# full-page) so the screenshot can't trip the sandbox memory threshold.
+COPY litellm-shot.py /usr/local/bin/litellm-shot
+RUN chmod +x /usr/local/bin/start-db /usr/local/bin/dev-up /usr/local/bin/litellm-up /usr/local/bin/litellm-status /usr/local/bin/litellm-shot
 
 # Pre-seeded minimal proxy config (master_key from env; models live in the DB).
 # Lives in /home/user (persists) — NOT /tmp, which is a fresh tmpfs on sandbox
