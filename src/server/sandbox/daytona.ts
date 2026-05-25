@@ -106,7 +106,10 @@ export class DaytonaProvider extends SandboxProvider {
         undefined,
         Math.ceil(timeoutMs / 1000),
       );
-      return result.result ?? "";
+      // Daytona's executeCommand exposes stdout only (no separate stderr field).
+      // Append exit code on failure so agents can detect command errors.
+      const out = result.result ?? "";
+      return result.exitCode !== 0 ? `${out}\n[exit code ${result.exitCode}]`.trimStart() : out;
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       if (
@@ -144,8 +147,17 @@ export class DaytonaProvider extends SandboxProvider {
     try {
       const sandbox = await this.daytona.get(id);
       await this.daytona.delete(sandbox);
-    } catch {
-      // Ignore — sandbox may already be deleted.
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (
+        msg.includes("404") ||
+        msg.includes("not found") ||
+        msg.includes("deleted") ||
+        msg.includes("destroyed")
+      ) {
+        return; // Already gone — nothing to clean up.
+      }
+      throw err;
     }
   }
 }
