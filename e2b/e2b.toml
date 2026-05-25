@@ -12,11 +12,8 @@
 
 memory_mb = 4_096
 cpu_count = 8
+ready_cmd = "pg_isready -h localhost -p 5432 -U litellm"
+start_cmd = "/usr/local/bin/start-db"
 dockerfile = "e2b.Dockerfile"
 template_name = "litellm-4gb"
 template_id = "hb5oc45lzy0v9eh0y9ut"
-
-# Start postgres on sandbox boot, and don't mark the sandbox ready until it
-# accepts connections — so DATABASE_URL works for the very first command.
-start_cmd = "/usr/local/bin/start-db"
-ready_cmd = "pg_isready -h localhost -p 5432 -U litellm"
