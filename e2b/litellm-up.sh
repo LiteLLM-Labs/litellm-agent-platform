@@ -8,8 +8,13 @@
 # Usage:  litellm-up [PORT]        # PORT optional; a free one is chosen if omitted
 set -uo pipefail
 
-# 1. Postgres (idempotent, shared with start-db).
-/usr/local/bin/start-db
+# 1. Postgres (idempotent). start-db exits non-zero and prints the pg log on
+#    failure — abort fast instead of starting litellm against a dead DB and
+#    burning the full 150s readiness wait on a misleading sqlalchemy error.
+if ! /usr/local/bin/start-db; then
+  echo "[litellm-up] postgres did not start (see start-db output above) — aborting." >&2
+  exit 1
+fi
 
 # 2. Dev env (only fills gaps — image ENV already sets these).
 export DATABASE_URL="${DATABASE_URL:-postgresql://litellm:litellm@localhost:5432/litellm}"
@@ -19,7 +24,10 @@ export STORE_MODEL_IN_DB="${STORE_MODEL_IN_DB:-True}"
 # Silence the weave -> opentelemetry import noise on boot.
 export DISABLE_PROMETHEUS="${DISABLE_PROMETHEUS:-true}"
 
-# 3. Port — caller-supplied, else a free one. Never hardcode 4000.
+# 3. Port — caller-supplied, else an OS-assigned free one. There's a tiny TOCTOU
+#    window between picking the port and litellm binding it; acceptable in a
+#    single-tenant sandbox, and if the race is ever lost the proxy exits
+#    immediately and fail() surfaces the "address already in use" log line.
 PORT="${1:-$(python3 -c 'import socket;s=socket.socket();s.bind(("",0));print(s.getsockname()[1]);s.close()')}"
 
 LOGDIR=/tmp/llmlogs; mkdir -p "$LOGDIR"
