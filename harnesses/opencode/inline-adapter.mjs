@@ -104,6 +104,7 @@ function startChild() {
   const child = spawn("opencode", ["serve", "--hostname", "127.0.0.1", "--port", String(CHILD_PORT)], {
     stdio: "inherit",
     env: process.env,
+    cwd: process.env.REPO_DIR || import.meta.dirname,
   });
   child.on("exit", (code) => { log(`opencode serve exited (${code}) — shutting down`); process.exit(code ?? 1); });
 }

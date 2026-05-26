@@ -17,6 +17,12 @@ const E2B_API_KEY = process.env.E2B_API_KEY;
 const E2B_TEMPLATE = process.env.E2B_TEMPLATE || "base";
 const VAULT_URL = process.env.VAULT_URL;
 const VAULT_PROXY_TOKEN = process.env.VAULT_PROXY_TOKEN;
+const SANDBOX_CHOICE = process.env.SANDBOX_CHOICE;
+const DAYTONA_API_KEY = process.env.DAYTONA_API_KEY;
+const DAYTONA_API_URL = process.env.DAYTONA_API_URL;
+const DAYTONA_SNAPSHOT = process.env.DAYTONA_SNAPSHOT;
+const DAYTONA_IMAGE = process.env.DAYTONA_IMAGE;
+const USE_DAYTONA = SANDBOX_CHOICE === "daytona" && !!DAYTONA_API_KEY;
 // E2B auto-shuts a sandbox this long after its shutdown timer was last set. We
 // reset that timer on every execute/read (keepalive, see below), so in practice
 // this is "max idle before reaping", not a hard cap on total task time. 30 min
@@ -31,7 +37,8 @@ const EXECUTE_TIMEOUT_MS = 180_000;
 const USE_DIRECT = !ENV_SESSION_ID;
 const sandboxes = new Map();
 
-console.error(`[sandbox-mcp] mode=${USE_DIRECT ? "direct-e2b" : "platform"} template=${E2B_TEMPLATE} vault=${VAULT_URL ? "set" : "none"}`);
+const directMode = USE_DIRECT ? (USE_DAYTONA ? "direct-daytona" : "direct-e2b") : "platform";
+console.error(`[sandbox-mcp] mode=${directMode} template=${E2B_TEMPLATE} vault=${VAULT_URL ? "set" : "none"}`);
 
 const server = new Server({ name: "opencode-sandbox", version: "1.0.0" }, { capabilities: { tools: {} } });
 
@@ -113,8 +120,33 @@ function buildProxyUrl() {
   } catch { return VAULT_URL; }
 }
 
+async function getDaytona() {
+  const { Daytona } = await import("@daytona/sdk");
+  return new Daytona({ apiKey: DAYTONA_API_KEY, ...(DAYTONA_API_URL ? { apiUrl: DAYTONA_API_URL } : {}) });
+}
+
 async function provision({ name, project_id }) {
   if (USE_DIRECT) {
+    if (USE_DAYTONA) {
+      const existing = sandboxes.get(name);
+      if (existing) {
+        try { const d = await getDaytona(); await d.delete(existing); } catch {}
+        sandboxes.delete(name);
+      }
+      try {
+        const proxyUrl = buildProxyUrl();
+        const envVars = proxyUrl ? { HTTPS_PROXY: proxyUrl, HTTP_PROXY: proxyUrl } : {};
+        const daytona = await getDaytona();
+        const sandbox = DAYTONA_IMAGE
+          ? await daytona.create({ image: DAYTONA_IMAGE, envVars, autoStopInterval: 0 }, { timeout: 120 })
+          : await daytona.create({ snapshot: DAYTONA_SNAPSHOT, envVars, autoStopInterval: 0 }, { timeout: 120 });
+        sandboxes.set(name, sandbox);
+        console.error(`[sandbox-mcp] provisioned daytona: ${sandbox.id}`);
+        return textResult(`sandbox "${name}" ready (id: \`${sandbox.id}\`, provider: daytona)`);
+      } catch (e) {
+        return textResult(`provision error: ${e instanceof Error ? e.message : String(e)}`, true);
+      }
+    }
     if (!E2B_API_KEY) return textResult("provision failed: E2B_API_KEY not set", true);
     const existing = sandboxes.get(name);
     if (existing) { try { await existing.kill(); } catch {} }
@@ -150,11 +182,16 @@ async function execute({ sandbox_name, cmd }) {
   if (USE_DIRECT) {
     const sandbox = sandboxes.get(sandbox_name);
     if (!sandbox) return textResult(`execute failed: no sandbox "${sandbox_name}" — call provision first`, true);
+    if (USE_DAYTONA) {
+      try {
+        const result = await sandbox.process.executeCommand(cmd, undefined, undefined, Math.ceil(EXECUTE_TIMEOUT_MS / 1000));
+        const out = result.result ?? "";
+        return result.exitCode !== 0 ? textResult(`${out}\n[exit code ${result.exitCode}]`, true) : textResult(out);
+      } catch (e) {
+        return textResult(`execute error: ${e instanceof Error ? e.message : String(e)}`, true);
+      }
+    }
     try {
-      // Keepalive: reset the shutdown timer to a fresh full window BEFORE running
-      // so the sandbox can't expire mid-command or during the agent's next think
-      // step. Without this, E2B reaps the sandbox SANDBOX_TIMEOUT_MS after
-      // creation regardless of activity, wiping the repo/build/running proxy.
       await sandbox.setTimeout(SANDBOX_TIMEOUT_MS);
       const result = await sandbox.commands.run(cmd, { timeoutMs: EXECUTE_TIMEOUT_MS });
       const out = (result.stdout ?? "") + (result.stderr ?? "");
@@ -187,6 +224,17 @@ async function readFile({ sandbox_name, path }) {
   if (USE_DIRECT) {
     const sandbox = sandboxes.get(sandbox_name);
     if (!sandbox) return textResult(`read_file failed: no sandbox "${sandbox_name}" — call provision first`, true);
+    if (USE_DAYTONA) {
+      try {
+        const buf = await sandbox.fs.downloadFile(path);
+        const content = buf.toString("utf-8");
+        if (content.length > READ_FILE_MAX_BYTES)
+          return textResult(`error: file too large to return inline (${content.length} bytes > ${READ_FILE_MAX_BYTES}). Read a smaller slice or split it.`, true);
+        return textResult(content);
+      } catch (e) {
+        return textResult(`read_file error: ${e instanceof Error ? e.message : String(e)}`, true);
+      }
+    }
     try {
       await sandbox.setTimeout(SANDBOX_TIMEOUT_MS); // keepalive (see execute)
       const content = await sandbox.files.read(path);

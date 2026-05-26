@@ -41,6 +41,11 @@ if (e2bKey) {
       ...(process.env.SESSION_ID && { SESSION_ID: process.env.SESSION_ID }),
       ...(process.env.VAULT_URL && { VAULT_URL: process.env.VAULT_URL }),
       ...(process.env.VAULT_PROXY_TOKEN && { VAULT_PROXY_TOKEN: process.env.VAULT_PROXY_TOKEN }),
+      ...(process.env.SANDBOX_CHOICE && { SANDBOX_CHOICE: process.env.SANDBOX_CHOICE }),
+      ...(process.env.DAYTONA_API_KEY && { DAYTONA_API_KEY: process.env.DAYTONA_API_KEY }),
+      ...(process.env.DAYTONA_API_URL && { DAYTONA_API_URL: process.env.DAYTONA_API_URL }),
+      ...(process.env.DAYTONA_SNAPSHOT && { DAYTONA_SNAPSHOT: process.env.DAYTONA_SNAPSHOT }),
+      ...(process.env.DAYTONA_IMAGE && { DAYTONA_IMAGE: process.env.DAYTONA_IMAGE }),
     },
   };
 }

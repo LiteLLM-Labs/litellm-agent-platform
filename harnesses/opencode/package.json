@@ -5,6 +5,7 @@
   "type": "module",
   "description": "stdio MCP server giving the opencode harness E2B provision/execute tools",
   "dependencies": {
+    "@daytona/sdk": "^0.180.0",
     "@modelcontextprotocol/sdk": "^1.12.0",
     "e2b": "^1.13.2",
     "undici": "^7.0.0"
