@@ -22,17 +22,16 @@
 
 import { test, expect } from "@playwright/test";
 
-const BASE_URL =
-  process.env.BASE_URL ?? "https://litellm-agent-platform.onrender.com";
-const MASTER_KEY =
-  process.env.MASTER_KEY ??
-  "5d6d52af44d3f3db3a87d66bc9fbf3ae9562b5b459cb65aea8bb973fdae72722";
+if (!process.env.BASE_URL) throw new Error("BASE_URL env var is required");
+if (!process.env.MASTER_KEY) throw new Error("MASTER_KEY env var is required");
+if (!process.env.AUTOMATION_TEST_AGENT_ID) throw new Error("AUTOMATION_TEST_AGENT_ID env var is required");
+
+const BASE_URL = process.env.BASE_URL;
+const MASTER_KEY = process.env.MASTER_KEY;
 
 // opencode-brain-inline agent: "opencode-inline-final (PROD)"
 // This is exactly the agent used by the Shin automation.
-const AGENT_ID =
-  process.env.AUTOMATION_TEST_AGENT_ID ??
-  "9cbb91a6-e66d-43c5-92ed-68a570429527";
+const AGENT_ID = process.env.AUTOMATION_TEST_AGENT_ID;
 
 // Generous — inline harness can take 2-5 min for a real turn.
 const RESPONSE_TIMEOUT_MS = 5 * 60 * 1000;
