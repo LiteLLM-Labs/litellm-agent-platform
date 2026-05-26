@@ -604,10 +604,19 @@ async function runInitialPrompt(
         `[runInitialPrompt] fetch failed, attempting recovery... session_id=${session_id}`,
       );
       try {
+        // Re-resolve MCP servers so the replacement session has the same tool
+        // surface as the original. Best-effort — a failure here means tools are
+        // missing but the turn can still proceed.
+        const rawMcpServerIds = Array.isArray(agent.mcp_servers)
+          ? (agent.mcp_servers as unknown[]).filter((v): v is string => typeof v === "string")
+          : [];
+        const { specs: recoveryMcpServers } = await resolveAgentMcpServers(rawMcpServerIds).catch(() => ({ specs: [] }));
         const newHarnessSessionId = await harnessCreateSession({
           sandbox_url,
           title: "recovery",
           sandbox_tools: true,
+          agent_id: agent.agent_id,
+          mcp_servers: recoveryMcpServers,
           platform_session_id: session_id,
         });
         await prisma.session.update({
