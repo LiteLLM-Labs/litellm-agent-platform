@@ -239,6 +239,36 @@ async function proxy(req: Request, ctx: RouteContext): Promise<Response> {
     // the send is observable. Awaited (one small insert) for durable-before-send.
     let sentUserMsgId: string | null = null;
     if (req.method === "POST" && SEND_PATH.test(tail) && bodyBuf) {
+      // Inject LAP session_id into the last text part before forwarding to the
+      // harness. The UI drives all inline-harness messages through this proxy
+      // (never the /message route), so this is the only injection point for
+      // opencode sessions. Without it, sandbox_provision has no session_id and
+      // falls back to direct-mode (no agent env vars injected as stubs).
+      const isInlineSend =
+        cached.harness_id === HARNESS_BRAIN_INLINE ||
+        cached.harness_id === HARNESS_OPENCODE_BRAIN_INLINE;
+      if (isInlineSend) {
+        try {
+          const tag = `\n\n[SYSTEM: Your LAP session_id is ${session_id} — pass this exact string when calling sandbox_provision]\n<lap_session_id>${session_id}</lap_session_id>`;
+          const decoded = new TextDecoder().decode(bodyBuf);
+          const parsed = JSON.parse(decoded) as { parts?: Array<{type:string;text?:string}> };
+          if (parsed.parts && Array.isArray(parsed.parts)) {
+            const lastTextIdx = parsed.parts.map(p => p.type).lastIndexOf("text");
+            if (lastTextIdx >= 0) {
+              parsed.parts = parsed.parts.map((p, i) =>
+                i === lastTextIdx && p.type === "text"
+                  ? { ...p, text: (p.text ?? "") + tag }
+                  : p
+              );
+              const reencoded = new TextEncoder().encode(JSON.stringify(parsed));
+              bodyBuf = reencoded.buffer as ArrayBuffer;
+              init.body = bodyBuf;
+            }
+          }
+        } catch {
+          // Non-fatal — if parsing fails, forward original body unchanged.
+        }
+      }
       sentUserMsgId = await recordUserSend({
         session_id,
         harness_session_id: cached.harness_session_id,
