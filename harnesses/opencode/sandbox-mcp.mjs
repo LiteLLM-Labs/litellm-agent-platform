@@ -280,6 +280,10 @@ function mimeForPath(p) {
 async function readBase64({ sandbox_name, path, session_id }) {
   const sandbox = sandboxes.get(sandbox_name);
   if (sandbox) {
+    if (USE_DAYTONA) {
+      const buf = await sandbox.fs.downloadFile(path);
+      return buf.toString("base64");
+    }
     await sandbox.setTimeout(SANDBOX_TIMEOUT_MS); // keepalive (see execute)
     const bytes = await sandbox.files.read(path, { format: "bytes" });
     return Buffer.from(bytes).toString("base64");
@@ -324,7 +328,14 @@ async function uploadArtifact({ sandbox_name, path, name, session_id }) {
 let cleaningUp = false;
 async function cleanupAll() {
   if (cleaningUp) return; cleaningUp = true;
-  await Promise.all([...sandboxes.values()].map(s => s.kill().catch(() => {})));
+  if (USE_DAYTONA) {
+    try {
+      const d = await getDaytona();
+      await Promise.all([...sandboxes.values()].map(s => d.delete(s).catch(() => {})));
+    } catch {}
+  } else {
+    await Promise.all([...sandboxes.values()].map(s => s.kill().catch(() => {})));
+  }
   sandboxes.clear();
 }
 for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => cleanupAll().finally(() => process.exit(0)));

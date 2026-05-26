@@ -25,16 +25,19 @@ const out = {};
 // In local dev: set LAP_MCP_DIR to the harness directory.
 const MCP_DIR = (process.env.LAP_MCP_DIR || "/opt/lap/opencode-sandbox-mcp").replace(/\/+$/, "");
 
-// --- E2B sandbox MCP (local) ---
+// --- E2B / Daytona sandbox MCP (local) ---
 const e2bKey = process.env.E2B_API_KEY;
-if (e2bKey) {
+const daytonaKey = process.env.DAYTONA_API_KEY;
+const sandboxChoice = process.env.SANDBOX_CHOICE;
+const hasSandboxCreds = e2bKey || (daytonaKey && sandboxChoice === "daytona");
+if (hasSandboxCreds) {
   out.sandbox = {
     type: "local",
     command: ["node", `${MCP_DIR}/sandbox-mcp.mjs`],
     enabled: true,
     environment: {
-      E2B_API_KEY: e2bKey,
-      E2B_TEMPLATE: process.env.E2B_TEMPLATE || "base",
+      ...(e2bKey && { E2B_API_KEY: e2bKey }),
+      ...(e2bKey && { E2B_TEMPLATE: process.env.E2B_TEMPLATE || "base" }),
       ...(process.env.LAP_BASE_URL && { LAP_BASE_URL: process.env.LAP_BASE_URL }),
       ...(process.env.LAP_AUTH_TOKEN && { LAP_AUTH_TOKEN: process.env.LAP_AUTH_TOKEN }),
       ...(process.env.MASTER_KEY && { MASTER_KEY: process.env.MASTER_KEY }),
