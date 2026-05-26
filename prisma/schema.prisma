@@ -217,6 +217,13 @@ model SessionAssessment {
   evidence          Json     @default("[]")
   action_status     String   @default("none")     // none | watching | queued | executed | failed
   action_ref        String?
+  // Session ID of the spawned LAP reviewer agent session that critiques this
+  // target session. The reviewer session IS the review — open it to read
+  // the agent's analysis. Spawned once per target-session lifetime so the
+  // worker can re-poll the same critique over multiple ticks without
+  // re-spawning. Null until the worker first decides the target needs a
+  // deeper review (state moves off on_track / slow_but_ok).
+  reviewer_session_id String?
   checked_at        DateTime @default(now())
   next_check_at     DateTime?
   created_at        DateTime @default(now())
