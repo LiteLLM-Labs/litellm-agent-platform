@@ -39,7 +39,6 @@ import type {
   AgentRow,
   HarnessMessage,
   HarnessMessageResponse,
-  SandboxFileSpec,
 } from "@/server/types";
 import { HARNESS_OPENCODE_BRAIN_INLINE, inlineHarnessUrlEnv, isInlineHarness } from "@/server/types";
 
@@ -175,11 +174,6 @@ export async function rehydrateSession(
     }
   }
 
-  const rawFiles = (agent as Record<string, unknown>).sandbox_files;
-  const files = Array.isArray(rawFiles)
-    ? (rawFiles as SandboxFileSpec[])
-    : undefined;
-
   // Brain-inline fast path: no pod needed — reuse the shared harness Deployment.
   // The generic path below would call runTask() which creates a new k8s sandbox
   // pod, which is wrong for brain-inline and will always time out.
@@ -216,7 +210,6 @@ export async function rehydrateSession(
       harness_session_id = await harnessCreateSession({
         sandbox_url: inlineUrl,
         title: "rehydrate",
-        files,
         sandbox_tools: true,
         projects,
         agent_id: agent.agent_id,
@@ -294,7 +287,6 @@ export async function rehydrateSession(
     const harness_session_id = await harnessCreateSession({
       sandbox_url,
       title: "restart",
-      files,
     });
     console.log(`[rehydrate] session=${session_id} phase=session_created elapsed=${elapsed()} harness_session_id=${harness_session_id}`);
 

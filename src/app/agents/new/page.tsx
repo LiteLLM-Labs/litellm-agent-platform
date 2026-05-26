@@ -272,7 +272,6 @@ export default function NewAgentPage() {
         env_var_hosts: Object.keys(finalEnvVarHosts).length > 0 ? finalEnvVarHosts : undefined,
         allow_out: derivedAllowOut,
         deny_out: selectedProject?.deny_out,
-        sandbox_files: selectedProject?.files,
         skill_ids: pickedSkillIds.length > 0 ? pickedSkillIds : undefined,
         // Preserve template provenance so the platform can detect version drift
         // and surface "sync available" when the template is later updated.

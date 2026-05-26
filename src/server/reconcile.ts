@@ -638,11 +638,9 @@ async function recoverStuckCreating(): Promise<void> {
     }
 
     try {
-      const rawFiles = (agent as Record<string, unknown>).sandbox_files;
       const harness_session_id = await harnessCreateSession({
         sandbox_url,
         title: "default",
-        files: Array.isArray(rawFiles) ? (rawFiles as import("@/server/types").SandboxFileSpec[]) : undefined,
       });
       await prisma.session.update({
         where: { session_id: row.session_id },

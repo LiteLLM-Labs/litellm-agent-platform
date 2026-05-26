@@ -43,7 +43,6 @@ import {
   HttpError,
   httpError,
   type HarnessMessage,
-  type SandboxFileSpec,
 } from "@/server/types";
 
 // opencode paths we persist from. The web UI / CLI drive the harness through
@@ -87,7 +86,6 @@ async function recoverBrainInlineSession(
   await harnessDeleteSession({ sandbox_url: inlineUrl, harness_session_id: old_harness_session_id })
     .catch(() => {});
 
-  const rawFiles = (row.agent as Record<string, unknown>).sandbox_files;
   const rawProjects = (row.agent as Record<string, unknown>).projects;
   const projects = Array.isArray(rawProjects)
     ? (rawProjects as Array<{ id: string; name: string; description: string; repo_url?: string }>)
@@ -98,7 +96,6 @@ async function recoverBrainInlineSession(
     new_harness_session_id = await harnessCreateSession({
       sandbox_url: inlineUrl,
       title: "recovery",
-      files: Array.isArray(rawFiles) ? (rawFiles as SandboxFileSpec[]) : undefined,
       sandbox_tools: true,
       projects,
       agent_id: row.agent.agent_id,

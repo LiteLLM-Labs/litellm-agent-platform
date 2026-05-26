@@ -284,18 +284,13 @@ async function coldBringUp(
 ): Promise<BringUpResult> {
   const spawnStart = Date.now();
   try {
-    const rawSandboxFiles = (agent as Record<string, unknown>).sandbox_files;
-    const sandboxFiles = Array.isArray(rawSandboxFiles)
-      ? (rawSandboxFiles as import("@/server/types").SandboxFileSpec[])
-      : [];
-
     // Local dev bypass: skip K8s entirely and use the local harness directly.
     if (env.LOCAL_SANDBOX_URL) {
       console.log(`[local-dev] bypassing K8s, using LOCAL_SANDBOX_URL=${env.LOCAL_SANDBOX_URL}`);
       await setPhase(session_id, "waiting_harness");
       await waitHttpReady(env.LOCAL_SANDBOX_URL);
       await setPhase(session_id, "harness_ready");
-      const result = await finishBringUp(agent, session_id, body, env.LOCAL_SANDBOX_URL, sandboxFiles);
+      const result = await finishBringUp(agent, session_id, body, env.LOCAL_SANDBOX_URL);
       registry.observe("session_spawn_duration_seconds", { path: "cold" }, (Date.now() - spawnStart) / 1000);
       registry.inc("session_spawn_total", { path: "cold", result: "success" });
       return result;
@@ -321,7 +316,7 @@ async function coldBringUp(
     registry.observe("session_phase_duration_seconds", { phase: "waiting_harness" }, (Date.now() - t) / 1000);
 
     await setPhase(session_id, "harness_ready");
-    const result = await finishBringUp(agent, session_id, body, sandbox_url, sandboxFiles);
+    const result = await finishBringUp(agent, session_id, body, sandbox_url);
 
     registry.observe("session_spawn_duration_seconds", { path: "cold" }, (Date.now() - spawnStart) / 1000);
     registry.inc("session_spawn_total", { path: "cold", result: "success" });
@@ -354,12 +349,8 @@ async function warmBringUp(
       where: { session_id },
       data: { task_arn: warm.task_arn },
     });
-    const rawWarmFiles = (agent as Record<string, unknown>).sandbox_files;
-    const warmFiles = Array.isArray(rawWarmFiles)
-      ? (rawWarmFiles as import("@/server/types").SandboxFileSpec[])
-      : [];
     await setPhase(session_id, "harness_ready");
-    const result = await finishBringUp(agent, session_id, body, warm.sandbox_url, warmFiles);
+    const result = await finishBringUp(agent, session_id, body, warm.sandbox_url);
 
     registry.observe("session_spawn_duration_seconds", { path: "warm" }, (Date.now() - spawnStart) / 1000);
     registry.inc("session_spawn_total", { path: "warm", result: "success" });
@@ -380,7 +371,6 @@ async function finishBringUp(
   session_id: string,
   body: BringUpBody,
   sandbox_url: string,
-  files: import("@/server/types").SandboxFileSpec[] = [],
 ): Promise<BringUpResult> {
   // Approximation: by the time harnessCreateSession succeeds the container's
   // entrypoint has already cloned the repo. We surface `cloning_repo` here
@@ -391,10 +381,9 @@ async function finishBringUp(
   // line is effectively a no-op overwrite with the same value.
   await setPhase(session_id, "cloning_repo");
   const cloneStart = Date.now();
-  const skillFiles = body.skill_ids?.length
+  const allFiles = body.skill_ids?.length
     ? await buildSkillSandboxFiles(body.skill_ids)
     : [];
-  const allFiles = [...files, ...skillFiles];
 
   // When skills are active, give the agent a way to improve them based on user
   // feedback. The agent reads skill_id from the SKILL.md frontmatter and calls

@@ -172,7 +172,6 @@ export interface AgentRow {
   env_var_hosts?: Record<string, string[]>;
   allow_out?: string[];
   deny_out?: string[];
-  sandbox_files?: SandboxFileSpec[];
   /**
    * Max non-pinned memories preloaded into AGENT_PROMPT for this agent.
    * Pinned memories are always-included on top of this, capped server-side.
@@ -506,7 +505,6 @@ export interface CreateAgentRequest {
   env_var_hosts?: Record<string, string[]>;
   allow_out?: string[];
   deny_out?: string[];
-  sandbox_files?: SandboxFileSpec[];
   /** Library skill IDs to attach at create time (in order). Each is materialized inside the sandbox as ~/.claude/skills/<slug>/SKILL.md on session boot. */
   skill_ids?: string[];
   /** Template this agent is derived from — stored for Helm-style version tracking. */
@@ -538,8 +536,6 @@ export interface UpdateAgentRequest {
   preload_memory_limit?: number;
   /** Projects to attach when using the claude-code-brain-inline harness. */
   projects?: ProjectConfig[];
-  /** Replace the full sandbox_files array. Used to update setup.sh. */
-  sandbox_files?: SandboxFileSpec[];
 }
 
 export function listAgents(): Promise<AgentRow[]> {

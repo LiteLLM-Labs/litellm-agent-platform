@@ -112,14 +112,12 @@ export async function POST(req: Request, ctx: RouteContext) {
           });
       }
 
-      const rawFiles = (agent as Record<string, unknown>).sandbox_files;
       const rawProjects = (agent as Record<string, unknown>).projects;
       const projects = Array.isArray(rawProjects) ? rawProjects as Array<{ id: string; name: string; description: string; repo_url?: string }> : [];
 
       const harness_session_id = await harnessCreateSession({
         sandbox_url: inlineUrl,
         title: "restart",
-        files: Array.isArray(rawFiles) ? (rawFiles as import("@/server/types").SandboxFileSpec[]) : undefined,
         sandbox_tools: true,
         projects,
         agent_id: agent.agent_id,

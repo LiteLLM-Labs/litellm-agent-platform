@@ -57,7 +57,6 @@ export const PATCH = wrap<RouteContext>(async (req, ctx) => {
   if (body.projects !== undefined) data.projects = body.projects as Prisma.InputJsonValue;
   if (body.allow_out !== undefined) data.allow_out = body.allow_out as Prisma.InputJsonValue;
   if (body.deny_out !== undefined) data.deny_out = body.deny_out as Prisma.InputJsonValue;
-  if (body.sandbox_files !== undefined) data.sandbox_files = body.sandbox_files as Prisma.InputJsonValue;
 
   const existing = await prisma.agent.findUnique({ where: { agent_id } });
   if (existing === null) httpError(404, `agent '${agent_id}' not found`);

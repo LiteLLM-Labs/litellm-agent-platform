@@ -5,20 +5,6 @@ import { decrypt } from "@/server/integrations/core/crypto";
 import { deriveStub } from "./deriveStub";
 import { SandboxProvider, type ProvisionParams } from "./provider";
 
-async function readEnvMap(sandbox: Sandbox): Promise<Record<string, string>> {
-  try {
-    const content = await (sandbox as unknown as { files: { read: (p: string) => Promise<string> } }).files.read("/tmp/lap_env");
-    return Object.fromEntries(
-      content.split("\n").map((l: string) => l.trim()).filter((l: string) => l.includes("=")).map((l: string) => {
-        const i = l.indexOf("=");
-        return [l.slice(0, i), l.slice(i + 1)];
-      }),
-    );
-  } catch {
-    return {};
-  }
-}
-
 export class E2bProvider extends SandboxProvider {
   readonly urlScheme = "e2b";
 
@@ -102,28 +88,7 @@ export class E2bProvider extends SandboxProvider {
       }
     }
 
-    // Run setup.sh if the agent has one in sandbox_files
-    const sandboxFiles = Array.isArray(params.agent.sandbox_files)
-      ? (params.agent.sandbox_files as Array<{ name: string; content: string }>)
-      : [];
-    const setupEntry = sandboxFiles.find((f) => f.name === "setup.sh");
-    let envMap: Record<string, string> = {};
-    if (setupEntry) {
-      try {
-        const script = Buffer.from(setupEntry.content, "base64").toString("utf-8");
-        await (sandbox as unknown as { files: { write: (p: string, c: string) => Promise<void> } }).files.write("/lap/setup.sh", script);
-        const result = await sandbox.commands.run("bash /lap/setup.sh", { timeoutMs: 120_000 });
-        if (result.exitCode !== 0) {
-          throw new Error(`setup.sh failed (exit ${result.exitCode}): ${result.stderr ?? result.stdout ?? "(no output)"}`);
-        }
-        envMap = await readEnvMap(sandbox);
-      } catch (err) {
-        await sandbox.kill().catch(() => {});
-        throw err;
-      }
-    }
-
-    return { id: sandbox.sandboxId, envMap };
+    return { id: sandbox.sandboxId, envMap: {} };
   }
 
   async execute(id: string, cmd: string, timeoutMs: number): Promise<string> {

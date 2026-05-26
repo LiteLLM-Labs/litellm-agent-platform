@@ -162,14 +162,6 @@ export const CreateAgentBody = z.object({
   mcp_servers: z.array(z.string()).default([]),
   allow_out: z.array(egressHostEntry).default([]),
   deny_out: z.array(egressHostEntry).default([]),
-  sandbox_files: z
-    .array(SandboxFileSpecSchema)
-    .max(SANDBOX_FILES_MAX_COUNT, `sandbox_files: max ${SANDBOX_FILES_MAX_COUNT} files`)
-    .default([])
-    .refine(
-      (files) => (files as SandboxFileSpec[]).reduce((sum, f) => sum + f.content.length, 0) <= SANDBOX_FILES_MAX_TOTAL_B64,
-      { message: `sandbox_files: total base64 size must be ≤ 10 MB` },
-    ),
   projects: z.array(z.object({
     id: z.string(),
     name: z.string(),
@@ -273,15 +265,6 @@ export const UpdateAgentBody = z.object({
   deny_out: z.array(egressHostEntry).optional(),
   /** Replace per-credential host bindings. See CreateAgentBody.env_var_hosts. */
   env_var_hosts: envVarHostsSchema,
-  /** Replace the full sandbox_files array. Used to update setup.sh and other seeded files. */
-  sandbox_files: z
-    .array(SandboxFileSpecSchema)
-    .max(SANDBOX_FILES_MAX_COUNT, `sandbox_files: max ${SANDBOX_FILES_MAX_COUNT} files`)
-    .refine(
-      (files) => (files as SandboxFileSpec[]).reduce((sum, f) => sum + f.content.length, 0) <= SANDBOX_FILES_MAX_TOTAL_B64,
-      { message: `sandbox_files: total base64 size must be ≤ 10 MB` },
-    )
-    .optional(),
 });
 export type UpdateAgentBody = z.infer<typeof UpdateAgentBody>;
 
@@ -504,7 +487,6 @@ export interface ApiAgent {
   attached_skill_ids: string[];
   allow_out: string[];
   deny_out: string[];
-  sandbox_files: SandboxFileSpec[];
   projects: unknown[];
   /**
    * Max non-pinned memories preloaded into AGENT_PROMPT at session start.
@@ -1122,9 +1104,6 @@ export function toApiAgent(row: AgentRow): ApiAgent {
     attached_skill_ids: parseAttachedSkillIds(row.prompt),
     allow_out: Array.isArray(row.allow_out) ? (row.allow_out as string[]) : [],
     deny_out: Array.isArray(row.deny_out) ? (row.deny_out as string[]) : [],
-    sandbox_files: Array.isArray((row as Record<string, unknown>).sandbox_files)
-      ? ((row as Record<string, unknown>).sandbox_files as SandboxFileSpec[])
-      : [],
     projects: Array.isArray((row as Record<string, unknown>).projects)
       ? ((row as Record<string, unknown>).projects as unknown[])
       : [],
