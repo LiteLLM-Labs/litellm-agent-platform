@@ -101,8 +101,10 @@ const server = http.createServer(async (req, res) => {
   }
 
   inFlight++;
-  res.on("finish", () => { inFlight--; checkDrainComplete(); });
-  res.on("close", () => { inFlight--; checkDrainComplete(); });
+  let decremented = false;
+  const decrement = () => { if (!decremented) { decremented = true; inFlight--; checkDrainComplete(); } };
+  res.on("finish", decrement);
+  res.on("close", decrement);
 
   // POST /session: materialize this agent's skills before opencode creates the
   // session, then forward unchanged (no ?directory — keep the /event bus global).

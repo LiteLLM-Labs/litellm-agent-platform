@@ -43,6 +43,7 @@ import { putCachedSession } from "@/server/sessionCache";
 import {
   appendUserMessage,
   completeAssistantMessage,
+  markUserMessageFailed,
 } from "@/server/sessionStore";
 import {
   expandMessage,
@@ -630,6 +631,11 @@ async function runInitialPrompt(
             : expandMessage(initial_prompt),
           session_id,
         );
+        // Mark the first (failed) user message so it doesn't get replayed as
+        // a duplicate on the next recovery cycle.
+        if (userMsg?.message_id) {
+          await markUserMessageFailed(userMsg.message_id);
+        }
         const retryUserMsg = await appendUserMessage({
           session_id,
           harness_session_id: newHarnessSessionId,
