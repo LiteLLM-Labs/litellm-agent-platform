@@ -647,36 +647,45 @@ async function runInitialPrompt(
         if (userMsg?.message_id) {
           await markUserMessageFailed(userMsg.message_id);
         }
-        const retryUserMsg = await appendUserMessage({
-          session_id,
-          harness_session_id: newHarnessSessionId,
-          parts: parts as import("@/server/types").HarnessMessagePart[],
-        });
-        const retryResponse = await harnessSendMessage({
-          sandbox_url,
-          harness_session_id: newHarnessSessionId,
-          model: agent.model,
-          parts,
-        });
-        await prisma.session.update({
-          where: { session_id },
-          data: {
-            response: retryResponse as unknown as Prisma.InputJsonValue,
-            last_seen_at: new Date(),
-          },
-        });
-        void completeAssistantMessage({
-          session_id,
-          user_message_id: retryUserMsg?.message_id ?? null,
-          harness_session_id: newHarnessSessionId,
-          response: retryResponse,
-        });
-        await snapshotThreadToHistory(
-          session_id,
-          sandbox_url,
-          newHarnessSessionId,
-        );
-        return;
+        let retryUserMsg: { message_id: string; seq: number } | null = null;
+        try {
+          retryUserMsg = await appendUserMessage({
+            session_id,
+            harness_session_id: newHarnessSessionId,
+            parts: parts as import("@/server/types").HarnessMessagePart[],
+          });
+          const retryResponse = await harnessSendMessage({
+            sandbox_url,
+            harness_session_id: newHarnessSessionId,
+            model: agent.model,
+            parts,
+          });
+          await prisma.session.update({
+            where: { session_id },
+            data: {
+              response: retryResponse as unknown as Prisma.InputJsonValue,
+              last_seen_at: new Date(),
+            },
+          });
+          void completeAssistantMessage({
+            session_id,
+            user_message_id: retryUserMsg?.message_id ?? null,
+            harness_session_id: newHarnessSessionId,
+            response: retryResponse,
+          });
+          await snapshotThreadToHistory(
+            session_id,
+            sandbox_url,
+            newHarnessSessionId,
+          );
+          return;
+        } catch (sendErr) {
+          // Mark the retry message failed so it isn't replayed as a duplicate.
+          if (retryUserMsg?.message_id) {
+            await markUserMessageFailed(retryUserMsg.message_id).catch(() => {});
+          }
+          throw sendErr;
+        }
       } catch (recoveryErr) {
         const recoveryReason =
           recoveryErr instanceof Error
