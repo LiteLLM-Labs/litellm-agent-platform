@@ -592,9 +592,89 @@ async function runInitialPrompt(
     await snapshotThreadToHistory(session_id, sandbox_url, harness_session_id);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    console.error(
-      `initial_prompt send failed: session_id=${session_id} reason=${reason}`,
-    );
+    const isFetchError =
+      (err instanceof TypeError && err.message.includes("fetch")) ||
+      reason === "fetch failed";
+
+    if (isFetchError) {
+      console.log(
+        `[runInitialPrompt] fetch failed, attempting recovery... session_id=${session_id}`,
+      );
+      try {
+        const newHarnessSessionId = await harnessCreateSession({
+          sandbox_url,
+          title: "recovery",
+          sandbox_tools: true,
+          platform_session_id: session_id,
+        });
+        await prisma.session.update({
+          where: { session_id },
+          data: { harness_session_id: newHarnessSessionId },
+        });
+        const parts = prependAgentSystemPrompt(
+          agent.prompt,
+          initial_attachments && initial_attachments.length > 0
+            ? [
+                ...(initial_prompt
+                  ? [{ type: "text", text: initial_prompt }]
+                  : []),
+                ...initial_attachments.map((a) => ({
+                  type: "image",
+                  source: {
+                    type: "base64",
+                    media_type: a.mime_type,
+                    data: a.base64,
+                  },
+                })),
+              ]
+            : expandMessage(initial_prompt),
+          session_id,
+        );
+        const retryUserMsg = await appendUserMessage({
+          session_id,
+          harness_session_id: newHarnessSessionId,
+          parts: parts as import("@/server/types").HarnessMessagePart[],
+        });
+        const retryResponse = await harnessSendMessage({
+          sandbox_url,
+          harness_session_id: newHarnessSessionId,
+          model: agent.model,
+          parts,
+        });
+        await prisma.session.update({
+          where: { session_id },
+          data: {
+            response: retryResponse as unknown as Prisma.InputJsonValue,
+            last_seen_at: new Date(),
+          },
+        });
+        void completeAssistantMessage({
+          session_id,
+          user_message_id: retryUserMsg?.message_id ?? null,
+          harness_session_id: newHarnessSessionId,
+          response: retryResponse,
+        });
+        await snapshotThreadToHistory(
+          session_id,
+          sandbox_url,
+          newHarnessSessionId,
+        );
+        return;
+      } catch (recoveryErr) {
+        const recoveryReason =
+          recoveryErr instanceof Error
+            ? recoveryErr.message
+            : String(recoveryErr);
+        console.error(
+          `[runInitialPrompt] recovery failed: session_id=${session_id} reason=${recoveryReason}`,
+        );
+      }
+    } else {
+      console.error(
+        `initial_prompt send failed: session_id=${session_id} reason=${reason}`,
+      );
+    }
+
     // Best-effort persist. The session itself stays `ready` — the sandbox
     // is healthy; only the initial agent task failed. The UI can surface
     // failure_reason alongside an empty response.

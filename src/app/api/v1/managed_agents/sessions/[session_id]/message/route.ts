@@ -276,47 +276,16 @@ export async function POST(req: Request, ctx: RouteContext) {
     const priorTurns = await prisma.sessionMessage.count({
       where: { session_id },
     });
-    const isInline = cached.harness_id === HARNESS_OPENCODE || cached.harness_id === HARNESS_OPENCODE_BRAIN_INLINE;
-    console.log(`[message] session=${session_id} harness=${cached.harness_id} isInline=${isInline} priorTurns=${priorTurns}`);
     if (priorTurns === 0) {
       const agentRow = await prisma.agent.findUnique({
         where: { agent_id: cached.agent_id },
         select: { prompt: true, agent_id: true },
       });
-      const issueToolName = isInline ? "lap-issue-reporter_report_issue" : "report_issue";
+      const isOpencode = cached.harness_id === HARNESS_OPENCODE || cached.harness_id === HARNESS_OPENCODE_BRAIN_INLINE;
+      const issueToolName = isOpencode ? "lap-issue-reporter_report_issue" : "report_issue";
       const issueReportingBlock = `\n\n## Issue reporting — MANDATORY\nCall \`${issueToolName}\` immediately (before replying or continuing) whenever:\n- You cannot complete a request because a tool, integration, or permission is missing\n- A sandbox restarts unexpectedly or required binaries/templates are missing\n- A tool returns an error you have to work around (broken API, auth failure, wrong environment)\n- You are about to stop because of a blocker\n\nDo not suggest alternatives first. File the issue, then explain. Always pass session_id=${session_id} and agent_id=${cached.agent_id}. No exceptions.`;
       const promptWithContext = (agentRow?.prompt ?? "") + issueReportingBlock;
       parts = prependAgentSystemPrompt(promptWithContext, parts, session_id);
-      // For inline harnesses opencode may only forward the last text part to the LLM —
-      // the preamble part added by prependAgentSystemPrompt would be silently dropped.
-      // Append the session_id directly to the last text part as a belt-and-suspenders.
-      if (isInline) {
-        const tag = `\n\n[SYSTEM: Your LAP session_id is ${session_id} — pass this exact string when calling sandbox_provision]\n<lap_session_id>${session_id}</lap_session_id>`;
-        const lastTextIdx = parts.map(p => p.type).lastIndexOf("text");
-        if (lastTextIdx >= 0) {
-          parts = parts.map((p, i) =>
-            i === lastTextIdx && p.type === "text"
-              ? { ...p, text: (p.text ?? "") + tag }
-              : p
-          );
-        }
-      }
-    } else if (isInline) {
-      // Inline harnesses share one opencode server across sessions — the agent
-      // can't know its LAP session_id from env. Append the id tag to the last
-      // text part of every subsequent turn so it's always in the immediate
-      // user message (a separate preamble part can be lost in multi-part rendering).
-      const tag = `\n\n[SYSTEM: Your LAP session_id is ${session_id} — pass this exact string when calling sandbox_provision]\n<lap_session_id>${session_id}</lap_session_id>`;
-      const lastTextIdx = parts.map(p => p.type).lastIndexOf("text");
-      if (lastTextIdx >= 0) {
-        parts = parts.map((p, i) =>
-          i === lastTextIdx && p.type === "text"
-            ? { ...p, text: (p.text ?? "") + tag }
-            : p
-        );
-      } else {
-        parts = [...parts, { type: "text", text: tag }];
-      }
     }
 
     // Durably record the user turn *before* dialing the harness so a mid-turn
@@ -328,13 +297,8 @@ export async function POST(req: Request, ctx: RouteContext) {
       parts,
     });
 
-    // Debug: log what we're sending to the harness
-    if (isInline) {
-      const lastPart = parts.filter(p => p.type === "text").at(-1);
-      const lastTxt = (lastPart as {text?:string})?.text ?? "";
-      console.log(`[inline-inject] session=${session_id} last_text_tail=${JSON.stringify(lastTxt.slice(-200))}`);
-    }
-    let response: HarnessMessageResponse;
+    // eslint-disable-next-line prefer-const
+    let response: HarnessMessageResponse | undefined;
     console.log(`[message] session=${session_id} sandbox_url=${cached.sandbox_url} harness_session_id=${cached.harness_session_id}`);
     const hb = startHeartbeat(session_id, cached.sandbox_url, cached.harness_session_id);
     try {
@@ -345,37 +309,68 @@ export async function POST(req: Request, ctx: RouteContext) {
         parts,
       });
     } catch (err) {
-      if (isHardConnectFailure(err) || isDeadSessionError(err)) {
-        // Dead sandbox — try transparent recovery before giving up.
+      // Network-level failure (harness mid-restart): wait briefly and retry
+      // once before falling through to full recovery. This handles the window
+      // where the inline harness process has restarted but hasn't bound its
+      // listener yet — a single 3 s pause is usually enough to bridge it.
+      let retryErr: unknown = err;
+      if (err instanceof TypeError && err.message.includes("fetch")) {
         console.warn(
-          `session ${session_id} sandbox_url=${cached.sandbox_url} sandbox unreachable; attempting auto-recovery`,
+          `session ${session_id} fetch failed (harness may be restarting); retrying in 3 s`,
         );
+        await new Promise<void>((r) => setTimeout(r, 3000));
         try {
-          const recovered = await recoverAndResend({
-            session_id,
-            user_message_id: userMsg?.message_id ?? null,
+          response = await harnessSendMessage({
+            sandbox_url: cached.sandbox_url,
+            harness_session_id: cached.harness_session_id,
+            model: cached.agent_model,
             parts,
           });
-          return Response.json(recovered);
-        } catch (recoveryErr) {
-          console.error(
-            `auto-recovery failed for session ${session_id}:`,
-            recoveryErr,
-          );
-          await markSessionDead(session_id);
-          throw new HttpError(502, "harness request failed");
+          retryErr = null;
+        } catch (retryError) {
+          retryErr = retryError;
         }
       }
-      // Non-connect failure (harness 4xx/5xx): the sandbox is reachable but the
-      // turn errored and won't be retried here, so flag it `failed` (excluded
-      // from replay) rather than leaving a phantom unanswered user turn that a
-      // later restart would replay. Surface a 502.
-      console.error("harness send_message failed", err);
-      if (userMsg) void markUserMessageFailed(userMsg.message_id);
-      throw new HttpError(502, "harness request failed");
+
+      if (retryErr !== null) {
+        if (isHardConnectFailure(retryErr) || isDeadSessionError(retryErr) ||
+            (retryErr instanceof TypeError && (retryErr as TypeError).message.includes("fetch"))) {
+          // Dead or still-restarting sandbox — try transparent recovery before giving up.
+          console.warn(
+            `session ${session_id} sandbox_url=${cached.sandbox_url} sandbox unreachable; attempting auto-recovery`,
+          );
+          try {
+            const recovered = await recoverAndResend({
+              session_id,
+              user_message_id: userMsg?.message_id ?? null,
+              parts,
+            });
+            await prisma.session.update({
+              where: { session_id },
+              data: { failure_reason: null },
+            }).catch(() => {});
+            return Response.json(recovered);
+          } catch (recoveryErr) {
+            console.error(
+              `auto-recovery failed for session ${session_id}:`,
+              recoveryErr,
+            );
+            await markSessionDead(session_id);
+            throw new HttpError(502, "harness request failed");
+          }
+        }
+        // Non-connect failure (harness 4xx/5xx): the sandbox is reachable but the
+        // turn errored and won't be retried here, so flag it `failed` (excluded
+        // from replay) rather than leaving a phantom unanswered user turn that a
+        // later restart would replay. Surface a 502.
+        console.error("harness send_message failed", retryErr);
+        if (userMsg) void markUserMessageFailed(userMsg.message_id);
+        throw new HttpError(502, "harness request failed");
+      }
     } finally {
       clearInterval(hb);
     }
+    if (!response) throw new HttpError(502, "harness request failed");
 
     markSessionSeen(session_id);
     persistTurn({

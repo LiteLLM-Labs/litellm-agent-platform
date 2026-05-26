@@ -140,12 +140,54 @@ export function prependAgentSystemPrompt(
   return [preamble, ...parts];
 }
 
+/**
+ * Retry wrapper for transient network failures (e.g. a brief gap during
+ * rolling deploys of the inline harness). Only retries on `TypeError` with
+ * "fetch failed" — real HTTP errors (4xx/5xx) are never retried.
+ *
+ * Backoff: baseDelayMs * attempt (2 s, 4 s by default).
+ */
+async function fetchWithRetry(
+  url: string,
+  opts: Parameters<typeof fetch>[1],
+  maxRetries = 2,
+  baseDelayMs = 2000,
+): ReturnType<typeof fetch> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      console.warn(
+        `[harness] fetch failed, retry attempt ${attempt}/${maxRetries}:`,
+        url,
+      );
+      await new Promise((resolve) =>
+        setTimeout(resolve, baseDelayMs * attempt),
+      );
+    }
+    try {
+      return await fetch(url, opts);
+    } catch (err) {
+      if (
+        err instanceof TypeError &&
+        typeof err.message === "string" &&
+        err.message.includes("fetch failed")
+      ) {
+        lastErr = err;
+        // continue to next attempt
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw lastErr;
+}
+
 async function postJson(
   url: string,
   body: unknown,
   timeout_ms: number,
 ): Promise<unknown> {
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
@@ -216,7 +258,7 @@ export async function harnessListMessages(opts: {
     timeout_ms = DEFAULT_CREATE_TIMEOUT_MS,
   } = opts;
   const url = `${sandbox_url}/session/${harness_session_id}/message`;
-  const res = await fetch(url, {
+  const res = await fetchWithRetry(url, {
     method: "GET",
     signal: AbortSignal.timeout(timeout_ms),
   });
