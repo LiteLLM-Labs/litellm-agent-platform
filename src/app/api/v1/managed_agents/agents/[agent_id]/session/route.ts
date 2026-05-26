@@ -381,7 +381,7 @@ async function finishBringUp(
   // line is effectively a no-op overwrite with the same value.
   await setPhase(session_id, "cloning_repo");
   const cloneStart = Date.now();
-  const allFiles = body.skill_ids?.length
+  const skillFiles = body.skill_ids?.length
     ? await buildSkillSandboxFiles(body.skill_ids)
     : [];
 
@@ -413,7 +413,7 @@ async function finishBringUp(
     sandbox_url,
     title: body.title,
     prompt: effectivePrompt || undefined,
-    files: allFiles.length > 0 ? allFiles : undefined,
+    files: skillFiles.length > 0 ? skillFiles : undefined,
     mcp_servers: mcpServers,
     agent_id: agent.agent_id,
     platform_session_id: session_id,
@@ -694,8 +694,6 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
       );
     }
 
-    const rawFiles = (agent as Record<string, unknown>).sandbox_files;
-    const sandboxFiles = Array.isArray(rawFiles) ? (rawFiles as import("@/server/types").SandboxFileSpec[]) : [];
     const rawProjects = (agent as Record<string, unknown>).projects;
     const projects = Array.isArray(rawProjects) ? rawProjects as Array<{ id: string; name: string; description: string; repo_url?: string }> : [];
 
@@ -729,7 +727,7 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
       harness_session_id = await harnessCreateSession({
         sandbox_url: inlineUrl,
         title: body.title ?? "session",
-        files: [...sandboxFiles, ...inlineSkillFiles],
+        files: inlineSkillFiles.length > 0 ? inlineSkillFiles : undefined,
         sandbox_tools: true,
         projects,
         agent_id: agent.agent_id,

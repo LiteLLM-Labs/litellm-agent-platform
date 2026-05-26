@@ -25,7 +25,6 @@ import {
   ApiError,
   McpAllowedTools,
   ProjectConfig,
-  SandboxFileSpec,
   createAgent,
   createSkill,
   getPreinstalledGithubRepo,
@@ -45,7 +44,6 @@ interface LocalProject {
   env_vars?: Record<string, string>;
   allow_out?: string[];
   deny_out?: string[];
-  files?: SandboxFileSpec[];
 }
 
 export default function NewAgentPage() {
