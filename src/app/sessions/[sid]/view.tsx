@@ -310,7 +310,7 @@ export default function SessionThreadView() {
   const [assessment, setAssessment] = useState<SessionAssessmentRow | null>(null);
   const [assessmentLoading, setAssessmentLoading] = useState(false);
   const [assessmentError, setAssessmentError] = useState<string | null>(null);
-  const [reviewerOpen, setReviewerOpen] = useState(true);
+  const [reviewerOpen, setReviewerOpen] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
@@ -1017,7 +1017,7 @@ function MainPanel({
         />
       )}
 
-      {session && (
+      {session && assessment && (
         <ReviewerInlineCard
           assessment={assessment}
           loading={assessmentLoading}
