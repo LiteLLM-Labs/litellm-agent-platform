@@ -1,15 +1,15 @@
 /**
- * POST /api/v1/managed_agents/sessions/[session_id]/issues
+ * GET  /api/v1/managed_agents/sessions/[session_id]/issues — list agent issues (session-scoped auth)
+ * POST /api/v1/managed_agents/sessions/[session_id]/issues — create/dedup issue
  *
- * Creates a new issue OR deduplicates against an existing open issue with the
- * same title (case-insensitive). On match: increments times_seen, appends a
- * comment with the new body+session context, returns 200. On no match:
- * creates fresh issue, returns 201.
+ * Both routes resolve agent_id from the session row so callers only need session_id.
+ * GET returns all issues for the agent (not just this session) — same view as the
+ * agent-scoped GET, just authenticated via session_id.
  */
 
 import { assertAgentTokenOrMaster } from "@/server/auth";
 import { prisma } from "@/server/db";
-import { CreateIssueBody, httpError, toApiIssue } from "@/server/types";
+import { CreateIssueBody, httpError, toApiIssue, toApiIssueComment } from "@/server/types";
 import { wrap } from "@/server/route-helpers";
 
 export const runtime = "nodejs";
@@ -19,34 +19,60 @@ interface RouteContext {
   params: Promise<{ session_id: string }>;
 }
 
-export const POST = wrap<RouteContext>(async (req, ctx) => {
-  const { session_id } = await ctx.params;
-
-  const sessionRow = await prisma.session.findUnique({
+async function resolveSession(session_id: string) {
+  const row = await prisma.session.findUnique({
     where: { session_id },
     select: { agent_id: true },
   });
-  if (!sessionRow) httpError(404, `session '${session_id}' not found`);
+  if (!row) httpError(404, `session '${session_id}' not found`);
+  return row!;
+}
 
-  assertAgentTokenOrMaster(req, { scope: "issues", agent_id: sessionRow!.agent_id });
+export const GET = wrap<RouteContext>(async (req, ctx) => {
+  const { session_id } = await ctx.params;
+  const sessionRow = await resolveSession(session_id);
+  assertAgentTokenOrMaster(req, { scope: "issues", agent_id: sessionRow.agent_id });
+
+  const url = new URL(req.url);
+  const status = url.searchParams.get("status") ?? undefined;
+  const severity = url.searchParams.get("severity") ?? undefined;
+  const limit = Math.min(Number(url.searchParams.get("limit") ?? "200"), 500);
+
+  const rows = await prisma.agentIssue.findMany({
+    where: {
+      agent_id: sessionRow.agent_id,
+      ...(status ? { status } : {}),
+      ...(severity ? { severity } : {}),
+    },
+    include: { comments: { orderBy: { created_at: "asc" } } },
+    orderBy: { created_at: "desc" },
+    take: limit,
+  });
+
+  return Response.json(
+    rows.map((row) => ({ ...toApiIssue(row), comments: row.comments.map(toApiIssueComment) })),
+  );
+});
+
+export const POST = wrap<RouteContext>(async (req, ctx) => {
+  const { session_id } = await ctx.params;
+
+  const sessionRow = await resolveSession(session_id);
+  assertAgentTokenOrMaster(req, { scope: "issues", agent_id: sessionRow.agent_id });
 
   const body = CreateIssueBody.parse(await req.json());
 
   // Dedup: find existing open issue with same title (case-insensitive).
   const existing = await prisma.agentIssue.findFirst({
     where: {
-      agent_id: sessionRow!.agent_id,
+      agent_id: sessionRow.agent_id,
       status: "open",
       title: { equals: body.title, mode: "insensitive" },
     },
   });
 
   if (existing) {
-    // Increment counter + append comment with session context.
-    const commentBody = [
-      body.body ? body.body : null,
-      `Session: ${session_id}`,
-    ]
+    const commentBody = [body.body ? body.body : null, `Session: ${session_id}`]
       .filter(Boolean)
       .join("\n\n");
 
@@ -56,21 +82,16 @@ export const POST = wrap<RouteContext>(async (req, ctx) => {
         data: { times_seen: { increment: 1 } },
       }),
       prisma.agentIssueComment.create({
-        data: {
-          issue_id: existing.issue_id,
-          session_id,
-          body: commentBody,
-        },
+        data: { issue_id: existing.issue_id, session_id, body: commentBody },
       }),
     ]);
 
     return Response.json(toApiIssue(updated), { status: 200 });
   }
 
-  // New issue.
   const issue = await prisma.agentIssue.create({
     data: {
-      agent_id: sessionRow!.agent_id,
+      agent_id: sessionRow.agent_id,
       session_id,
       title: body.title,
       body: body.body ?? null,

@@ -2,16 +2,19 @@
  * E2E test: opencode-inline-harness local session smoke test.
  *
  * Runs against the local Next.js server (localhost:3003) with the opencode
- * inline harness running at localhost:4100. Spawns a session for agent
- * 9cbb91a6-e66d-43c5-92ed-68a570429527 (opencode-inline-final PROD) and
- * confirms the agent produces a non-empty text response.
+ * inline harness running at localhost:4100.
+ *
+ * Required env vars:
+ *   BASE_URL   — platform base URL (default: http://localhost:3003)
+ *   MASTER_KEY — platform master key (default: sk-dev-master-key-change-me)
+ *   AGENT_ID   — agent to create a test session against (no default; must be set)
  */
 
 import { test, expect } from "@playwright/test";
 
 const BASE_URL = process.env.BASE_URL ?? "http://localhost:3003";
 const MASTER_KEY = process.env.MASTER_KEY ?? "sk-dev-master-key-change-me";
-const AGENT_ID = "9cbb91a6-e66d-43c5-92ed-68a570429527";
+const AGENT_ID = process.env.AGENT_ID ?? "";
 
 // Inline harness can take 30-60s per turn.
 const TURN_TIMEOUT_MS = 120_000;
@@ -65,6 +68,7 @@ test.describe("opencode-inline harness — local smoke test", () => {
   let sessionId: string;
 
   test.beforeAll(async () => {
+    if (!AGENT_ID) throw new Error("AGENT_ID env var is required — set it to the agent UUID to test against");
     console.log(`Creating session for agent ${AGENT_ID} via ${BASE_URL}`);
     const session = await apiPost(`agents/${AGENT_ID}/session`, {
       title: "local-smoke-test",

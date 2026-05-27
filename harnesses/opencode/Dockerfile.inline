@@ -131,7 +131,9 @@ COPY --from=mcp-deps --chown=sandbox:sandbox /mcp/node_modules /opt/lap/opencode
 COPY --chown=sandbox:sandbox harnesses/opencode/inline-adapter.mjs /opt/lap/inline-adapter.mjs
 
 COPY --chown=sandbox:sandbox harnesses/opencode/entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh \
+    && mkdir -p /home/sandbox/.local/state \
+    && chown -R sandbox:sandbox /home/sandbox/.local
 
 USER sandbox
 
