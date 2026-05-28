@@ -260,7 +260,7 @@ async function leafFor(host: string) {
   const cert = await x509.X509CertificateGenerator.create({
     serialNumber: String(Math.floor(Math.random() * 1e10)),
     subject: `CN=${host}`,
-    issuer: caCert.subject,
+    issuer: caCert.subjectName,
     notBefore: new Date(Date.now() - 60_000),
     notAfter: new Date(Date.now() + LEAF_CERT_VALIDITY_MS),
     signingKey: caKey,
