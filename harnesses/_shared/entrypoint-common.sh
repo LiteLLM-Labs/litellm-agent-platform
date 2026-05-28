@@ -59,6 +59,16 @@ if [ "${VAULT_ENABLED:-}" = "true" ]; then
       export REQUESTS_CA_BUNDLE="$BUNDLE"
       export CURL_CA_BUNDLE="$BUNDLE"
       export GIT_SSL_CAINFO="$BUNDLE"
+      # The `git` binary in harnesses/base (Debian bookworm) is linked against
+      # GnuTLS (`libcurl3-gnutls`), not OpenSSL. GnuTLS rejects vault's MITM
+      # CA chain even with a correct CAINFO — the same bundle that curl and
+      # `openssl s_client` accept. Since all egress already terminates at the
+      # vault sidecar on 127.0.0.1, which performs its own TLS verify against
+      # the real upstream, disabling git's leaf check here is safe in the
+      # sandbox network: git's peer is vault, and vault is what we trust.
+      # Without this, every `git clone` at boot crashes the harness with
+      # "server certificate verification failed".
+      export GIT_SSL_NO_VERIFY=true
     else
       echo "[entrypoint] WARNING: /etc/vault-ca/tls.crt not readable — TLS verification may fail" >&2
     fi
