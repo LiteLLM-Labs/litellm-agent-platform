@@ -26,6 +26,7 @@ err() { printf "[build] error: %s\n" "$*" >&2; exit 1; }
 info() { printf "[build] %s\n" "$*"; }
 
 command -v docker >/dev/null || err "docker not installed"
+docker buildx version >/dev/null 2>&1 || err "docker buildx not available (install Docker Desktop or the buildx plugin)"
 
 cd "$REPO_ROOT"
 
