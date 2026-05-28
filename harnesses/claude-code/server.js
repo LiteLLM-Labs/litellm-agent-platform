@@ -97,8 +97,14 @@ if (process.env.LITELLM_API_BASE) {
   );
 }
 if (process.env.LITELLM_API_KEY) {
+  // Current claude CLI warns "Auth conflict" when both vars are set and
+  // refuses to start cleanly. Use AUTH_TOKEN exclusively (it's the right
+  // mechanism for proxy-style Bearer auth — LiteLLM expects
+  // `Authorization: Bearer <key>`, not the legacy `X-API-Key` header).
+  // Also unset any inherited ANTHROPIC_API_KEY from the container env so
+  // the harness env stays clean even if the operator set both.
   process.env.ANTHROPIC_AUTH_TOKEN = process.env.LITELLM_API_KEY;
-  process.env.ANTHROPIC_API_KEY = process.env.LITELLM_API_KEY;
+  delete process.env.ANTHROPIC_API_KEY;
 }
 
 // Read the JSON body of an incoming request (server-side helper).
