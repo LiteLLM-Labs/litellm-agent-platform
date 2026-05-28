@@ -81,9 +81,21 @@ docker compose -f docker-compose.yml -f docker-compose.litellm.yml up
 The proxy listens on `:4000`. Point the platform at it via `.env`:
 
 ```dotenv
-LITELLM_API_BASE=http://litellm:4000
+# kind sandbox backend (the default self-hosting path): the harness pods run
+# in the kind cluster, on a separate Docker network from this compose project,
+# and reach the host-published proxy port via host.docker.internal.
+LITELLM_API_BASE=http://host.docker.internal:4000
 LITELLM_API_KEY=sk-litellm-local-master  # must match master_key in litellm-config.yaml
 ```
+
+> [!NOTE]
+> `LITELLM_API_BASE` is injected into the sandbox harness pods, not just the
+> compose web/worker containers. With the kind backend, use
+> `http://host.docker.internal:4000` — the pods live on the `kind` Docker
+> network and cannot resolve the `litellm` compose service name. Only if you
+> run **without** kind (e.g. `LOCAL_SANDBOX_URL` or the brain-inline harness,
+> where everything stays inside this compose project) can you use the more
+> direct `http://litellm:4000`.
 
 Architecture and tuning: [docs/k8s-backend.md](docs/k8s-backend.md).
 
