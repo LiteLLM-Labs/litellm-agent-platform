@@ -27,8 +27,6 @@ export interface AgentFormFieldsProps {
   onHarnessIdChange?: (v: string) => void;
   model: string;
   onModelChange: (v: string) => void;
-  branchOverride: string;
-  onBranchOverrideChange: (v: string) => void;
   systemPrompt: string;
   onSystemPromptChange: (v: string) => void;
   pickedSkillIds: string[];
@@ -97,7 +95,6 @@ export function AgentFormFields({
   pfpUrl, onPfpUrlChange,
   harnessId, onHarnessIdChange,
   model, onModelChange,
-  branchOverride, onBranchOverrideChange,
   systemPrompt, onSystemPromptChange,
   pickedSkillIds, onPickedSkillIdsChange,
   skillName, onSkillNameChange,
@@ -261,21 +258,6 @@ export function AgentFormFields({
             <span className="text-[11px]">(cannot change after creation)</span>
           </div>
         )}
-      </div>
-
-      <div className="space-y-1.5">
-        <Label htmlFor="agent-branch">Branch (optional)</Label>
-        <Input
-          id="agent-branch"
-          value={branchOverride}
-          onChange={(e) => onBranchOverrideChange(e.target.value)}
-          placeholder="default: main"
-          disabled={disabled}
-          className="font-mono text-xs"
-        />
-        <p className="text-xs text-muted-foreground">
-          Pin this agent to a specific branch. Leave blank to use the default.
-        </p>
       </div>
 
       <div className="space-y-1.5">

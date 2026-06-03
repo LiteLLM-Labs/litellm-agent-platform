@@ -131,7 +131,6 @@ export default function NewAgentPage() {
   const [harnessId, setHarnessId] = useState<string>(DEFAULT_HARNESS_ID);
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [systemPrompt, setSystemPrompt] = useState("");
-  const [branchOverride, setBranchOverride] = useState("");
   const [pfpUrl, setPfpUrl] = useState<string | null>(null);
   const [envVars, setEnvVars] = useState<[string, string][]>([["", ""]]);
   const [envVarHosts, setEnvVarHosts] = useState<Record<string, string[]>>({});
@@ -281,7 +280,6 @@ export default function NewAgentPage() {
         harness_id: harnessId,
         requirements: selectedTemplate?.requirements ?? undefined,
         repo_url: repoUrl,
-        branch: branchOverride.trim() || undefined,
         pfp_url: pfpUrl ?? undefined,
         mcp_servers: mcpServers.length > 0 ? mcpServers : undefined,
         mcp_allowed_tools: mcpAllowedTools.length > 0 ? mcpAllowedTools : undefined,
@@ -456,7 +454,6 @@ export default function NewAgentPage() {
                 pfpUrl={pfpUrl} onPfpUrlChange={setPfpUrl}
                 harnessId={harnessId} onHarnessIdChange={setHarnessId}
                 model={model} onModelChange={setModel}
-                branchOverride={branchOverride} onBranchOverrideChange={setBranchOverride}
                 systemPrompt={systemPrompt} onSystemPromptChange={setSystemPrompt}
                 pickedSkillIds={pickedSkillIds} onPickedSkillIdsChange={setPickedSkillIds}
                 skillName={skillName} onSkillNameChange={setSkillName}

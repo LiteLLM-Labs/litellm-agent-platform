@@ -8,7 +8,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/ui/components/ui/button";
 import { Label } from "@/ui/components/ui/label";
 import { AgentFormFields, DEFAULT_HARNESS_ID } from "@/ui/components/agent-form-fields";
-import { EnabledTools, EnabledToolsUpdater } from "@/ui/components/mcp-tools-picker";
+import { EnabledTools } from "@/ui/components/mcp-tools-picker";
 import { AgentRow, ApiError, McpAllowedTools, ProjectConfig, createSkill, getAgent, listProjects, updateAgent } from "@/ui/lib/api";
 import { BRAIN_INLINE_HARNESS_ID } from "@/ui/lib/constants";
 
@@ -286,7 +286,6 @@ export default function EditAgentPage({ params }: PageProps) {
           harnessId={harnessId}
           /* no onHarnessIdChange — harness is read-only after creation */
           model={model} onModelChange={setModel}
-          branchOverride={branchOverride} onBranchOverrideChange={setBranchOverride}
           systemPrompt={systemPrompt} onSystemPromptChange={setSystemPrompt}
           pickedSkillIds={pickedSkillIds} onPickedSkillIdsChange={setPickedSkillIds}
           skillName={skillName} onSkillNameChange={setSkillName}
