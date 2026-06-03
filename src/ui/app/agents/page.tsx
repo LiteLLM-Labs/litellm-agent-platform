@@ -2,7 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ChevronUp, ChevronDown, Loader2, MoreHorizontal, Play, Plus, RefreshCw, Search, Trash2 } from "lucide-react";
+import {
+  ChevronUp,
+  ChevronDown,
+  LayoutTemplate,
+  Loader2,
+  MoreHorizontal,
+  Play,
+  Plus,
+  RefreshCw,
+  Search,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/ui/components/ui/button";
 import { AgentAvatar } from "@/ui/components/agent-avatar";
@@ -172,6 +183,9 @@ export default function AgentsListPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => router.push("/agents/templates")}>
+            <LayoutTemplate className="size-4" /> Templates
+          </Button>
           <Button
             variant="ghost" size="sm"
             onClick={() => void load(search, sortCol, sortDir, page)}

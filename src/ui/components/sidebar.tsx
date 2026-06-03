@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, ChevronRight, FileText, Plus, Settings } from "lucide-react";
+import { ChevronDown, ChevronRight, FileText, LayoutTemplate, Plus, Settings } from "lucide-react";
 
 import { AgentAvatar } from "@/ui/components/agent-avatar";
 import { ThemeToggle } from "@/ui/components/theme-toggle";
@@ -84,7 +84,7 @@ export function Sidebar() {
       const segs = pathname.split("/");
       const id = segs[2];
       // Filter out non-id paths like "/agents/new"
-      if (id && id !== "new") return id;
+      if (id && id !== "new" && id !== "templates") return id;
     }
     if (pathname.startsWith("/sessions/")) {
       const segs = pathname.split("/");
@@ -225,52 +225,75 @@ export function Sidebar() {
 
       {/* New Agent CTA */}
       <div className="px-2 pb-2">
-        <Link
-          href="/agents/new"
-          aria-current={pathname === "/agents/new" ? "page" : undefined}
-          className={cn(
-            "flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            pathname === "/agents/new"
-              ? "bg-sidebar-accent text-foreground"
-              : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-          )}
-        >
-          <Plus
+        <div className="space-y-px">
+          <Link
+            href="/agents/new"
+            aria-current={pathname === "/agents/new" ? "page" : undefined}
             className={cn(
-              "size-[14px] shrink-0",
+              "flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
               pathname === "/agents/new"
-                ? "text-foreground"
-                : "text-muted-foreground",
+                ? "bg-sidebar-accent text-foreground"
+                : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
             )}
-            aria-hidden
-          />
-          <span className="truncate">New Agent</span>
-        </Link>
-        <Link
-          href="/settings"
-          aria-current={
-            pathname === "/settings" || pathname.startsWith("/settings/")
-              ? "page"
-              : undefined
-          }
-          className={cn(
-            "mt-1 flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-            pathname === "/settings" || pathname.startsWith("/settings/")
-              ? "bg-sidebar-accent text-foreground"
-              : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
-          )}
-        >
-          <Settings
+          >
+            <Plus
+              className={cn(
+                "size-[14px] shrink-0",
+                pathname === "/agents/new"
+                  ? "text-foreground"
+                  : "text-muted-foreground",
+              )}
+              aria-hidden
+            />
+            <span className="truncate">New Agent</span>
+          </Link>
+          <Link
+            href="/agents/templates"
+            aria-current={pathname === "/agents/templates" ? "page" : undefined}
             className={cn(
-              "size-[14px] shrink-0",
-              pathname === "/settings" || pathname.startsWith("/settings/")
-                ? "text-foreground"
-                : "text-muted-foreground",
+              "flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              pathname === "/agents/templates"
+                ? "bg-sidebar-accent text-foreground"
+                : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
             )}
-            aria-hidden
-          />
-          <span className="truncate">Settings</span>
-        </Link>
+          >
+            <LayoutTemplate
+              className={cn(
+                "size-[14px] shrink-0",
+                pathname === "/agents/templates"
+                  ? "text-foreground"
+                  : "text-muted-foreground",
+              )}
+              aria-hidden
+            />
+            <span className="truncate">Agent Templates</span>
+          </Link>
+          <Link
+            href="/settings"
+            aria-current={
+              pathname === "/settings" || pathname.startsWith("/settings/")
+                ? "page"
+                : undefined
+            }
+            className={cn(
+              "flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              pathname === "/settings" || pathname.startsWith("/settings/")
+                ? "bg-sidebar-accent text-foreground"
+                : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+            )}
+          >
+            <Settings
+              className={cn(
+                "size-[14px] shrink-0",
+                pathname === "/settings" || pathname.startsWith("/settings/")
+                  ? "text-foreground"
+                  : "text-muted-foreground",
+              )}
+              aria-hidden
+            />
+            <span className="truncate">Settings</span>
+          </Link>
+        </div>
       </div>
 
       {/* Lists */}
