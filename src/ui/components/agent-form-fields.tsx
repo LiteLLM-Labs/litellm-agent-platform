@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, FileText, Loader2, Plus, Trash2, Upload, X } from "lucide-react";
+import { Check, ChevronDown, FileText, Loader2, Plus, Trash2, Upload, X } from "lucide-react";
 
 import { Input } from "@/ui/components/ui/input";
 import { Label } from "@/ui/components/ui/label";
@@ -296,9 +296,25 @@ export function AgentFormFields({
       </div>
 
       {/* Skill section */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <Label>Skill (optional)</Label>
+      <details
+        className="group rounded-lg border bg-background/50"
+        open={skillMode !== null || pickedSkillIds.length > 0}
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 marker:hidden">
+          <div>
+            <p className="text-sm font-medium">Skills</p>
+            <p className="text-xs text-muted-foreground">
+              {pickedSkillIds.length > 0
+                ? `${pickedSkillIds.length} library skill${pickedSkillIds.length === 1 ? "" : "s"} attached`
+                : skillMode === "write"
+                  ? "Drafting a new skill"
+                  : "Optional instructions for specialized behavior"}
+            </p>
+          </div>
+          <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-2 border-t px-3 py-3">
+          <div className="flex items-center justify-end">
           {skillMode === null ? (
             <div className="flex items-center gap-2">
               <button
@@ -354,10 +370,6 @@ export function AgentFormFields({
             </button>
           )}
         </div>
-        <p className="text-xs text-muted-foreground">
-          A skill is a reusable instruction block. Library skills also land in the sandbox as{" "}
-          <code className="font-mono">~/.claude/skills/&lt;slug&gt;/SKILL.md</code> so the TUI discovers them natively.
-        </p>
 
         {pickedSkillIds.length > 0 ? (
           <div className="flex flex-wrap items-center gap-1.5 rounded-md border bg-card px-2 py-1.5 text-xs">
@@ -539,12 +551,25 @@ export function AgentFormFields({
             )}
           </div>
         ) : null}
-      </div>
+        </div>
+      </details>
 
       {/* Env vars — each secret carries its own allowed hosts */}
-      <div className="space-y-1.5">
-        <div className="flex items-center justify-between">
-          <Label>Environment variables (optional)</Label>
+      <details
+        className="group rounded-lg border bg-background/50"
+        open={envVars.some(([k]) => k.trim())}
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 marker:hidden">
+          <div>
+            <p className="text-sm font-medium">Secrets</p>
+            <p className="text-xs text-muted-foreground">
+              Environment variables with per-secret host allowlists
+            </p>
+          </div>
+          <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-2 border-t px-3 py-3">
+          <div className="flex items-center justify-end">
           <label
             className={cn(
               "flex cursor-pointer items-center gap-1.5 rounded-md border border-dashed px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground",
@@ -563,9 +588,7 @@ export function AgentFormFields({
           </label>
         </div>
         <p className="text-xs text-muted-foreground">
-          Injected into every session container, stored encrypted. For each secret,
-          set the hosts its value may be sent to — the vault only swaps the real
-          value into requests for those hosts, so it can&apos;t leak anywhere else.
+          Add only the secrets this agent needs. Each secret must list where it can be used.
         </p>
         <div className="rounded-lg border bg-card">
           <ul className="divide-y">
@@ -639,14 +662,24 @@ export function AgentFormFields({
             <p className="text-xs text-muted-foreground">{count} variable{count === 1 ? "" : "s"} set.</p>
           ) : null;
         })()}
-      </div>
+        </div>
+      </details>
 
       {/* MCP tools */}
-      <div className="space-y-1.5">
-        <Label>MCP tools (optional)</Label>
-        <p className="text-xs text-muted-foreground">
-          Pick which MCP tools this agent can call. Expand a server to see its tools.
-        </p>
+      <details
+        className="group rounded-lg border bg-background/50"
+        open={[...enabledTools.values()].some((tools) => tools.size > 0)}
+      >
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 marker:hidden">
+          <div>
+            <p className="text-sm font-medium">MCP tools</p>
+            <p className="text-xs text-muted-foreground">
+              Optional external tools this agent can call
+            </p>
+          </div>
+          <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="space-y-2 border-t px-3 py-3">
         <McpToolsPicker
           value={enabledTools}
           onChange={(v: EnabledTools | EnabledToolsUpdater) =>
@@ -655,7 +688,8 @@ export function AgentFormFields({
           onToolTotals={onMcpToolTotals}
           disabled={disabled}
         />
-      </div>
+        </div>
+      </details>
     </div>
   );
 }

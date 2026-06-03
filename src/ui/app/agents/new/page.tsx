@@ -2,23 +2,22 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Pencil } from "lucide-react";
+import {
+  ArrowLeft,
+  Bot,
+  Loader2,
+  Pencil,
+  Plus,
+} from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import Link from "next/link";
 import { Button } from "@/ui/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/ui/components/ui/card";
 import { Label } from "@/ui/components/ui/label";
 import { Textarea } from "@/ui/components/ui/textarea";
 import { AgentFormFields, DEFAULT_HARNESS_ID } from "@/ui/components/agent-form-fields";
-import { EnabledTools, EnabledToolsUpdater } from "@/ui/components/mcp-tools-picker";
+import { EnabledTools } from "@/ui/components/mcp-tools-picker";
 import {
   PROJECT_REQUIRED_HARNESS_IDS,
 } from "@/ui/lib/constants";
@@ -151,7 +150,7 @@ export default function NewAgentPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [preinstalledRepo, setPreinstalledRepo] = useState<string>("");
-  const [loadingMeta, setLoadingMeta] = useState(true);
+  const [, setLoadingMeta] = useState(true);
   const [metaError, setMetaError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -175,6 +174,8 @@ export default function NewAgentPage() {
     }
     return null;
   }
+
+  const projectRequired = PROJECT_REQUIRED_HARNESS_IDS.has(harnessId);
 
   async function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -311,30 +312,57 @@ export default function NewAgentPage() {
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-6 py-8">
-      <h1 className="text-[22px] font-semibold tracking-tight">New Agent</h1>
+    <div className="min-h-full bg-background">
+      <div className="w-full px-5 py-6 lg:px-8">
+        <header className="mb-5 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Back to agents"
+              onClick={() => router.push("/agents")}
+              className="text-muted-foreground"
+            >
+              <ArrowLeft className="size-4" />
+            </Button>
+            <div className="min-w-0">
+              <h1 className="text-[20px] font-semibold tracking-tight">Create agent</h1>
+              <p className="text-[12px] text-muted-foreground">Choose a template, runtime, and tools.</p>
+            </div>
+          </div>
+          <Button type="submit" form="new-agent-form" disabled={submitting} size="sm">
+            {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+            {submitting ? "Creating" : "Create"}
+          </Button>
+        </header>
 
-      {/* Template strip — only shown when templates exist */}
-      {templates.length > 0 && (
-        <div className="mt-4 space-y-2">
-          <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-            Templates
-          </p>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {/* Blank — pre-selected */}
+        <form
+          id="new-agent-form"
+          className="space-y-5"
+          onSubmit={onSubmit}
+          noValidate
+        >
+          <section className="space-y-2">
+            <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">
+              Template
+            </p>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-5">
             <button
               type="button"
               onClick={() => selectTemplate("blank")}
               className={cn(
-                "rounded-lg border p-3 text-left transition-colors hover:bg-accent/40",
+                "min-h-[92px] rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-accent/30",
                 selectedTemplateId === "blank"
-                  ? "border-foreground bg-accent/30"
-                  : "border-dashed border-border",
+                  ? "border-foreground/60 bg-accent/30"
+                  : "border-dashed border-border bg-background/50",
               )}
             >
-              <div className="text-lg">✦</div>
-              <div className="mt-1.5 text-[13px] font-semibold">Blank</div>
-              <div className="mt-0.5 text-[12px] text-muted-foreground">Start from scratch.</div>
+              <span className="flex items-center gap-2">
+                <Bot className="size-3.5 text-muted-foreground" />
+                <span className="text-[13px] font-medium">Blank</span>
+              </span>
+              <span className="mt-0.5 block text-[11px] text-muted-foreground">Start from scratch.</span>
             </button>
 
             {templates.map((t) => (
@@ -343,43 +371,30 @@ export default function NewAgentPage() {
                 type="button"
                 onClick={() => selectTemplate(t.id)}
                 className={cn(
-                  "rounded-lg border p-3 text-left transition-colors hover:bg-accent/40",
+                  "min-h-[92px] rounded-lg border px-3 py-2.5 text-left transition-colors hover:bg-accent/30",
                   selectedTemplateId === t.id
-                    ? "border-foreground bg-accent/30"
-                    : "border-border bg-card",
+                    ? "border-foreground/60 bg-accent/30"
+                    : "border-border bg-background/50",
                 )}
               >
-                <div className="text-lg">{t.icon}</div>
-                <div className="mt-1.5 text-[13px] font-semibold">{t.name}</div>
-                <div className="mt-0.5 text-[12px] text-muted-foreground">{t.description}</div>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {t.tags.map((tag) => (
-                    <span key={tag} className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
+                <span className="flex items-center gap-2">
+                  <span className="text-[13px]" aria-hidden>{t.icon}</span>
+                  <span className="truncate text-[13px] font-medium">{t.name}</span>
+                </span>
+                <span className="mt-0.5 line-clamp-2 block text-[11px] text-muted-foreground">
+                  {t.description}
+                </span>
               </button>
             ))}
-          </div>
-        </div>
-      )}
-
-      <div className="mt-5 flex flex-col gap-4">
-        <Card className="order-2">
-          <CardHeader className="sr-only">
-            <CardTitle>New Agent</CardTitle>
-            <CardDescription>Pick a model and system prompt.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-5" onSubmit={onSubmit} noValidate>
+            </div>
+          </section>
 
               {/* Project picker — new-only */}
               {projects.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Project (optional)</p>
+                <section className="space-y-2">
+                  <p className="text-[11px] font-medium uppercase tracking-widest text-muted-foreground">Project</p>
                   <p className="text-[11px] text-muted-foreground">
-                    Pre-fills repo URL and env var keys. Values stay empty — fill in your own.
+                    Pre-fills repo URL and env var keys. Values stay empty.
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {projects.map((t) => {
@@ -392,10 +407,10 @@ export default function NewAgentPage() {
                           onClick={() => applyProject(active ? null : t.id)}
                           disabled={submitting}
                           className={cn(
-                            "flex flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                            "flex min-w-[160px] flex-col items-start gap-1 rounded-lg border px-3 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
                             active
-                              ? "border-foreground bg-accent/40"
-                              : "border-border bg-card hover:bg-accent/30",
+                              ? "border-foreground/70 bg-accent/40"
+                              : "border-border bg-background/60 hover:bg-accent/30",
                           )}
                         >
                           <span className="text-[13px] font-medium text-foreground">{t.name}</span>
@@ -418,7 +433,7 @@ export default function NewAgentPage() {
                     const keys = Object.keys(sel?.env_vars ?? {});
                     if (!sel || keys.length === 0) return null;
                     return (
-                      <div className="rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                      <div className="rounded-lg border border-border bg-muted/20 px-3 py-2.5">
                         <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
                           Env vars in this template
                         </p>
@@ -432,9 +447,10 @@ export default function NewAgentPage() {
                       </div>
                     );
                   })()}
-                </div>
+                </section>
               )}
 
+            <section className="rounded-lg border bg-card/70 p-5 shadow-sm lg:p-6">
               <AgentFormFields
                 name={name} onNameChange={setName}
                 pfpUrl={pfpUrl} onPfpUrlChange={setPfpUrl}
@@ -455,18 +471,19 @@ export default function NewAgentPage() {
                 onMcpToolTotals={setMcpToolTotals}
                 disabled={submitting}
               />
+            </section>
 
               {/* Sandbox projects — inline brain harnesses only */}
-              {PROJECT_REQUIRED_HARNESS_IDS.has(harnessId) && (
-                <div className="space-y-2">
-                  <Label>Sandbox Projects</Label>
-                  <p className="text-[12px] text-muted-foreground">
-                    Claude will be able to provision sandboxes for these projects.
+              {projectRequired && (
+                <section className="rounded-lg border bg-card/70 p-5 shadow-sm lg:p-6">
+                  <Label>Sandbox projects</Label>
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    Inline brain harnesses need at least one sandbox project.
                   </p>
                   {projects.length > 0 ? (
-                    <div className="rounded-lg border divide-y">
+                    <div className="mt-3 divide-y rounded-lg border bg-background/50">
                       {projects.map((p) => (
-                        <label key={p.id} className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-accent/50">
+                        <label key={p.id} className="flex cursor-pointer items-center gap-3 px-3 py-2.5 hover:bg-accent/30">
                           <input
                             type="checkbox"
                             checked={selectedProjects.some((sp) => sp.id === p.id)}
@@ -499,7 +516,7 @@ export default function NewAgentPage() {
                       to add sandbox templates.
                     </p>
                   )}
-                </div>
+                </section>
               )}
 
               {metaError ? (
@@ -508,21 +525,30 @@ export default function NewAgentPage() {
                 </p>
               ) : null}
 
-              <div className="pt-2">
-                <Button type="submit" disabled={submitting}>
-                  {submitting ? "Creating…" : "Create agent"}
+              {error ? (
+                <p className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 font-mono text-xs text-destructive">
+                  {error}
+                </p>
+              ) : null}
+
+              <div className="flex items-center justify-end gap-2 border-t pt-4">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  disabled={submitting}
+                  onClick={() => router.push("/agents")}
+                >
+                  Cancel
                 </Button>
-                {error ? (
-                  <p className="mt-3 font-mono text-xs text-destructive">{error}</p>
-                ) : null}
+                <Button type="submit" disabled={submitting}>
+                  {submitting ? <Loader2 className="size-3.5 animate-spin" /> : <Plus className="size-3.5" />}
+                  {submitting ? "Creating" : "Create agent"}
+                </Button>
               </div>
-            </form>
-          </CardContent>
-        </Card>
+          </form>
 
         {selectedTemplate && (
-          <div>
-            <Card className="overflow-hidden">
+          <section className="mt-4 overflow-hidden rounded-lg border bg-card/70 shadow-sm">
               <div className="flex border-b text-[13px]">
                 {(["overview", "files", "skill", "prompt"] as const)
                   .filter((tab) => {
@@ -547,7 +573,7 @@ export default function NewAgentPage() {
                     </button>
                   ))}
               </div>
-              <CardContent className="pt-4">
+              <div className="p-4">
                 {activeTemplateTab === "overview" && (
                   <div className="space-y-3 text-[13px]">
                     {selectedTemplate.files.length > 0 && (
@@ -677,9 +703,8 @@ export default function NewAgentPage() {
                     className="min-h-[400px] text-[13px] opacity-70"
                   />
                 )}
-              </CardContent>
-            </Card>
-          </div>
+              </div>
+          </section>
         )}
       </div>
     </div>
