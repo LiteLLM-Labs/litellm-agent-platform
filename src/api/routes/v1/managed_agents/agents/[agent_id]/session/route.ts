@@ -28,13 +28,13 @@
  */
 
 import { assertAuth } from "@/api/auth";
+import { getEffectiveLiteLLMGatewayConfig } from "@/api/app-settings";
 import { prisma } from "@/api/db";
 import { env } from "@/api/env";
 import { parseAttachedSkillIds } from "@/api/skill-prompt";
 import {
   buildSkillSandboxFiles,
   getInlineHarnessPodUrl,
-  inlineHarnessUrl,
   runTask,
   waitHttpReady,
   waitRunningGetUrl,
@@ -117,10 +117,17 @@ async function resolveAgentMcpServers(
   serverIds: string[],
 ): Promise<{ specs: HarnessMcpServerSpec[]; warning: string | null }> {
   if (!serverIds || serverIds.length === 0) return { specs: [], warning: null };
-  const litellmBase = env.LITELLM_API_BASE.replace(/\/+$/, "");
+  const gateway = await getEffectiveLiteLLMGatewayConfig();
+  const litellmBase = gateway.base_url.replace(/\/+$/, "");
+  if (!litellmBase || !gateway.api_key) {
+    return {
+      specs: [],
+      warning: "LiteLLM gateway is not configured — MCP tools may be missing.",
+    };
+  }
   try {
     const res = await fetch(`${litellmBase}/v1/mcp/server`, {
-      headers: { Authorization: `Bearer ${env.LITELLM_API_KEY}` },
+      headers: { Authorization: `Bearer ${gateway.api_key}` },
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {

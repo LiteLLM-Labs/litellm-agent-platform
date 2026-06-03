@@ -4,6 +4,7 @@ import { Toaster } from "sonner";
 
 import { ThemeProvider } from "@/ui/components/theme-provider";
 import { Sidebar } from "@/ui/components/sidebar";
+import { LiteLLMGatewayStartupDialog } from "@/ui/components/litellm-gateway-settings";
 
 
 const geistSans = Geist({
@@ -45,6 +46,7 @@ export default function RootLayout({
               {children}
             </main>
           </div>
+          <LiteLLMGatewayStartupDialog />
           <Toaster theme="dark" position="bottom-right" richColors />
         </ThemeProvider>
       </body>

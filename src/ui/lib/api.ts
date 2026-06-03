@@ -1554,6 +1554,27 @@ export function setInlineHarnessEnabled(enable: boolean): Promise<InlineHarnessS
   return api<InlineHarnessStatus>("POST", "/v1/admin/inline-harness", { enable });
 }
 
+export interface LiteLLMGatewayStatus {
+  base_url: string;
+  has_api_key: boolean;
+  configured: boolean;
+}
+
+export interface UpdateLiteLLMGatewayInput {
+  base_url: string;
+  api_key: string;
+}
+
+export function getLiteLLMGatewayStatus(): Promise<LiteLLMGatewayStatus> {
+  return api<LiteLLMGatewayStatus>("GET", "/v1/settings/litellm-gateway");
+}
+
+export function updateLiteLLMGateway(
+  input: UpdateLiteLLMGatewayInput,
+): Promise<LiteLLMGatewayStatus> {
+  return api<LiteLLMGatewayStatus>("PATCH", "/v1/settings/litellm-gateway", input);
+}
+
 // ---------- Templates ----------
 
 export interface TemplateFile {

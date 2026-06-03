@@ -5,12 +5,15 @@ import Link from "next/link";
 import { ChevronDown, RefreshCw } from "lucide-react";
 
 import { Button } from "@/ui/components/ui/button";
+import { LiteLLMGatewayForm } from "@/ui/components/litellm-gateway-settings";
 import {
   AdminStats,
   ApiError,
   InlineHarnessStatus,
+  LiteLLMGatewayStatus,
   getAdminStats,
   getInlineHarnessStatus,
+  getLiteLLMGatewayStatus,
   setInlineHarnessEnabled,
 } from "@/ui/lib/api";
 import { cn } from "@/ui/lib/utils";
@@ -217,6 +220,7 @@ export default function SettingsPage() {
 
   const [harnessStatus, setHarnessStatus] = useState<InlineHarnessStatus | null>(null);
   const [harnessToggling, setHarnessToggling] = useState(false);
+  const [gatewayStatus, setGatewayStatus] = useState<LiteLLMGatewayStatus | null>(null);
 
   const load = useCallback(async (background = false) => {
     if (!background) setLoading(true);
@@ -248,6 +252,14 @@ export default function SettingsPage() {
     }
   }, []);
 
+  const loadGateway = useCallback(async () => {
+    try {
+      setGatewayStatus(await getLiteLLMGatewayStatus());
+    } catch {
+      // non-fatal: the infrastructure cards still render
+    }
+  }, []);
+
   useEffect(() => {
     load();
     const interval = setInterval(() => load(true), POLL_INTERVAL_MS);
@@ -259,6 +271,10 @@ export default function SettingsPage() {
     const interval = setInterval(loadHarness, POLL_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [loadHarness]);
+
+  useEffect(() => {
+    void loadGateway();
+  }, [loadGateway]);
 
   async function toggleHarness() {
     if (!harnessStatus || harnessToggling) return;
@@ -280,9 +296,9 @@ export default function SettingsPage() {
     <div className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6">
       <div className="mb-6 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold">Infrastructure</h1>
+          <h1 className="text-2xl font-semibold">Settings</h1>
           <p className="text-sm text-muted-foreground">
-            Capacity at a glance · polls every 5s
+            LiteLLM gateway and infrastructure
           </p>
         </div>
         <Button
@@ -310,6 +326,19 @@ export default function SettingsPage() {
       {loading && !stats ? (
         <div className="text-sm text-muted-foreground">Loading…</div>
       ) : null}
+
+      <section className="mb-6 rounded-lg border border-border bg-card p-5">
+        <div className="mb-4">
+          <h2 className="text-base font-medium">LiteLLM AI Gateway</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Saved in the database and encrypted with the master key.
+          </p>
+        </div>
+        <LiteLLMGatewayForm
+          status={gatewayStatus}
+          onSaved={(next) => setGatewayStatus(next)}
+        />
+      </section>
 
       {stats && pool && sand ? (
         <>

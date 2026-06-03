@@ -246,6 +246,31 @@ export function Sidebar() {
           />
           <span className="truncate">New Agent</span>
         </Link>
+        <Link
+          href="/settings"
+          aria-current={
+            pathname === "/settings" || pathname.startsWith("/settings/")
+              ? "page"
+              : undefined
+          }
+          className={cn(
+            "mt-1 flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+            pathname === "/settings" || pathname.startsWith("/settings/")
+              ? "bg-sidebar-accent text-foreground"
+              : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
+          )}
+        >
+          <Settings
+            className={cn(
+              "size-[14px] shrink-0",
+              pathname === "/settings" || pathname.startsWith("/settings/")
+                ? "text-foreground"
+                : "text-muted-foreground",
+            )}
+            aria-hidden
+          />
+          <span className="truncate">Settings</span>
+        </Link>
       </div>
 
       {/* Lists */}
@@ -468,7 +493,7 @@ export function Sidebar() {
         <ThemeToggle />
         <Link
           href="/settings"
-          aria-label="Infrastructure"
+          aria-label="Settings"
           aria-current={
             pathname === "/settings" || pathname.startsWith("/settings/")
               ? "page"

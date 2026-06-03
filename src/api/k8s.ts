@@ -31,6 +31,7 @@ import {
   mintAgentRefreshToken,
   type AgentScope,
 } from "@/api/auth/agent-token";
+import { getEffectiveLiteLLMGatewayConfig } from "@/api/app-settings";
 import { env } from "@/api/env";
 import { decrypt } from "@/api/integrations/core/crypto";
 import { renderMemoryBlock, topMemoriesForAgent } from "@/api/memory";
@@ -390,6 +391,7 @@ async function buildContainerEnv(
   opts: RunTaskOpts,
 ): Promise<Array<{ name: string; value: string }>> {
   const { agent, env_vars, session_id } = opts;
+  const litellmGateway = await getEffectiveLiteLLMGatewayConfig();
 
   // Pre-load top-N memories into AGENT_PROMPT so the agent has instinctive
   // awareness from turn 1. The search_memory tool inside the harness reads
@@ -435,7 +437,7 @@ async function buildContainerEnv(
     // vault sidecar as REAL_LITELLM_API_KEY so vault stubs it before the
     // harness starts. The harness sources /lap-shared/env and receives only
     // the stub, keeping the real key off the process's visible environment.
-    LITELLM_API_BASE: env.LITELLM_API_BASE,
+    LITELLM_API_BASE: litellmGateway.base_url,
     LITELLM_DEFAULT_MODEL: agent.model,
     AGENT_PROMPT: fullPrompt,
     SKILLS_JSON: skillsJson,
@@ -529,8 +531,9 @@ function hostFromUrl(u: string | undefined | null): string | null {
 // sees a freshly minted stub. A credential bound to host(s) in env_var_hosts
 // also gets a HOST_<KEY> so the vault only swaps it into requests for those
 // hosts (host-scoped swap); platform creds are auto-bound to their upstreams.
-function buildVaultEnv(opts: RunTaskOpts): Array<{ name: string; value: string }> {
+async function buildVaultEnv(opts: RunTaskOpts): Promise<Array<{ name: string; value: string }>> {
   const { agent } = opts;
+  const litellmGateway = await getEffectiveLiteLLMGatewayConfig();
   const raw =
     agent.env_vars &&
     typeof agent.env_vars === "object" &&
@@ -577,10 +580,10 @@ function buildVaultEnv(opts: RunTaskOpts): Array<{ name: string; value: string }
   // claude-code harness derives from it) is also a stub — the real key never
   // appears in the process environment. Outbound API calls carry the stub in
   // Authorization headers; vault swaps it for the real key at the wire.
-  out.push({ name: "REAL_LITELLM_API_KEY", value: env.LITELLM_API_KEY });
+  out.push({ name: "REAL_LITELLM_API_KEY", value: litellmGateway.api_key });
   // Auto-bind the platform key to the model endpoint so the stub is only ever
   // swapped on calls to the LiteLLM proxy, never reflected off a third party.
-  const litellmHost = hostFromUrl(env.LITELLM_API_BASE);
+  const litellmHost = hostFromUrl(litellmGateway.base_url);
   if (litellmHost) out.push({ name: "HOST_LITELLM_API_KEY", value: litellmHost });
 
   // Per-pod scoped tokens for the harness's calls back into LAP. The access
@@ -636,7 +639,7 @@ function buildVaultEnv(opts: RunTaskOpts): Array<{ name: string; value: string }
     const boundHosts = Object.values(envVarHosts)
       .flatMap((v) => (Array.isArray(v) ? v : []))
       .filter((h): h is string => typeof h === "string");
-    const infraHosts = [hostFromUrl(env.LITELLM_API_BASE), hostFromUrl(env.LAP_BASE_URL)]
+    const infraHosts = [hostFromUrl(litellmGateway.base_url), hostFromUrl(env.LAP_BASE_URL)]
       .filter((h): h is string => h !== null);
     const effectiveAllow = [...new Set([...allowOut, ...boundHosts, ...infraHosts])];
     out.push({ name: "EGRESS_ALLOW_OUT", value: effectiveAllow.join(",") });
@@ -771,7 +774,7 @@ export async function runTask(
               name: "vault",
               image: env.K8S_VAULT_IMAGE,
               imagePullPolicy: env.K8S_IMAGE_PULL_POLICY,
-              env: buildVaultEnv(opts),
+              env: await buildVaultEnv(opts),
               volumeMounts: [
                 { name: "lap-shared", mountPath: "/lap-shared" },
                 { name: "vault-ca", mountPath: "/etc/vault-ca", readOnly: true },
@@ -1572,6 +1575,7 @@ export async function createInlineHarnessDeployment(image: string): Promise<void
   const ns = env.K8S_NAMESPACE;
   const port = env.CONTAINER_PORT;
   const labels = { app: INLINE_HARNESS_NAME };
+  const litellmGateway = await getEffectiveLiteLLMGatewayConfig();
 
   // Matches the session-sandbox security model: LITELLM_API_KEY is never in
   // the harness container env. Vault sidecar holds REAL_LITELLM_API_KEY and
@@ -1583,7 +1587,7 @@ export async function createInlineHarnessDeployment(image: string): Promise<void
     // time. This placeholder satisfies the entrypoint check in older images
     // and sets the server.ts fallback to a sensible value.
     { name: "LITELLM_DEFAULT_MODEL", value: "anthropic/claude-sonnet-4-6" },
-    { name: "LITELLM_API_BASE", value: env.LITELLM_API_BASE },
+    { name: "LITELLM_API_BASE", value: litellmGateway.base_url },
     { name: "LAP_BASE_URL", value: env.LAP_BASE_URL },
     // MASTER_KEY as LAP_AUTH_TOKEN lets buildSandboxMcpServer authenticate
     // back to the platform for provision/execute calls. Cluster-internal HTTP
@@ -1607,7 +1611,7 @@ export async function createInlineHarnessDeployment(image: string): Promise<void
   // No per-session LAP tokens needed — this is a shared platform service.
   const vaultEnv: Array<{ name: string; value: string }> = [
     { name: "MASTER_KEY",           value: env.MASTER_KEY },
-    { name: "REAL_LITELLM_API_KEY", value: env.LITELLM_API_KEY },
+    { name: "REAL_LITELLM_API_KEY", value: litellmGateway.api_key },
   ];
 
   const deployment: k8s.V1Deployment = {

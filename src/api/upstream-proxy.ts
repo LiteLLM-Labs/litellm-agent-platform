@@ -6,7 +6,7 @@
  */
 
 import { assertAuth } from "@/api/auth";
-import { env } from "@/api/env";
+import { getEffectiveLiteLLMGatewayConfig } from "@/api/app-settings";
 
 const HOP_BY_HOP = new Set([
   "host",
@@ -35,7 +35,8 @@ export async function forwardToLiteLLM(
     throw r;
   }
 
-  const base = env.LITELLM_API_BASE.replace(/\/+$/, "");
+  const gateway = await getEffectiveLiteLLMGatewayConfig();
+  const base = gateway.base_url.replace(/\/+$/, "");
   if (!base) {
     const joinedPath = path.join("/");
     if (prefix === "v1" && joinedPath === "models" && req.method === "GET") {
@@ -62,7 +63,7 @@ export async function forwardToLiteLLM(
     if (k.toLowerCase() === "authorization") continue;
     headers.set(k, v);
   }
-  headers.set("Authorization", `Bearer ${env.LITELLM_API_KEY}`);
+  headers.set("Authorization", `Bearer ${gateway.api_key}`);
 
   const init: RequestInit & { duplex?: "half" } = {
     method: req.method,
