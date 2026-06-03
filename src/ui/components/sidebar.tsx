@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronDown, ChevronRight, FileText, LayoutTemplate, Plus, Settings } from "lucide-react";
+import { Bot, ChevronDown, ChevronRight, FileText, LayoutTemplate, Settings } from "lucide-react";
 
 import { AgentAvatar } from "@/ui/components/agent-avatar";
 import { ThemeToggle } from "@/ui/components/theme-toggle";
@@ -223,29 +223,29 @@ export function Sidebar() {
         </Link>
       </div>
 
-      {/* New Agent CTA */}
+      {/* Primary links */}
       <div className="px-2 pb-2">
         <div className="space-y-px">
           <Link
-            href="/agents/new"
-            aria-current={pathname === "/agents/new" ? "page" : undefined}
+            href="/agents"
+            aria-current={pathname === "/agents" ? "page" : undefined}
             className={cn(
               "flex h-7 items-center gap-2 rounded-md px-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              pathname === "/agents/new"
+              pathname === "/agents"
                 ? "bg-sidebar-accent text-foreground"
                 : "text-muted-foreground hover:bg-sidebar-accent hover:text-foreground",
             )}
           >
-            <Plus
+            <Bot
               className={cn(
                 "size-[14px] shrink-0",
-                pathname === "/agents/new"
+                pathname === "/agents"
                   ? "text-foreground"
                   : "text-muted-foreground",
               )}
               aria-hidden
             />
-            <span className="truncate">New Agent</span>
+            <span className="truncate">Agents</span>
           </Link>
           <Link
             href="/agents/templates"
