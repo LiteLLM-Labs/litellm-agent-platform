@@ -1,16 +1,16 @@
-# agent-templates/
+# src/agent-templates/
 
 File storage for templates defined in [`agent_templates.json`](../agent_templates.json).
 
 When a template in `agent_templates.json` has a `"files"` array, the referenced
-files are read from `agent-templates/<id>/<template_path>` at server startup,
+files are read from `src/agent-templates/<id>/<template_path>` at server startup,
 base64-encoded, and injected into the sandbox pod as env vars. The harness
 entrypoint writes them to `sandbox_path` before starting the agent.
 
 ## Structure
 
 ```
-agent-templates/
+src/agent-templates/
   <template-id>/
     <file>        any file referenced by the template's "files" array
 ```
@@ -82,8 +82,8 @@ the field is absent, but omitting it means drift can never be detected.
 ## Adding a new template
 
 1. Add an entry to `agent_templates.json` with `"version": 1`.
-2. If the template needs files, create `agent-templates/<id>/` and add them.
-3. If it needs a skill, add `agent-templates/<id>/skill.md` with YAML frontmatter:
+2. If the template needs files, create `src/agent-templates/<id>/` and add them.
+3. If it needs a skill, add `src/agent-templates/<id>/skill.md` with YAML frontmatter:
 
    ```markdown
    ---

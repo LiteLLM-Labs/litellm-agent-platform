@@ -28,6 +28,9 @@ scripts/dashboard.py
 
 # testing
 /coverage
+/test-results/
+/soak-test-*/
+/ss-*.png
 
 # next.js
 /.next/

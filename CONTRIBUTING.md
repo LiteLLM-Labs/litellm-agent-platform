@@ -129,13 +129,13 @@ The `WARM_POOL_SIZE=0` setting prevents the background reconciler from trying to
 
 ### How it works
 
-At Next.js startup, `instrumentation.ts` auto-spawns `harnesses/claude-agent-sdk/dist/server.js` on a random free port and writes the URL into `process.env.CLAUDE_CODE_INLINE_URL`. Session creates for `claude-code-brain-inline` agents route to that shared harness server — no manual harness start, no `LOCAL_SANDBOX_URL` needed.
+At Next.js startup, `src/instrumentation.ts` auto-spawns `harnesses/claude-agent-sdk/dist/server.js` on a random free port and writes the URL into `process.env.CLAUDE_CODE_INLINE_URL`. Session creates for `claude-code-brain-inline` agents route to that shared harness server — no manual harness start, no `LOCAL_SANDBOX_URL` needed.
 
 The harness's `provision`/`execute` MCP tools call back to the platform at `LAP_BASE_URL`. Without `LAP_BASE_URL` + `LAP_AUTH_TOKEN`, those tools are silently absent and the agent runs text-only.
 
 ### Step 1: Build the harness
 
-The harness must be built before `npm run dev` — instrumentation.ts spawns the compiled output:
+The harness must be built before `npm run dev` — `src/instrumentation.ts` spawns the compiled output:
 
 ```bash
 cd harnesses/claude-agent-sdk && npm install && npm run build && cd ../..
@@ -150,7 +150,7 @@ LAP_BASE_URL=http://localhost:3000
 LAP_AUTH_TOKEN=sk-local-dev   # same value as MASTER_KEY
 ```
 
-Leave `CLAUDE_CODE_INLINE_URL` **unset** — instrumentation.ts sets it automatically.
+Leave `CLAUDE_CODE_INLINE_URL` **unset** — `src/instrumentation.ts` sets it automatically.
 
 ### Step 3: Start the platform
 

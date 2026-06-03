@@ -112,24 +112,24 @@ COPY --from=builder --chown=nextjs:nodejs /app/package.json /app/package-lock.js
 COPY --from=builder --chown=nextjs:nodejs /app/src/server ./src/server
 COPY --from=builder --chown=nextjs:nodejs /app/src/worker ./src/worker
 
-# Agent templates — loaded at runtime by src/server/templates.ts via
-# readFileSync(process.cwd() + "/agent-templates"). Not picked up by
-# Next.js file tracing (dynamic path), so must be copied explicitly.
-COPY --from=builder --chown=nextjs:nodejs /app/agent_templates.json ./agent_templates.json
-COPY --from=builder --chown=nextjs:nodejs /app/agent-templates ./agent-templates
+# Agent templates — loaded at runtime by src/server/templates.ts via dynamic
+# paths. Not picked up by Next.js file tracing, so must be copied explicitly.
+COPY --from=builder --chown=nextjs:nodejs /app/src/agent_templates.json ./src/agent_templates.json
+COPY --from=builder --chown=nextjs:nodejs /app/src/agent-templates ./src/agent-templates
 
-# server-proxy.mjs: use RUN --mount=bind so the layer hash includes GIT_SHA
+# src/server/server-proxy.mjs: use RUN --mount=bind so the layer hash includes GIT_SHA
 # in the command text, preventing ECR from deduplicating it with any old layer.
 # (COPY layers have been observed to be served from ECR cache despite --no-cache
 # builds producing the correct content in the local BuildKit CAS.)
 ARG GIT_SHA=unknown
 ARG SERVER_PROXY_SHA256=unknown
-RUN --mount=type=bind,source=server-proxy-v2.mjs,target=/tmp/server-proxy-src.mjs \
-    echo "baking server-proxy-v2.mjs from commit $GIT_SHA" && \
-    cp /tmp/server-proxy-src.mjs /app/server-proxy-v2.mjs && \
-    chown nextjs:nodejs /app/server-proxy-v2.mjs && \
-    actual=$(sha256sum /app/server-proxy-v2.mjs | awk '{print $1}') && \
-    echo "server-proxy-v2.mjs sha256: $actual" && \
+RUN --mount=type=bind,source=src/server/server-proxy.mjs,target=/tmp/server-proxy-src.mjs \
+    echo "baking src/server/server-proxy.mjs from commit $GIT_SHA" && \
+    mkdir -p /app/src/server && \
+    cp /tmp/server-proxy-src.mjs /app/src/server/server-proxy.mjs && \
+    chown nextjs:nodejs /app/src/server/server-proxy.mjs && \
+    actual=$(sha256sum /app/src/server/server-proxy.mjs | awk '{print $1}') && \
+    echo "src/server/server-proxy.mjs sha256: $actual" && \
     [ "$SERVER_PROXY_SHA256" = "unknown" ] || \
     [ "$actual" = "$SERVER_PROXY_SHA256" ] || \
     (echo "FATAL: hash mismatch — expected $SERVER_PROXY_SHA256 got $actual" && exit 1)
@@ -138,9 +138,9 @@ USER nextjs
 EXPOSE 3000
 
 # Push schema, then start the server.
-# IN_CLUSTER=true: server-proxy.mjs listens on PORT (3000) and spawns
+# IN_CLUSTER=true: src/server/server-proxy.mjs listens on PORT (3000) and spawns
 #   Next.js on NEXT_PORT (3001 by default). The proxy intercepts WebSocket
 #   upgrades for /api/v1/managed_agents/sessions/*/tty and pipes them to
 #   the sandbox pod; all other traffic is forwarded to Next.js.
 # Not IN_CLUSTER: run Next.js standalone directly (local dev / no proxy needed).
-CMD ["sh", "-c", "DATABASE_URL=\"${DATABASE_URL}&connection_limit=1&connect_timeout=30\" node node_modules/prisma/build/index.js db push --accept-data-loss --skip-generate && if [ \"${IN_CLUSTER}\" = \"true\" ]; then node server-proxy-v2.mjs; else node server.js; fi"]
+CMD ["sh", "-c", "DATABASE_URL=\"${DATABASE_URL}&connection_limit=1&connect_timeout=30\" node node_modules/prisma/build/index.js db push --accept-data-loss --skip-generate && if [ \"${IN_CLUSTER}\" = \"true\" ]; then node src/server/server-proxy.mjs; else node server.js; fi"]

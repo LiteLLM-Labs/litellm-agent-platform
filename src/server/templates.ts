@@ -1,10 +1,10 @@
 /**
  * Agent template loader.
  *
- * Single source of truth: agent_templates.json at the repo root.
+ * Single source of truth: src/agent_templates.json.
  *
  * Templates with a "files" array reference files stored under
- * agent-templates/<id>/<template_path>. Those files are base64-encoded
+ * src/agent-templates/<id>/<template_path>. Those files are base64-encoded
  * into LAP_FILE_N_DEST / LAP_FILE_N_CONTENT env vars at load time;
  * the harness entrypoint decodes and writes them to sandbox_path before
  * exec'ing the server.
@@ -53,7 +53,7 @@ interface RawTemplate {
   harness_id: string;
   model: string;
   prompt?: string;
-  /** Path to a Claude Code-format skill .md (relative to agent-templates/<id>/). */
+  /** Path to a Claude Code-format skill .md (relative to src/agent-templates/<id>/). */
   skill_file?: string;
   skill_name?: string;
   skill?: string;
@@ -64,8 +64,8 @@ interface RawTemplate {
 }
 
 const ROOT = process.cwd();
-const JSON_FILE = join(ROOT, "agent_templates.json");
-const FILES_DIR = join(ROOT, "agent-templates");
+const JSON_FILE = join(ROOT, "src", "agent_templates.json");
+const FILES_DIR = join(ROOT, "src", "agent-templates");
 
 function resolveFiles(id: string, rawFiles: Omit<TemplateFile, "content">[]): {
   files: TemplateFile[];

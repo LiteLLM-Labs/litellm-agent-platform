@@ -9,7 +9,7 @@
  *
  * Returns { template_id, previous_version, new_version, status }.
  * 400 if the agent has no template_id.
- * 404 if the template no longer exists in agent_templates.json.
+ * 404 if the template no longer exists in src/agent_templates.json.
  * 200 with status: "already_up_to_date" if already at the latest version.
  */
 
