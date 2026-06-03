@@ -2,7 +2,6 @@
 [![Discord](https://img.shields.io/badge/Discord-Chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/Nkxw3rm3EE)
 
 > [!WARNING]
-> **Deprecation Notice:**
 >
 > For a unified harness across OpenCode/Claude Code/Codex, go to: [`lite-harness`](https://github.com/LiteLLM-Labs/lite-harness).
 >
