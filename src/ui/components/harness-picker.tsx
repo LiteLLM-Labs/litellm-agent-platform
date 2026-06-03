@@ -74,15 +74,31 @@ export function HarnessPicker({ value, onChange, disabled }: HarnessPickerProps)
         aria-haspopup="listbox"
         onClick={() => setOpen((current) => !current)}
         disabled={disabled}
-        className="flex h-[58px] w-full items-center gap-3 rounded-lg border border-input bg-background/50 px-3 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-60"
+        className={cn(
+          "group flex min-h-14 w-full items-center gap-3 rounded-lg border bg-background px-3 py-2 text-left shadow-sm outline-none transition",
+          "hover:border-foreground/40 hover:bg-muted/35 hover:shadow-md focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring",
+          open && "border-ring ring-2 ring-ring/35",
+          "disabled:pointer-events-none disabled:opacity-60",
+        )}
       >
-        <HarnessIdentity option={selected} size="default" />
-        <ChevronDown
-          className={cn(
-            "ml-auto size-4 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-180",
-          )}
-        />
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-xl border bg-background shadow-sm">
+          <HarnessLogo option={selected} className="size-6" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{selected.label}</span>
+          <span className="block truncate font-mono text-[11px] text-muted-foreground">
+            {selected.model}
+          </span>
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5 rounded-md border bg-muted/40 px-2 py-1 text-[11px] font-medium text-muted-foreground transition group-hover:border-foreground/25 group-hover:bg-background group-hover:text-foreground">
+          Change
+          <ChevronDown
+            className={cn(
+              "size-3.5 transition-transform",
+              open && "rotate-180",
+            )}
+          />
+        </span>
       </button>
 
       {open ? (
@@ -101,8 +117,10 @@ export function HarnessPicker({ value, onChange, disabled }: HarnessPickerProps)
                 aria-selected={active}
                 onClick={() => selectHarness(opt.id)}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left outline-none transition-colors hover:bg-muted/30 focus-visible:bg-muted/30",
-                  active && "bg-muted/30",
+                  "flex w-full items-center gap-3 rounded-lg border border-transparent px-2.5 py-2.5 text-left transition-colors",
+                  active
+                    ? "border-ring/35 bg-muted text-foreground"
+                    : "hover:border-border hover:bg-muted/60",
                 )}
               >
                 <HarnessIdentity option={opt} size="picker" />
