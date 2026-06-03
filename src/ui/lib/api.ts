@@ -379,6 +379,11 @@ interface FastApiValidationItem {
   type: string;
 }
 
+interface ZodValidationItem {
+  path?: (string | number)[];
+  message?: string;
+}
+
 export class ApiError extends Error {
   status: number;
   detail: unknown;
@@ -394,18 +399,28 @@ export class ApiError extends Error {
 function extractErrorMessage(detail: unknown, status: number): string {
   if (typeof detail === "string") return detail;
   if (Array.isArray(detail)) {
-    const items = detail as FastApiValidationItem[];
+    const items = detail as Array<FastApiValidationItem | ZodValidationItem>;
     return items
-      .map((it) =>
-        it && typeof it === "object" && "msg" in it
-          ? String(it.msg)
-          : JSON.stringify(it),
-      )
+      .map((it) => {
+        if (!it || typeof it !== "object") return JSON.stringify(it);
+        if ("msg" in it && typeof it.msg === "string") return it.msg;
+        if ("message" in it && typeof it.message === "string") {
+          const path =
+            "path" in it && Array.isArray(it.path) && it.path.length > 0
+              ? `${it.path.join(".")}: `
+              : "";
+          return `${path}${it.message}`;
+        }
+        return JSON.stringify(it);
+      })
       .join("; ");
   }
   if (detail && typeof detail === "object") {
     const obj = detail as Record<string, unknown>;
     if (typeof obj.error === "string") return obj.error;
+    if (Array.isArray(obj.error)) {
+      return extractErrorMessage(obj.error, status);
+    }
     if (typeof obj.message === "string") return obj.message;
   }
   return `Request failed with status ${status}`;

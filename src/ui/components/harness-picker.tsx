@@ -63,7 +63,7 @@ export const HARNESS_OPTIONS: HarnessOption[] = [
   },
 ];
 
-export const DEFAULT_HARNESS_ID = HARNESS_OPTIONS[0].id;
+export const DEFAULT_HARNESS_ID = "opencode";
 
 const MODE_CLASS: Record<HarnessMode, string> = {
   CHAT: "bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950 dark:text-blue-300 dark:border-blue-800",

@@ -19,7 +19,9 @@ import { Label } from "@/ui/components/ui/label";
 import { Textarea } from "@/ui/components/ui/textarea";
 import { AgentFormFields, DEFAULT_HARNESS_ID } from "@/ui/components/agent-form-fields";
 import { EnabledTools, EnabledToolsUpdater } from "@/ui/components/mcp-tools-picker";
-import { BRAIN_INLINE_HARNESS_ID } from "@/ui/lib/constants";
+import {
+  PROJECT_REQUIRED_HARNESS_IDS,
+} from "@/ui/lib/constants";
 import {
   AgentTemplate,
   ApiError,
@@ -35,6 +37,16 @@ import { cn } from "@/ui/lib/utils";
 
 const DEFAULT_MODEL = "anthropic/claude-haiku-4-5";
 const NAME_MAX = 64;
+
+function normalizeRepoUrl(repo: string | undefined): string | undefined {
+  const trimmed = repo?.trim();
+  if (!trimmed) return undefined;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(trimmed)) {
+    return `https://github.com/${trimmed}`;
+  }
+  return trimmed;
+}
 
 interface LocalProject {
   id: string;
@@ -158,6 +170,9 @@ export default function NewAgentPage() {
       return `Name must be ${NAME_MAX} characters or fewer.`;
     }
     if (!model.trim()) return "Model is required.";
+    if (PROJECT_REQUIRED_HARNESS_IDS.has(harnessId) && selectedProjects.length === 0) {
+      return "Select at least one sandbox project for this harness.";
+    }
     return null;
   }
 
@@ -255,13 +270,16 @@ export default function NewAgentPage() {
       }
 
       const selectedProject = projects.find((s) => s.id === selectedProjectId);
+      const repoUrl = normalizeRepoUrl(
+        selectedProject?.repo_url || preinstalledRepo || undefined,
+      );
       const created = await createAgent({
         name: name.trim() || undefined,
         model: model.trim(),
         prompt: finalPrompt,
         harness_id: harnessId,
         requirements: selectedTemplate?.requirements ?? undefined,
-        repo_url: selectedProject?.repo_url || preinstalledRepo || undefined,
+        repo_url: repoUrl,
         branch: branchOverride.trim() || undefined,
         pfp_url: pfpUrl ?? undefined,
         mcp_servers: mcpServers.length > 0 ? mcpServers : undefined,
@@ -274,7 +292,7 @@ export default function NewAgentPage() {
         // Preserve template provenance so the platform can detect version drift
         // and surface "sync available" when the template is later updated.
         template_id: selectedTemplate?.id ?? undefined,
-        projects: harnessId === BRAIN_INLINE_HARNESS_ID && selectedProjects.length > 0
+        projects: PROJECT_REQUIRED_HARNESS_IDS.has(harnessId) && selectedProjects.length > 0
           ? selectedProjects.map((p): ProjectConfig => ({
               id: p.id,
               name: p.name,
@@ -438,8 +456,8 @@ export default function NewAgentPage() {
                 disabled={submitting}
               />
 
-              {/* Sandbox projects — brain-inline only */}
-              {harnessId === BRAIN_INLINE_HARNESS_ID && (
+              {/* Sandbox projects — inline brain harnesses only */}
+              {PROJECT_REQUIRED_HARNESS_IDS.has(harnessId) && (
                 <div className="space-y-2">
                   <Label>Sandbox Projects</Label>
                   <p className="text-[12px] text-muted-foreground">
