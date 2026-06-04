@@ -10,7 +10,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
-    "worker": "tsx --tsconfig tsconfig.worker.json src/api/worker/index.ts"
+    "worker": "tsx --tsconfig tsconfig.worker.json api/worker/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.2.138",

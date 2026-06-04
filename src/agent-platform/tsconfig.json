@@ -20,7 +20,7 @@
     ],
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./*"]
     }
   },
   "include": [
@@ -32,12 +32,6 @@
     "**/*.mts"
   ],
   "exclude": [
-    "node_modules",
-    "harnesses",
-    "vault",
-    "cloud-vault",
-    "tests",
-    "playwright.config.ts",
-    "src/lite-harness-sdk"
+    "node_modules"
   ]
 }

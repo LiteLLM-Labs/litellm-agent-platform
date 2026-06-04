@@ -21,8 +21,22 @@ This area is vendored/standalone: it has no dependency on `agent-platform/`.
 
 ## `agent-platform/`
 
-Application-platform code (everything that is **not** the SDK) — entry points
-and platform services that build on top of `lite-harness-sdk`.
+The application — a **self-contained Next.js project** that builds on top of
+`lite-harness-sdk`. It owns its own `package.json`, `node_modules`, `prisma/`,
+`.env`, and Next/TypeScript config, so the repo root stays clean. Run it from
+its own directory:
+
+```bash
+cd src/agent-platform
+npm install
+npm run dev        # next dev
+npm run build      # next build  (output: standalone)
+npm run worker     # background reconciler
+```
+
+Layout: `app/` (Next router) + `instrumentation.ts`, `api/` (backend), `ui/`
+(React), `shared/` (types), `agent-templates/` + `agent_templates.json` (data).
+Imports use the `@/*` alias → `agent-platform/*`.
 
 ---
 

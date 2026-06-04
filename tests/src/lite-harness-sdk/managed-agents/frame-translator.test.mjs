@@ -1,7 +1,7 @@
 // Table-driven unit tests for the frame translator (runtime.mjs).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { translateFrame } from "../../../../../src/lite-harness-sdk/managed-agents/runtime.mjs";
+import { translateFrame } from "../../../../src/lite-harness-sdk/managed-agents/runtime.mjs";
 
 // Helper: assert result is an empty array.
 function assertEmpty(result, label) {

@@ -79,8 +79,8 @@ interface RawTemplate {
 }
 
 const ROOT = process.cwd();
-const JSON_FILE = join(ROOT, "src", "agent_templates.json");
-const FILES_DIR = join(ROOT, "src", "agent-templates");
+const JSON_FILE = join(ROOT, "agent_templates.json");
+const FILES_DIR = join(ROOT, "agent-templates");
 
 function resolveFiles(id: string, rawFiles: Omit<TemplateFile, "content">[]): {
   files: TemplateFile[];

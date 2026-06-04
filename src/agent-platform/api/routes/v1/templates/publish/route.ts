@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const execFile = promisify(execFileCb);
-const TEMPLATE_JSON = "src/agent_templates.json";
+const TEMPLATE_JSON = "src/agent-platform/agent_templates.json";
 const REPO = "LiteLLM-Labs/litellm-agent-platform";
 
 const McpAllowedToolsSchema = z.object({

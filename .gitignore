@@ -33,7 +33,7 @@ scripts/dashboard.py
 /ss-*.png
 
 # next.js
-/.next/
+.next/
 /out/
 
 # production

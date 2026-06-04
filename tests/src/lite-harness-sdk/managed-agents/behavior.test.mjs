@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { createState, createApp } from "../../../../../src/lite-harness-sdk/managed-agents/index.mjs";
+import { createState, createApp } from "../../../../src/lite-harness-sdk/managed-agents/index.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FAKE = resolve(__dirname, "fake-harness.mjs");
