@@ -11,10 +11,10 @@ import assert from "node:assert/strict";
 import http from "node:http";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { createState, createApp } from "../../../../../../src/open-harness-sdk/server/managed-agents/index.mjs";
+import { createState, createApp } from "../../../../../../src/lite-harness-sdk/managed-agents/index.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const SERVER_PATH = resolve(__dirname, "../../../../../../src/open-harness-sdk/server/server.mjs");
+const SERVER_PATH = resolve(__dirname, "../../../../../../src/lite-harness-sdk/server/server.mjs");
 const SKIP = !process.env.HERMES_LIVE;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

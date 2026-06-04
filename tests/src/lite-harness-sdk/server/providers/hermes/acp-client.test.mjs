@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { createAcpClient } from "../../../../../../src/open-harness-sdk/server/providers/hermes/acp-client.mjs";
+import { createAcpClient } from "../../../../../../src/lite-harness-sdk/server/providers/hermes/acp-client.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FAKE = resolve(__dirname, "../../../../../../tests/fixtures/fake-acp-server.mjs");

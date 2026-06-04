@@ -57,7 +57,10 @@ export async function createAcpClient({ cwd, env = process.env, diagnostics = ()
     }
   });
 
+  let startupError = null;
+
   function rejectAll(err) {
+    startupError = startupError ?? err;
     for (const p of pending.values()) p.reject(err);
     pending.clear();
   }
@@ -99,6 +102,12 @@ export async function createAcpClient({ cwd, env = process.env, diagnostics = ()
   // A fixed delay is simpler and more robust than trying to detect readiness
   // via stderr (which depends on log format that can change across versions).
   await new Promise((r) => setTimeout(r, 1200));
+
+  // Surface startup failures (ENOENT, immediate exit) that arrived during the wait.
+  if (dead) {
+    try { child.kill(); } catch { /* ignore */ }
+    throw startupError ?? new Error("hermes-acp exited during startup");
+  }
 
   // Initialize handshake — also surfaces ENOENT if the command is missing.
   // protocolVersion: 1 is required by InitializeRequest.

@@ -5,7 +5,7 @@
 //   update.sessionUpdate discriminator and update.content.text.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { transform, finalAssistantFrame } from "../../../../../../src/open-harness-sdk/server/providers/hermes/transformation.mjs";
+import { transform, finalAssistantFrame } from "../../../../../../src/lite-harness-sdk/server/providers/hermes/transformation.mjs";
 
 const CTX = { sessionId: "sess_abc123", model: "hermes" };
 

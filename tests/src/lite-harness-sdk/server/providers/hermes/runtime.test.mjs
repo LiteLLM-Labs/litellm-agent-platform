@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
-import { createRuntime } from "../../../../../../src/open-harness-sdk/server/providers/hermes/index.mjs";
+import { createRuntime } from "../../../../../../src/lite-harness-sdk/server/providers/hermes/index.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FAKE = resolve(__dirname, "../../../../../../tests/fixtures/fake-acp-server.mjs");
@@ -128,14 +128,14 @@ test("runtime: interrupt stops an in-flight prompt", async () => {
 });
 
 test("runtime: resolveHarness accepts any valid agent string", async () => {
-  const { resolveHarness } = await import("../../../../../../src/open-harness-sdk/server/managed-agents/runtime.mjs");
+  const { resolveHarness } = await import("../../../../../../src/lite-harness-sdk/managed-agents/runtime.mjs");
   assert.doesNotThrow(() => resolveHarness("hermes"));
   const { spawnArgs } = resolveHarness("hermes");
   assert.ok(spawnArgs.includes("hermes"), "spawn args include hermes agent");
 });
 
 test("runtime: resolveHarness rejects empty/null agent", async () => {
-  const { resolveHarness } = await import("../../../../../../src/open-harness-sdk/server/managed-agents/runtime.mjs");
+  const { resolveHarness } = await import("../../../../../../src/lite-harness-sdk/managed-agents/runtime.mjs");
   assert.throws(() => resolveHarness(""), /agent must be/);
   assert.throws(() => resolveHarness(null), /agent must be/);
 });

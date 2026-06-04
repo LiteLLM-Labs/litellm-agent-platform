@@ -17,11 +17,11 @@ import { dirname, resolve } from "node:path";
 import {
   createState,
   createApp,
-} from "../../../../../../src/open-harness-sdk/server/managed-agents/index.mjs";
+} from "../../../../../../src/lite-harness-sdk/managed-agents/index.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FAKE_ACP = resolve(__dirname, "../../../../../../tests/fixtures/fake-acp-server.mjs");
-const SERVER_PATH = resolve(__dirname, "../../../../../../src/open-harness-sdk/server/server.mjs");
+const SERVER_PATH = resolve(__dirname, "../../../../../../src/lite-harness-sdk/server/server.mjs");
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
