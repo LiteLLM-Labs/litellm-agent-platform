@@ -144,12 +144,10 @@ export function createManagedSession({ sessionId, spawnArgs, serverPath, env, em
     );
 
     // Drain stderr, keeping the tail so an unexpected exit can report why.
-    // Forward to process.stderr so harness diagnostics (errors, warnings) are visible.
     let stderrTail = "";
     child.stderr.setEncoding("utf8");
     child.stderr.on("data", (d) => {
       stderrTail = (stderrTail + d).slice(-1000);
-      process.stderr.write(d);
     });
 
     // Reader loop over child stdout (NDJSON -> translate -> emit).
