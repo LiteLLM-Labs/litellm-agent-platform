@@ -70,6 +70,7 @@ import {
   listRules,
   listSkills,
 } from "@/lib/api";
+import { runtimeBrandIconId } from "@/lib/runtime-branding";
 import { scheduleLabel } from "@/lib/schedule";
 import type { Agent, AgentRuntime, Rule, Skill, RuntimeHarness } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -1293,7 +1294,7 @@ function RuntimeSelectOption({
           compact ? "size-6" : "size-8",
         )}
       >
-        <BrandIcon id={runtimeIconId(apiSpec || alias)} className={compact ? "size-3.5" : "size-4"} />
+        <BrandIcon id={runtimeBrandIconId(alias, apiSpec)} className={compact ? "size-3.5" : "size-4"} />
       </span>
       <span className="min-w-0">
         <span className="flex min-w-0 items-center gap-2">
@@ -1310,12 +1311,6 @@ function RuntimeSelectOption({
       </span>
     </span>
   );
-}
-
-function runtimeIconId(value: string): string {
-  if (value === "claude_managed_agents" || value === "claude_agents") return "claude";
-  if (value === "gemini_antigravity") return "gemini";
-  return value || "opencode";
 }
 
 function runtimeApiSpec(value: string): string {

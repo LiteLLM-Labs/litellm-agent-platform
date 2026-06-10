@@ -42,6 +42,7 @@ import {
   saveAgentRuntimeCredential,
   updateRuntimeHarness,
 } from "@/lib/api";
+import { runtimeBrandIconId } from "@/lib/runtime-branding";
 import type { RuntimeHarness } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -74,14 +75,6 @@ const RESERVED_ALIASES = new Set([
   "claude_agents",
 ]);
 
-function harnessIconId(alias: string): string {
-  if (alias === "claude_managed_agents") return "claude";
-  if (alias === "cursor") return "cursor";
-  if (alias === "gemini_antigravity") return "gemini";
-  if (alias === "opencode") return "opencode";
-  return alias;
-}
-
 function preferredAlias(harnesses: RuntimeHarness[]): string | null {
   return harnesses.find((harness) => !harness.connected)?.alias ?? harnesses[0]?.alias ?? null;
 }
@@ -89,7 +82,7 @@ function preferredAlias(harnesses: RuntimeHarness[]): string | null {
 function RuntimeLogo({ harness }: { harness: RuntimeHarness }) {
   return (
     <span className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border bg-background text-foreground shadow-sm">
-      <BrandIcon id={harnessIconId(harness.alias)} className="size-5" />
+      <BrandIcon id={runtimeBrandIconId(harness.alias, harness.api_spec)} className="size-5" />
     </span>
   );
 }
