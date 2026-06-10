@@ -28,6 +28,7 @@ import type { LucideIcon } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { BrandIcon } from "@/components/brand-icons";
+import { ImportAgentDialog } from "../import-agent-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -121,6 +122,7 @@ export default function NewAgentPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const parsed = useMemo(() => parseAgentDraftConfig(configText), [configText]);
   const draft = parsed.draft;
@@ -350,6 +352,15 @@ export default function NewAgentPage() {
     }
   };
 
+  const handleImported = (imported: Agent[]) => {
+    const first = imported[0];
+    if (first) {
+      router.push(`/agents/detail/?id=${encodeURIComponent(first.id)}`);
+      return;
+    }
+    router.push("/agents/");
+  };
+
   return (
     <div className="flex h-screen bg-background text-foreground">
       <Sidebar />
@@ -368,6 +379,15 @@ export default function NewAgentPage() {
             <span className="truncate text-sm font-semibold">Create agent</span>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => setImportOpen(true)}
+              className="hidden sm:inline-flex"
+            >
+              <ExternalLink className="size-3.5" />
+              Import agent
+            </Button>
             {step === "config" && (
               <Button size="sm" onClick={() => void create()} disabled={!canCreate}>
                 <CheckCircle2 className="size-3.5" />
@@ -443,6 +463,7 @@ export default function NewAgentPage() {
           )}
         </main>
       </div>
+      <ImportAgentDialog open={importOpen} onOpenChange={setImportOpen} onImported={handleImported} />
     </div>
   );
 }
