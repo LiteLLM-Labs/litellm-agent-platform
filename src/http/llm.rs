@@ -111,14 +111,14 @@ where
         callbacks.on_error(payload.clone());
         GatewayError::Upstream(error)
     })?;
-    let bytes = transform(bytes.to_vec(), status, content_type.as_deref()).map_err(|error| {
-        payload.finish_error(error_information(
-            "response_transform_error",
-            error.to_string(),
-        ));
-        callbacks.on_error(payload.clone());
-        error
-    })?;
+    let bytes =
+        transform(bytes.to_vec(), status, content_type.as_deref()).inspect_err(|error| {
+            payload.finish_error(error_information(
+                "response_transform_error",
+                error.to_string(),
+            ));
+            callbacks.on_error(payload.clone());
+        })?;
     let value = response_value(&bytes, headers_content_type(&headers));
     if status.is_success() {
         payload.finish_success(value, &prices);
