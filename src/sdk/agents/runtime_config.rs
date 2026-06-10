@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
-use base64::{engine::general_purpose, Engine};
-use reqwest::{header, RequestBuilder};
+use reqwest::RequestBuilder;
 
 use super::types::{
     AgentRuntime, LapConfig, ANTHROPIC_VERSION, GEMINI_API_REVISION, MANAGED_AGENTS_BETA,
@@ -18,11 +17,6 @@ enum RuntimeAuth {
     AnthropicApiKey(String),
     Bearer(String),
     GoogleApiKey(String),
-    OpenCode {
-        username: String,
-        password: Option<String>,
-        bearer_token: Option<String>,
-    },
 }
 
 impl RuntimeConfig {
@@ -36,31 +30,6 @@ impl RuntimeConfig {
             RuntimeAuth::GoogleApiKey(api_key) => request
                 .header("x-goog-api-key", api_key)
                 .header("Api-Revision", GEMINI_API_REVISION),
-            RuntimeAuth::OpenCode {
-                username,
-                password,
-                bearer_token,
-            } => match password {
-                Some(password) => {
-                    let encoded =
-                        general_purpose::STANDARD.encode(format!("{username}:{password}"));
-                    request.header(header::AUTHORIZATION, format!("Basic {encoded}"))
-                }
-                None => match bearer_token {
-                    Some(api_key) => request.bearer_auth(api_key),
-                    None => request,
-                },
-            },
-        }
-    }
-
-    pub(super) fn fallback_authorize(&self, request: RequestBuilder) -> Option<RequestBuilder> {
-        match &self.auth {
-            RuntimeAuth::OpenCode {
-                bearer_token: Some(api_key),
-                ..
-            } => Some(request.bearer_auth(api_key)),
-            _ => None,
         }
     }
 }
@@ -91,19 +60,6 @@ pub(super) fn runtime_configs(config: LapConfig) -> HashMap<AgentRuntime, Runtim
             RuntimeConfig {
                 base_url: config.gemini_base_url.trim_end_matches('/').to_owned(),
                 auth: RuntimeAuth::GoogleApiKey(api_key),
-            },
-        );
-    }
-    if let Some(base_url) = config.opencode_base_url {
-        runtimes.insert(
-            AgentRuntime::OpenCode,
-            RuntimeConfig {
-                base_url: base_url.trim_end_matches('/').to_owned(),
-                auth: RuntimeAuth::OpenCode {
-                    username: config.opencode_username,
-                    password: config.opencode_password,
-                    bearer_token: config.opencode_api_key,
-                },
             },
         );
     }

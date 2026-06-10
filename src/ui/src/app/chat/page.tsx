@@ -49,7 +49,6 @@ const FALLBACK_MODELS = [
 ];
 
 const BUILTIN_AGENTS: Record<string, string> = {
-  opencode: "OpenCode",
   "claude-code": "Claude Code",
   cc: "Claude Code",
   "github-copilot": "GitHub Copilot",
@@ -79,7 +78,6 @@ function runtimeModelId(alias?: string, harnesses: RuntimeHarness[] = []): strin
   if (spec === "claude_managed_agents") return "anthropic/*";
   if (spec === "cursor") return "cursor/*";
   if (spec === "gemini_antigravity") return "gemini/*";
-  if (spec === "opencode") return "opencode/*";
   return null;
 }
 
@@ -909,7 +907,6 @@ function ChatInner() {
                   <SelectValue placeholder={activeAgentName} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="opencode" className="text-xs font-mono">opencode</SelectItem>
                   <SelectItem value="claude-code" className="text-xs font-mono">claude code</SelectItem>
                   <SelectItem value="github-copilot" className="text-xs font-mono">github copilot</SelectItem>
                   {savedAgents.length > 0 && (

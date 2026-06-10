@@ -35,7 +35,7 @@ pub(crate) async fn resolve_runtime(
         alias
     };
 
-    // 1. Try static registry first (claude_managed_agents, cursor, opencode)
+    // 1. Try static registry first.
     {
         let registry = providers::runtime_registry();
         if let Some(entry) = registry.entry_for_id(alias) {

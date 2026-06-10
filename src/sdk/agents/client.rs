@@ -3,7 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use reqwest::{header, Method, StatusCode};
+use reqwest::{header, Method};
 use serde::Serialize;
 use serde_json::Value;
 
@@ -67,16 +67,11 @@ impl Lap {
         path: &str,
         body: &T,
     ) -> Result<Value, AgentSdkError> {
-        let mut response = self
+        let response = self
             .request(runtime, Method::POST, path)?
             .json(body)
             .send()
             .await?;
-        if response.status() == StatusCode::UNAUTHORIZED {
-            if let Some(fallback) = self.fallback_request(runtime, Method::POST, path)? {
-                response = fallback.json(body).send().await?;
-            }
-        }
         response_json(response).await
     }
 
@@ -85,12 +80,7 @@ impl Lap {
         runtime: AgentRuntime,
         path: &str,
     ) -> Result<Value, AgentSdkError> {
-        let mut response = self.request(runtime, Method::GET, path)?.send().await?;
-        if response.status() == StatusCode::UNAUTHORIZED {
-            if let Some(fallback) = self.fallback_request(runtime, Method::GET, path)? {
-                response = fallback.send().await?;
-            }
-        }
+        let response = self.request(runtime, Method::GET, path)?.send().await?;
         response_json(response).await
     }
 
@@ -99,12 +89,7 @@ impl Lap {
         runtime: AgentRuntime,
         path: &str,
     ) -> Result<Value, AgentSdkError> {
-        let mut response = self.request(runtime, Method::DELETE, path)?.send().await?;
-        if response.status() == StatusCode::UNAUTHORIZED {
-            if let Some(fallback) = self.fallback_request(runtime, Method::DELETE, path)? {
-                response = fallback.send().await?;
-            }
-        }
+        let response = self.request(runtime, Method::DELETE, path)?.send().await?;
         response_json(response).await
     }
 
@@ -113,19 +98,11 @@ impl Lap {
         runtime: AgentRuntime,
         path: &str,
     ) -> Result<AgentEventStream, AgentSdkError> {
-        let mut response = self
+        let response = self
             .request(runtime, Method::GET, path)?
             .header(header::ACCEPT, "text/event-stream")
             .send()
             .await?;
-        if response.status() == StatusCode::UNAUTHORIZED {
-            if let Some(fallback) = self.fallback_request(runtime, Method::GET, path)? {
-                response = fallback
-                    .header(header::ACCEPT, "text/event-stream")
-                    .send()
-                    .await?;
-            }
-        }
         let stream = stream_events(ensure_success(response).await?);
         Ok(self.adapter(runtime)?.normalize_stream(stream))
     }
@@ -147,25 +124,6 @@ impl Lap {
             .request(method, format!("{}{}", config.base_url, path))
             .header(header::CONTENT_TYPE, "application/json");
         Ok(config.authorize(request))
-    }
-
-    fn fallback_request(
-        &self,
-        runtime: AgentRuntime,
-        method: Method,
-        path: &str,
-    ) -> Result<Option<reqwest::RequestBuilder>, AgentSdkError> {
-        let config = self
-            .inner
-            .runtimes
-            .get(&runtime)
-            .ok_or(AgentSdkError::RuntimeNotConfigured(runtime))?;
-        let request = self
-            .inner
-            .http
-            .request(method, format!("{}{}", config.base_url, path))
-            .header(header::CONTENT_TYPE, "application/json");
-        Ok(config.fallback_authorize(request))
     }
 
     pub(super) fn adapter(

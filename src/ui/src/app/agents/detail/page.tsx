@@ -80,7 +80,7 @@ function formatBytes(bytes: number): string {
 }
 
 function isAgentRuntimeId(value: unknown): value is AgentRuntimeId {
-  return value === "claude_managed_agents" || value === "cursor" || value === "gemini_antigravity" || value === "opencode";
+  return value === "claude_managed_agents" || value === "cursor" || value === "gemini_antigravity";
 }
 
 function runtimeFromAgent(agent: Agent): string {

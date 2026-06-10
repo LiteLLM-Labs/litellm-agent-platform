@@ -297,14 +297,13 @@ Copy from `templates/opencode/docs/`, replacing `opencode-anthropic-server` → 
 
 Templates that speak the Anthropic Managed Agents API spec (`claude_managed_agents`) need **no UI changes** — users just register a new runtime, select `claude_managed_agents` as the API spec, and point the base URL at the new server.
 
-If the runtime should appear as its own named option in the runtime creation dropdown (like opencode does), add it to **4 spots** in `src/ui/src/`:
+If the runtime should appear as its own named API spec option in the runtime creation dropdown, add it to `src/ui/src/` after adding the matching Rust SDK adapter:
 
 ### 1. `app/runtimes/page.tsx` — add to `SPEC_DEFAULTS`
 
 ```ts
 const SPEC_DEFAULTS: Record<string, string> = {
   claude_managed_agents: "https://api.anthropic.com",
-  opencode: "http://127.0.0.1:4096",
   <name>: "http://127.0.0.1:<default-port>",   // ← add
 };
 ```
@@ -314,7 +313,6 @@ const SPEC_DEFAULTS: Record<string, string> = {
 ```ts
 const API_SPEC_LABELS: Record<string, string> = {
   claude_managed_agents: "Claude Managed Agents",
-  opencode: "OpenCode",
   <name>: "<Display Name>",   // ← add
 };
 ```
@@ -323,7 +321,6 @@ const API_SPEC_LABELS: Record<string, string> = {
 
 ```tsx
 <SelectItem value="claude_managed_agents">Claude Managed Agents</SelectItem>
-<SelectItem value="opencode">OpenCode</SelectItem>
 <SelectItem value="<name>"><Display Name></SelectItem>  {/* ← add */}
 ```
 
@@ -332,7 +329,6 @@ const API_SPEC_LABELS: Record<string, string> = {
 ```ts
 function harnessIconId(alias: string): string {
   if (alias === "claude_managed_agents") return "claude";
-  if (alias === "opencode") return "opencode";
   if (alias === "<name>") return "<name>";   // ← add (if brand icon exists)
   return "default";
 }
@@ -346,7 +342,6 @@ If a logo SVG is available, import and register it:
 import <Name>Icon from "./icons/<name>.svg";
 // ...
 export const brandIcons = {
-  opencode: OpenCodeIcon,
   <name>: <Name>Icon,   // ← add
 };
 ```

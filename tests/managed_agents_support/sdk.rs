@@ -231,62 +231,6 @@ pub async fn stream_mock_session_events(server: &MockServer, session_id: &str) -
     stream_session_events(&client(server), session_id).await
 }
 
-pub fn opencode_client(server: &MockServer) -> Lap {
-    let config = LapConfig {
-        opencode_base_url: Some(server.uri()),
-        opencode_password: Some("pw".to_owned()),
-        ..Default::default()
-    };
-    Lap::new(config)
-}
-
-pub async fn mount_opencode_session_round_trip(server: &MockServer) {
-    mount_opencode_session_create(server).await;
-    mount_opencode_message_send(server).await;
-}
-
-async fn mount_opencode_session_create(server: &MockServer) {
-    Mock::given(method("POST"))
-        .and(path("/session"))
-        .and(header("authorization", "Basic b3BlbmNvZGU6cHc="))
-        .and(body_json(json!({ "title": "OpenCode session" })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "sesn_open",
-            "title": "OpenCode session"
-        })))
-        .mount(server)
-        .await;
-}
-
-async fn mount_opencode_message_send(server: &MockServer) {
-    Mock::given(method("POST"))
-        .and(path("/session/sesn_open/message"))
-        .and(header("authorization", "Basic b3BlbmNvZGU6cHc="))
-        .and(body_json(json!({
-            "parts": [{ "type": "text", "text": "Create fibonacci.txt" }]
-        })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "info": { "id": "msg_123", "role": "assistant" },
-            "parts": [{ "type": "text", "text": "done" }]
-        })))
-        .mount(server)
-        .await;
-}
-
-pub async fn create_opencode_session_and_send(
-    server: &MockServer,
-) -> (Session, SendEventsResponse) {
-    let client = opencode_client(server);
-    let session = client
-        .beta()
-        .sessions()
-        .create(CreateSessionParams::opencode("OpenCode session"))
-        .await
-        .unwrap();
-    let sent = send_session_event(&client, &session.id).await;
-    (session, sent)
-}
-
 async fn collect_events(mut stream: AgentEventStream) -> Vec<AgentEvent> {
     let mut events = Vec::new();
     while let Some(event) = stream.next().await {

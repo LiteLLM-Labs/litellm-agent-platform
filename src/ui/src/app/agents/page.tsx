@@ -828,7 +828,7 @@ export default function AgentsPage() {
 }
 
 function isAgentRuntimeId(value: unknown): value is AgentRuntimeId {
-  return value === "claude_managed_agents" || value === "cursor" || value === "gemini_antigravity" || value === "opencode";
+  return value === "claude_managed_agents" || value === "cursor" || value === "gemini_antigravity";
 }
 
 function runtimeFromAgent(agent: Agent): AgentRuntimeId {
@@ -868,15 +868,6 @@ function runtimeOptions(runtimes: AgentRuntime[]): AgentRuntime[] {
       default_api_base: "",
       credential_provider_id: "gemini",
       credential_provider_name: "Gemini",
-      tools: [],
-      connected: false,
-    },
-    {
-      id: "opencode",
-      name: "OpenCode",
-      default_api_base: "",
-      credential_provider_id: "opencode",
-      credential_provider_name: "OpenCode",
       tools: [],
       connected: false,
     },

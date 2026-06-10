@@ -15,11 +15,11 @@ use crate::{
         credential_crypto,
         provider_credentials::{
             self, ProviderCredentialInput, ANTHROPIC_PROVIDER_ID, CURSOR_PROVIDER_ID,
-            GEMINI_PROVIDER_ID, OPENCODE_PROVIDER_ID,
+            GEMINI_PROVIDER_ID,
         },
         state::AppState,
     },
-    sdk::agents::{AgentRuntime, CLAUDE_MANAGED_AGENTS, CURSOR, GEMINI_ANTIGRAVITY, OPENCODE},
+    sdk::agents::{AgentRuntime, CLAUDE_MANAGED_AGENTS, CURSOR, GEMINI_ANTIGRAVITY},
 };
 
 use super::agent_runtime_tools::{runtime_tools, RuntimeTool};
@@ -243,14 +243,11 @@ fn runtime_default_api_base(runtime: &str) -> Option<&'static str> {
 
 /// Map a runtime ID to the provider credential ID used in the credential store.
 ///
-/// NOTE: This has provider-specific string literals by design; a follow-up will
-/// make providers self-register their credential provider ID.
 fn credential_provider_id(runtime: &str) -> Result<&'static str, GatewayError> {
     match runtime {
         CLAUDE_MANAGED_AGENTS | CLAUDE_AGENTS_RUNTIME_LEGACY => Ok(ANTHROPIC_PROVIDER_ID),
         CURSOR => Ok(CURSOR_PROVIDER_ID),
         GEMINI_ANTIGRAVITY => Ok(GEMINI_PROVIDER_ID),
-        OPENCODE => Ok(OPENCODE_PROVIDER_ID),
         _ => Err(GatewayError::InvalidConfig(format!(
             "no credential provider for runtime: {runtime}"
         ))),

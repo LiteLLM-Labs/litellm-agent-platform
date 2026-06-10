@@ -120,28 +120,6 @@ pub(super) fn session_metadata(
     ])
 }
 
-pub(super) fn opencode_session_resources(
-    state: &AppState,
-    runtime: AgentRuntime,
-    created: &CreatedRuntimeSession,
-) -> Result<Option<Value>, GatewayError> {
-    if runtime != AgentRuntime::OpenCode {
-        return Ok(None);
-    }
-    Ok(Some(serde_json::json!({
-        "agent": {
-            "id": &created.agent.id,
-            "name": &created.agent.name,
-            "description": &created.agent.description,
-        },
-        "system": &created.agent.system,
-        "model": agent_model(&created.agent, &created.environment),
-        "tools": &created.agent.tools,
-        "mcp_servers": mcp_servers(state, &created.agent, Some(&created.row.id))?,
-        "environment": &created.environment,
-    })))
-}
-
 fn metadata_value(value: &str) -> String {
     const MAX_CHARS: usize = 512;
     value.chars().take(MAX_CHARS).collect()
