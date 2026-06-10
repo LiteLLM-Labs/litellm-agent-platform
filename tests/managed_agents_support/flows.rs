@@ -83,10 +83,10 @@ pub async fn exercise_agent_runtime_update(fixture: &AppFixture, agent_id: &str)
         fixture.app.clone(),
         "PATCH",
         &format!("/api/agents/{agent_id}"),
-        Some(json!({ "runtime": "opencode" })),
+        Some(json!({ "runtime": "cursor" })),
     )
     .await;
-    assert_eq!(updated["config"]["runtime"], "opencode");
+    assert_eq!(updated["config"]["runtime"], "cursor");
     assert_eq!(updated["name"], "ops-agent");
 }
 

@@ -16,8 +16,7 @@ mod runtime;
 pub use runtime::{
     AgentRuntime, AgentRuntimeCatalogEntry, ANTHROPIC_VERSION, CLAUDE_MANAGED_AGENTS, CURSOR,
     DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_CURSOR_BASE_URL, DEFAULT_GEMINI_BASE_URL,
-    DEFAULT_OPENCODE_BASE_URL, GEMINI_ANTIGRAVITY, GEMINI_API_REVISION, MANAGED_AGENTS_BETA,
-    OPENCODE,
+    GEMINI_ANTIGRAVITY, GEMINI_API_REVISION, MANAGED_AGENTS_BETA,
 };
 
 #[derive(Debug, Clone)]
@@ -28,10 +27,6 @@ pub struct LapConfig {
     pub cursor_base_url: String,
     pub gemini_api_key: Option<String>,
     pub gemini_base_url: String,
-    pub opencode_api_key: Option<String>,
-    pub opencode_base_url: Option<String>,
-    pub opencode_username: String,
-    pub opencode_password: Option<String>,
 }
 
 impl LapConfig {
@@ -55,13 +50,6 @@ impl LapConfig {
             ..Self::default()
         }
     }
-
-    pub fn opencode(base_url: impl Into<String>) -> Self {
-        Self {
-            opencode_base_url: Some(base_url.into()),
-            ..Self::default()
-        }
-    }
 }
 
 impl Default for LapConfig {
@@ -73,10 +61,6 @@ impl Default for LapConfig {
             cursor_base_url: DEFAULT_CURSOR_BASE_URL.to_owned(),
             gemini_api_key: None,
             gemini_base_url: DEFAULT_GEMINI_BASE_URL.to_owned(),
-            opencode_api_key: None,
-            opencode_base_url: None,
-            opencode_username: "opencode".to_owned(),
-            opencode_password: None,
         }
     }
 }
@@ -186,20 +170,6 @@ pub struct CreateSessionParams {
     pub vault_ids: Option<Vec<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resources: Option<Value>,
-}
-
-impl CreateSessionParams {
-    pub fn opencode(title: impl Into<String>) -> Self {
-        Self {
-            agent: String::new(),
-            environment_id: String::new(),
-            title: title.into(),
-            lap_agent_runtime: Some(AgentRuntime::OpenCode),
-            metadata: None,
-            vault_ids: None,
-            resources: None,
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize)]

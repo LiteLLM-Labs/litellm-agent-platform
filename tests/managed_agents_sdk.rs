@@ -3,7 +3,6 @@ mod sdk_support;
 
 mod managed_agents_sdk {
     pub mod gemini;
-    pub mod opencode;
 }
 
 use litellm_rust::sdk::agents::{
@@ -148,10 +147,6 @@ fn parses_sse_and_resolves_supported_runtimes() {
         AgentRuntime::Cursor
     );
     assert_eq!(
-        AgentRuntime::try_from("opencode").unwrap(),
-        AgentRuntime::OpenCode
-    );
-    assert_eq!(
         AgentRuntime::try_from("gemini_antigravity").unwrap(),
         AgentRuntime::GeminiAntigravity
     );
@@ -161,13 +156,9 @@ fn parses_sse_and_resolves_supported_runtimes() {
         .collect();
     assert_eq!(
         catalog_ids,
-        vec![
-            "claude_managed_agents",
-            "cursor",
-            "gemini_antigravity",
-            "opencode"
-        ]
+        vec!["claude_managed_agents", "cursor", "gemini_antigravity"]
     );
+    assert!(AgentRuntime::try_from("opencode").is_err());
     assert!(AgentRuntime::try_from("not-a-runtime").is_err());
 }
 

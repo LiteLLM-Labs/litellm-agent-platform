@@ -20,8 +20,8 @@ mod platform_mcp;
 use super::{
     runtime::CreatedRuntimeSession,
     runtime_inputs::{
-        agent_metadata, agent_model, mcp_servers, opencode_session_resources, provider_system,
-        session_metadata, workspace_from_env,
+        agent_metadata, agent_model, mcp_servers, provider_system, session_metadata,
+        workspace_from_env,
     },
     runtime_sdk::agent_sdk_error,
 };
@@ -61,7 +61,7 @@ pub(super) async fn provision_runtime_session(
                 &created.prompt,
             )),
             vault_ids,
-            resources: opencode_session_resources(state, sdk_rt, created)?,
+            resources: None,
         })
         .await
         .map_err(agent_sdk_error)?;
@@ -106,11 +106,6 @@ fn runtime_client(state: &AppState, created: &CreatedRuntimeSession) -> Lap {
         AgentRuntime::GeminiAntigravity => {
             config.gemini_api_key = Some(created.resolved.credential.api_key.clone());
             config.gemini_base_url = created.resolved.credential.api_base.clone();
-        }
-        AgentRuntime::OpenCode => {
-            config.opencode_base_url = Some(created.resolved.credential.api_base.clone());
-            config.opencode_api_key = Some(created.resolved.credential.api_key.clone());
-            config.opencode_password = Some(created.resolved.credential.api_key.clone());
         }
     }
     Lap::with_http_client(config, state.http.clone())

@@ -11,12 +11,10 @@ use crate::{
 pub const ANTHROPIC_PROVIDER_ID: &str = "anthropic";
 pub const CURSOR_PROVIDER_ID: &str = "cursor";
 pub const GEMINI_PROVIDER_ID: &str = "gemini";
-pub const OPENCODE_PROVIDER_ID: &str = "opencode";
 pub const OPENAI_PROVIDER_ID: &str = "openai";
 const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com";
 const DEFAULT_CURSOR_BASE_URL: &str = "https://api.cursor.com";
 const DEFAULT_GEMINI_BASE_URL: &str = "https://generativelanguage.googleapis.com";
-const DEFAULT_OPENCODE_BASE_URL: &str = "http://127.0.0.1:4096";
 const DEFAULT_OPENAI_BASE_URL: &str = "https://api.openai.com";
 
 #[derive(Debug, Clone, Copy)]
@@ -62,13 +60,6 @@ pub const PROVIDER_CATALOG: &[ProviderCatalogEntry] = &[
         name: "Gemini",
         description: "Gemini Antigravity managed agents through the Gemini API",
         default_base_url: DEFAULT_GEMINI_BASE_URL,
-        category: ProviderCategory::Runtime,
-    },
-    ProviderCatalogEntry {
-        id: OPENCODE_PROVIDER_ID,
-        name: "OpenCode",
-        description: "OpenCode server sessions through the local runtime API",
-        default_base_url: DEFAULT_OPENCODE_BASE_URL,
         category: ProviderCategory::Runtime,
     },
 ];
@@ -170,10 +161,6 @@ mod tests {
         let provider = catalog_entry("cursor").unwrap();
         assert_eq!(provider.name, "Cursor");
         assert_eq!(provider.default_base_url, "https://api.cursor.com");
-
-        let provider = catalog_entry("opencode").unwrap();
-        assert_eq!(provider.name, "OpenCode");
-        assert_eq!(provider.default_base_url, "http://127.0.0.1:4096");
 
         let provider = catalog_entry("gemini").unwrap();
         assert_eq!(provider.name, "Gemini");

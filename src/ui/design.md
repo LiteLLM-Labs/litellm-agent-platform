@@ -52,7 +52,7 @@ Status dot backgrounds: `bg-emerald-500`, `bg-amber-500`, `bg-red-500`
 "bg-orange-500/15 text-orange-600 dark:text-orange-400"
 // github-copilot
 "bg-sky-500/15 text-sky-600 dark:text-sky-400"
-// opencode / default
+// default
 "bg-muted text-muted-foreground"
 ```
 

@@ -60,14 +60,12 @@ const SPEC_DEFAULTS: Record<string, string> = {
   claude_managed_agents: "https://api.anthropic.com",
   cursor: "https://api.cursor.com",
   gemini_antigravity: "https://generativelanguage.googleapis.com",
-  opencode: "http://127.0.0.1:4096",
 };
 
 const SPEC_LABELS: Record<string, string> = {
   claude_managed_agents: "Claude Managed Agents",
   cursor: "Cursor",
   gemini_antigravity: "Gemini Antigravity",
-  opencode: "OpenCode",
 };
 
 const RUNTIME_OPTIONS = [
@@ -88,12 +86,6 @@ const RUNTIME_OPTIONS = [
     label: "Gemini Antigravity",
     apiSpec: "gemini_antigravity",
     defaultApiBase: SPEC_DEFAULTS.gemini_antigravity,
-  },
-  {
-    value: "opencode",
-    label: "OpenCode",
-    apiSpec: "opencode",
-    defaultApiBase: SPEC_DEFAULTS.opencode,
   },
 ];
 
@@ -125,22 +117,12 @@ const FALLBACK_DEFAULT_RUNTIMES: RuntimeHarness[] = [
     connected: false,
     tools: [],
   },
-  {
-    alias: "opencode",
-    api_spec: "opencode",
-    display_name: "OpenCode",
-    api_base: SPEC_DEFAULTS.opencode,
-    is_default: true,
-    connected: false,
-    tools: [],
-  },
 ];
 
 const RESERVED_ALIASES = new Set([
   "claude_managed_agents",
   "cursor",
   "gemini_antigravity",
-  "opencode",
   "claude_agents",
 ]);
 

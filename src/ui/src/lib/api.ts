@@ -559,7 +559,6 @@ function defaultRuntimeModel(runtime?: string | null): string | null {
   if (runtime === "claude_managed_agents" || runtime === "claude_agents") return "claude-sonnet-4-6";
   if (runtime === "cursor") return "claude-4-sonnet";
   if (runtime === "gemini_antigravity") return "antigravity-preview-05-2026";
-  if (runtime === "opencode") return "opencode/default";
   return null;
 }
 
