@@ -26,6 +26,10 @@ pub trait BaseAnthropicMessagesTransformation: Send + Sync + 'static {
         inbound_headers: &HeaderMap,
     ) -> Result<HeaderMap, GatewayError>;
 
+    fn upstream_request_id_header(&self) -> &'static str {
+        "request-id"
+    }
+
     fn transform_anthropic_messages_request(
         &self,
         body: Value,
@@ -58,7 +62,7 @@ pub trait BaseAnthropicMessagesTransformation: Send + Sync + 'static {
                 .unwrap_or_else(|| HeaderValue::from_static("application/json"))
         };
         headers.insert(header::CONTENT_TYPE, content_type);
-        if let Some(request_id) = upstream.get("request-id").cloned() {
+        if let Some(request_id) = upstream.get(self.upstream_request_id_header()).cloned() {
             headers.insert("request-id", request_id);
         }
         headers
