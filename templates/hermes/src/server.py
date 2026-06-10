@@ -1,6 +1,7 @@
 import json
 import os
 import queue
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -27,6 +28,7 @@ HERMES_WORKDIR = os.environ.get("HERMES_WORKDIR", "/tmp/hermes-workspace")
 HERMES_TOOLSETS = os.environ.get("HERMES_TOOLSETS", "terminal,web")
 HERMES_MAX_TURNS = int(os.environ.get("HERMES_MAX_TURNS", "20"))
 HERMES_TIMEOUT_SECONDS = int(os.environ.get("HERMES_TIMEOUT_SECONDS", "300"))
+STREAM_IDLE_TIMEOUT_SECONDS = int(os.environ.get("STREAM_IDLE_TIMEOUT_SECONDS", "300"))
 
 
 app = FastAPI(title="Hermes Agent Anthropic Managed Agents bridge")
@@ -230,6 +232,8 @@ def get_session(session_id: str) -> sqlite3.Row | None:
 
 
 def append_event(session_id: str, event: str, data: dict[str, Any]) -> dict[str, Any]:
+    if "id" not in data:
+        data = {"id": new_id("sevt"), **data}
     with db() as conn:
         cursor = conn.execute(
             "INSERT INTO events (session_id, event, data, created_at) VALUES (?, ?, ?, ?)",
@@ -281,6 +285,14 @@ def user_text(events: list[dict[str, Any]]) -> str:
     return "\n".join(chunk for chunk in chunks if chunk).strip()
 
 
+def user_message_data(events: list[dict[str, Any]]) -> dict[str, Any]:
+    for event in events:
+        if event.get("type") != "user.message":
+            continue
+        return {key: value for key, value in event.items() if key != "type"}
+    return {"content": [{"type": "text", "text": user_text(events)}]}
+
+
 def message_text(message: Any) -> str:
     content = getattr(message, "content", None)
     if isinstance(content, str):
@@ -294,6 +306,102 @@ def message_text(message: Any) -> str:
                 text.append(str(item.get("text") or item.get("content") or ""))
         return "".join(text)
     return ""
+
+
+def parse_tool_arguments(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value if value is not None else {}
+    try:
+        return json.loads(value)
+    except json.JSONDecodeError:
+        return {"arguments": value}
+
+
+def parse_tool_output(value: str | None) -> tuple[Any, Any]:
+    if not value:
+        return "", None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return value, None
+    if not isinstance(parsed, dict):
+        return parsed, None
+    output = parsed.get("output", parsed)
+    error = parsed.get("error")
+    exit_code = parsed.get("exit_code")
+    if error is None and isinstance(exit_code, int) and exit_code != 0:
+        error = {"exit_code": exit_code, "output": output}
+    return output, error
+
+
+def emit_hermes_state_events(
+    session_id: str,
+    model: str,
+    started_at: float,
+    seen_message_ids: set[int],
+) -> bool:
+    state_path = hermes_home(session_id) / "state.db"
+    if not state_path.exists():
+        return False
+    emitted = False
+    with sqlite3.connect(state_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            """
+            SELECT id, role, content, tool_call_id, tool_calls, tool_name, timestamp, finish_reason
+            FROM messages
+            WHERE timestamp >= ?
+            ORDER BY timestamp ASC, id ASC
+            """,
+            (started_at - 0.001,),
+        ).fetchall()
+    for row in rows:
+        message_id = row["id"]
+        if message_id in seen_message_ids:
+            continue
+        seen_message_ids.add(message_id)
+        role = row["role"]
+        content = row["content"] or ""
+        if role == "assistant":
+            if content.strip():
+                append_event(
+                    session_id,
+                    "agent.message",
+                    {"content": [{"type": "text", "text": content}], "model": model},
+                )
+                emitted = True
+            tool_calls = parse_json(row["tool_calls"], [])
+            if isinstance(tool_calls, list):
+                for call in tool_calls:
+                    if not isinstance(call, dict):
+                        continue
+                    function = call.get("function")
+                    function = function if isinstance(function, dict) else {}
+                    call_id = call.get("id") or call.get("call_id") or f"call_{uuid.uuid4().hex}"
+                    append_event(
+                        session_id,
+                        "agent.tool_use",
+                        {
+                            "id": call_id,
+                            "name": function.get("name") or call.get("name") or "tool",
+                            "input": parse_tool_arguments(function.get("arguments") or call.get("arguments")),
+                        },
+                    )
+                    emitted = True
+        elif role == "tool":
+            tool_call_id = row["tool_call_id"] or f"call_{uuid.uuid4().hex}"
+            output, error = parse_tool_output(content)
+            data = {
+                "tool_use_id": tool_call_id,
+                "name": row["tool_name"] or "tool",
+                "content": [{"type": "text", "text": clip(output, 8_000)}],
+                "output": output,
+            }
+            if error is not None:
+                data["error"] = error
+            append_event(session_id, "agent.tool_result", data)
+            emitted = True
+    return emitted
 
 
 def messages_from_update(update: Any) -> list[Any]:
@@ -378,10 +486,61 @@ def clip(text: Any, limit: int = 20_000) -> str:
     return value[:limit] + f"\n... truncated {len(value) - limit} chars"
 
 
+def redact_error_detail(text: str) -> str:
+    redacted = text
+    for secret in (LAP_API_KEY, RUNTIME_API_KEY, os.environ.get("ANTHROPIC_API_KEY", "")):
+        if secret:
+            redacted = redacted.replace(secret, "[redacted]")
+    return re.sub(r"sk-ant-api[0-9A-Za-z_-]+", "sk-ant-api[redacted]", redacted)
+
+
 def hermes_home(session_id: str) -> Path:
     path = Path(HERMES_HOME_ROOT) / session_id
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def active_hermes_session_file(session_id: str) -> Path:
+    return hermes_home(session_id) / "active_hermes_session_id"
+
+
+def active_hermes_session_id(session_id: str) -> str | None:
+    try:
+        value = active_hermes_session_file(session_id).read_text(encoding="utf-8").strip()
+    except OSError:
+        return None
+    return value or None
+
+
+def latest_hermes_session_id(session_id: str, started_at: float) -> str | None:
+    state_path = hermes_home(session_id) / "state.db"
+    if not state_path.exists():
+        return None
+    try:
+        with sqlite3.connect(state_path) as conn:
+            row = conn.execute(
+                """
+                SELECT id
+                FROM sessions
+                WHERE started_at >= ?
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (started_at - 0.001,),
+            ).fetchone()
+    except sqlite3.Error:
+        return None
+    if not row:
+        return None
+    value = row[0]
+    return value if isinstance(value, str) and value else None
+
+
+def persist_active_hermes_session_id(session_id: str, started_at: float) -> None:
+    hermes_session_id = latest_hermes_session_id(session_id, started_at)
+    if not hermes_session_id:
+        return
+    active_hermes_session_file(session_id).write_text(hermes_session_id, encoding="utf-8")
 
 
 def write_hermes_context(session_id: str, agent_row: sqlite3.Row) -> None:
@@ -447,9 +606,33 @@ def clean_hermes_output(output: str) -> str:
     return "\n".join(lines).strip()
 
 
-def run_hermes_cli(session_id: str, prompt: str, agent_row: sqlite3.Row) -> str:
+def hermes_error_log_detail(session_id: str) -> str:
+    log_path = hermes_home(session_id) / "logs" / "errors.log"
+    try:
+        raw = log_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
+    except OSError:
+        return ""
+    return "\n".join(raw.splitlines()[-40:]).strip()
+
+
+def hermes_failure_detail(session_id: str, returncode: int, stderr: str, output: str) -> str:
+    parts = [
+        clean_hermes_output(stderr),
+        output,
+        hermes_error_log_detail(session_id),
+    ]
+    detail = "\n".join(part for part in parts if part).strip()
+    if not detail:
+        detail = f"Hermes exited with {returncode}"
+    return clip(redact_error_detail(detail), 4_000)
+
+
+def run_hermes_cli(session_id: str, prompt: str, agent_row: sqlite3.Row) -> tuple[str, bool]:
     write_hermes_context(session_id, agent_row)
     workdir = Path(HERMES_WORKDIR) / session_id
+    started_at = time.time()
     command = [
         HERMES_COMMAND,
         "chat",
@@ -462,24 +645,53 @@ def run_hermes_cli(session_id: str, prompt: str, agent_row: sqlite3.Row) -> str:
         HERMES_TOOLSETS,
         "--max-turns",
         str(HERMES_MAX_TURNS),
-        "-q",
-        prompt,
     ]
-    proc = subprocess.run(
+    resume_id = active_hermes_session_id(session_id)
+    if resume_id:
+        command.extend(["--resume", resume_id])
+    command.extend(["-q", prompt])
+    proc = subprocess.Popen(
         command,
         cwd=workdir,
         env=hermes_env(session_id),
         text=True,
-        capture_output=True,
-        timeout=HERMES_TIMEOUT_SECONDS,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
-    output = clean_hermes_output(proc.stdout or "")
+    seen_message_ids: set[int] = set()
+    emitted_any = False
+    deadline = time.time() + HERMES_TIMEOUT_SECONDS
+    while proc.poll() is None:
+        emitted_any = (
+            emit_hermes_state_events(session_id, agent_row["model"] or DEFAULT_MODEL, started_at, seen_message_ids)
+            or emitted_any
+        )
+        if time.time() >= deadline:
+            proc.kill()
+            stdout, stderr = proc.communicate()
+            output = clean_hermes_output(stdout or "")
+            raise RuntimeError(
+                clip(redact_error_detail(f"Hermes timed out after {HERMES_TIMEOUT_SECONDS}s\n{stderr or output}"), 4_000)
+            )
+        time.sleep(0.1)
+    stdout, stderr = proc.communicate()
+    persist_active_hermes_session_id(session_id, started_at)
+    output = clean_hermes_output(stdout or "")
     if proc.returncode != 0:
-        detail = (proc.stderr or output or f"Hermes exited with {proc.returncode}").strip()
-        raise RuntimeError(clip(detail, 4_000))
+        raise RuntimeError(hermes_failure_detail(session_id, proc.returncode or 1, stderr or "", output))
     if not output:
+        emitted_any = (
+            emit_hermes_state_events(session_id, agent_row["model"] or DEFAULT_MODEL, started_at, seen_message_ids)
+            or emitted_any
+        )
+        if emitted_any:
+            return "", True
         raise RuntimeError("Hermes completed without emitting message text")
-    return output
+    emitted_any = (
+        emit_hermes_state_events(session_id, agent_row["model"] or DEFAULT_MODEL, started_at, seen_message_ids)
+        or emitted_any
+    )
+    return output, emitted_any
 
 
 def run_agent(session_id: str, prompt: str) -> None:
@@ -499,13 +711,14 @@ def run_agent(session_id: str, prompt: str) -> None:
         seen_tools: set[str] = set()
         seen_results: set[str] = set()
         try:
-            response = run_hermes_cli(session_id, prompt, agent_row)
-            append_event(
-                session_id,
-                "agent.message",
-                {"content": [{"type": "text", "text": response}], "model": agent_row["model"]},
-            )
-            emitted = True
+            response, emitted = run_hermes_cli(session_id, prompt, agent_row)
+            if not emitted:
+                append_event(
+                    session_id,
+                    "agent.message",
+                    {"content": [{"type": "text", "text": response}], "model": agent_row["model"]},
+                )
+                emitted = True
             append_event(
                 session_id,
                 "session.status_idle",
@@ -666,6 +879,7 @@ def send_events(session_id: str, input: SendEventsRequest) -> dict[str, Any]:
     prompt = user_text(input.events)
     if not prompt:
         raise HTTPException(status_code=400, detail="no user.message text")
+    append_event(session_id, "user.message", user_message_data(input.events))
     with state_lock:
         run_queues.setdefault(session_id, queue.Queue())
         pending_prompts.setdefault(session_id, queue.Queue())
@@ -704,7 +918,8 @@ def abort_session(session_id: str) -> dict[str, Any]:
 
 
 def sse_frame(item: dict[str, Any]) -> str:
-    return f"event: {item['event']}\ndata: {json_dumps(item['data'])}\n\n"
+    data = {"type": item["event"], **item["data"]}
+    return f"event: {item['event']}\ndata: {json_dumps(data)}\n\n"
 
 
 @app.get("/v1/sessions/{session_id}/events/stream")
@@ -713,44 +928,30 @@ def stream_events(session_id: str, x_api_key: str | None = Header(default=None))
         raise HTTPException(status_code=404, detail="session not found")
 
     def generate():
-        replayed = list_events(session_id)
-        seen_ids = {item["id"] for item in replayed if item.get("id") is not None}
-        for item in replayed:
-            yield sse_frame(item)
         with state_lock:
-            q = run_queues.setdefault(session_id, queue.Queue())
-        idle_loops = 0
+            run_queues.setdefault(session_id, queue.Queue())
+        seen_ids: set[int] = set()
+        idle_started_at: float | None = None
         while True:
-            try:
-                item = q.get(timeout=1.0)
-            except queue.Empty:
-                with state_lock:
-                    running = active_runs.get(session_id, False)
-                if not running:
-                    current = list_events(session_id)
-                    unseen = [
-                        item
-                        for item in current
-                        if item.get("id") is not None and item["id"] not in seen_ids
-                    ]
-                    if unseen:
-                        for replay in unseen:
-                            seen_ids.add(replay["id"])
-                            yield sse_frame(replay)
-                    idle_loops += 1
-                    if idle_loops >= 2:
-                        break
-                continue
-            if item["event"] == "__done__":
-                current = list_events(session_id)
-                for replay in current:
-                    if replay.get("id") is not None and replay["id"] not in seen_ids:
-                        seen_ids.add(replay["id"])
-                        yield sse_frame(replay)
-                break
-            if item.get("id") is None or item["id"] not in seen_ids:
-                if item.get("id") is not None:
-                    seen_ids.add(item["id"])
+            emitted = False
+            for item in list_events(session_id):
+                event_id = item.get("id")
+                if event_id is None or event_id in seen_ids:
+                    continue
+                seen_ids.add(event_id)
+                emitted = True
                 yield sse_frame(item)
+
+            with state_lock:
+                running = active_runs.get(session_id, False)
+            if emitted or running:
+                idle_started_at = None
+            else:
+                if idle_started_at is None:
+                    idle_started_at = time.time()
+                if time.time() - idle_started_at >= STREAM_IDLE_TIMEOUT_SECONDS:
+                    break
+                yield ": keep-alive\n\n"
+            time.sleep(0.25)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
