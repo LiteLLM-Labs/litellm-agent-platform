@@ -27,6 +27,7 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Sidebar } from "@/components/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { BrandIcon } from "@/components/brand-icons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +39,6 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select";
 import { ScheduleEditor } from "@/components/schedule-editor";
 import {
@@ -70,6 +70,7 @@ import {
   listRules,
   listSkills,
 } from "@/lib/api";
+import { runtimeBrandIconId } from "@/lib/runtime-branding";
 import { scheduleLabel } from "@/lib/schedule";
 import type { Agent, AgentRuntime, Rule, Skill, RuntimeHarness } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -429,11 +430,11 @@ function CreateStep({
         <div className="flex flex-1 items-center justify-center pb-24 text-center">
           {drafting ? (
             <div className="grid w-full max-w-2xl justify-items-center gap-5">
-              <div className="ml-auto max-w-[82%] rounded-lg bg-foreground px-4 py-3 text-left text-sm text-background">
+              <div className="ml-auto max-w-[82%] whitespace-pre-wrap break-words rounded-lg bg-foreground px-4 py-3 text-left text-sm text-background">
                 {prompt.trim()}
               </div>
               <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                <Loader2 className="size-4 animate-spin text-foreground" />
+                <Loader2 className="size-4 animate-spin text-foreground motion-reduce:animate-none" />
                 Drafting config.yaml
               </div>
             </div>
@@ -486,7 +487,7 @@ function CreateStep({
               className="size-9 rounded-full"
               aria-label="Draft config"
             >
-              {drafting ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+              {drafting ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" /> : <ArrowUp className="size-4" />}
             </Button>
           </div>
         </div>
@@ -566,7 +567,7 @@ function ConfigStep({
       <section className="flex min-h-[560px] flex-col">
         <div className="flex flex-1 items-center justify-center">
           <div className="w-full max-w-2xl">
-            <div className="ml-auto max-w-max rounded-lg bg-foreground px-4 py-3 text-sm text-background">
+            <div className="ml-auto max-w-full whitespace-pre-wrap break-words rounded-lg bg-foreground px-4 py-3 text-sm text-background">
               {lastRequest || draft.name}
             </div>
             <div className="mt-8 flex flex-wrap gap-3">
@@ -618,7 +619,7 @@ function ConfigStep({
               className="size-9 rounded-full"
               aria-label="Refine config"
             >
-              {drafting ? <Loader2 className="size-4 animate-spin" /> : <ArrowUp className="size-4" />}
+              {drafting ? <Loader2 className="size-4 animate-spin motion-reduce:animate-none" /> : <ArrowUp className="size-4" />}
             </Button>
           </div>
         </div>
@@ -842,6 +843,7 @@ function AgentDraftControls({
   const update = (patch: Partial<AgentDraft>) => onChange({ ...draft, ...patch });
   const availableModels = models.length > 0 ? models : [draft.model].filter(Boolean);
   const runtime = runtimes.find((entry) => entry.id === draft.runtime);
+  const selectedHarness = harnesses.find((entry) => entry.alias === draft.runtime);
   const toolOptions =
     runtime?.tools?.map((tool) => tool.id).filter(Boolean) ??
     draft.tools.map((tool) => tool.type).filter(Boolean);
@@ -922,16 +924,28 @@ function AgentDraftControls({
               value={draft.runtime || "claude_managed_agents"}
               onValueChange={(v) => update({ runtime: v ?? "claude_managed_agents" })}
             >
-              <SelectTrigger className="border-white/10 bg-[#242321] text-[#f7f2e8]">
-                <SelectValue />
+              <SelectTrigger className="h-11 w-full max-w-sm overflow-hidden border-white/10 bg-[#242321] px-3 text-[#f7f2e8]">
+                <RuntimeSelectOption
+                  alias={draft.runtime || "claude_managed_agents"}
+                  displayName={selectedHarness?.display_name ?? runtime?.name ?? runtimeLabel(draft.runtime)}
+                  apiSpec={selectedHarness?.api_spec ?? runtimeApiSpec(draft.runtime)}
+                  isDefault={selectedHarness?.is_default}
+                  compact
+                />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="w-[360px] border-white/10 bg-[#242321] text-[#f7f2e8]">
                 {harnesses.map((h) => (
-                  <SelectItem key={h.alias} value={h.alias}>
-                    {h.display_name}
-                    {!h.is_default && (
-                      <span className="ml-2 text-xs text-muted-foreground">({h.api_spec})</span>
-                    )}
+                  <SelectItem
+                    key={h.alias}
+                    value={h.alias}
+                    className="py-3 focus:bg-white/10 focus:text-[#f7f2e8] data-highlighted:bg-white/10 data-highlighted:text-[#f7f2e8] [&_span]:!text-[#f7f2e8] [&_.runtime-option-muted]:!text-[#c9c0b1] [&_svg]:!text-[#f7f2e8]"
+                  >
+                    <RuntimeSelectOption
+                      alias={h.alias}
+                      displayName={h.display_name}
+                      apiSpec={h.api_spec}
+                      isDefault={h.is_default}
+                    />
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1257,6 +1271,70 @@ function AgentDraftControls({
       </div>
     </div>
   );
+}
+
+function RuntimeSelectOption({
+  alias,
+  displayName,
+  apiSpec,
+  isDefault,
+  compact = false,
+}: {
+  alias: string;
+  displayName: string;
+  apiSpec: string;
+  isDefault?: boolean;
+  compact?: boolean;
+}) {
+  return (
+    <span className={cn("flex min-w-0 max-w-full items-center", compact ? "gap-2" : "gap-3")}>
+      <span
+        className={cn(
+          "flex shrink-0 items-center justify-center rounded-lg border border-white/10 bg-white/5",
+          compact ? "size-6" : "size-8",
+        )}
+      >
+        <BrandIcon id={runtimeBrandIconId(alias, apiSpec)} className={compact ? "size-3.5" : "size-4"} />
+      </span>
+      <span className="min-w-0">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-sm font-medium !text-[#f7f2e8]">{displayName}</span>
+          {isDefault && !compact && (
+            <span className="runtime-option-muted rounded-md border border-white/10 bg-white/5 px-1.5 py-0.5 text-[10px] !text-[#c9c0b1]">
+              Default
+            </span>
+          )}
+        </span>
+        <span className="runtime-option-muted mt-0.5 block truncate font-mono text-[11px] !text-[#c9c0b1]">
+          {compact ? runtimeSubtitle(apiSpec || alias) : `${runtimeLabel(apiSpec || alias)} · ${alias}`}
+        </span>
+      </span>
+    </span>
+  );
+}
+
+function runtimeApiSpec(value: string): string {
+  if (value === "claude_managed_agents" || value === "claude_agents") return "claude_managed_agents";
+  if (value === "cursor") return "cursor";
+  if (value === "gemini_antigravity") return "gemini_antigravity";
+  if (value === "opencode") return "opencode";
+  return value;
+}
+
+function runtimeLabel(value: string): string {
+  if (value === "claude_managed_agents" || value === "claude_agents") return "Claude Managed Agents";
+  if (value === "cursor") return "Cursor";
+  if (value === "gemini_antigravity") return "Gemini Antigravity";
+  if (value === "opencode") return "OpenCode";
+  return value || "Runtime";
+}
+
+function runtimeSubtitle(value: string): string {
+  if (value === "claude_managed_agents" || value === "claude_agents") return "Anthropic sessions and tools";
+  if (value === "cursor") return "Background repo agents";
+  if (value === "gemini_antigravity") return "Google managed sandbox";
+  if (value === "opencode") return "OpenCode server";
+  return "Custom runtime";
 }
 
 function ConfigPreview({

@@ -1,7 +1,7 @@
 # LiteLLM Agent Platform
 
-Self-hosted UI for creating and running agents on any agent runtime: Claude
-Managed Agents, Cursor Agents API, OpenCode Agents, and DeepAgents.
+Self-hosted agent builder - Build agents on top of OpenCode, Hermes, Claude
+Managed Agents, Cursor Agents API, DeepAgents.
 
 ![LiteLLM Agent Platform dashboard](https://github.com/user-attachments/assets/04333758-829c-4b19-bde3-23ade37bb9f1)
 
@@ -23,22 +23,30 @@ It manages:
 Prerequisite: Docker Desktop.
 
 ```bash
-wget -O Dockerfile \
-  https://raw.githubusercontent.com/LiteLLM-Labs/litellm-agent-platform/main/Dockerfile
-docker build -t litellm-agent-platform \
-  -f Dockerfile \
-  https://github.com/LiteLLM-Labs/litellm-agent-platform.git#main
-DATABASE_URL=postgres://user:password@host.docker.internal:5432/litellm_agents
-docker run --rm -p 4000:4000 \
-  -e LITELLM_MASTER_KEY=sk-local \
-  -e DATABASE_URL="$DATABASE_URL" \
-  litellm-agent-platform
+docker compose --profile opencode up
 ```
 
 Open [http://localhost:4000](http://localhost:4000) and sign in with the
-master key (`sk-local` in the command above). The container serves the UI and
-API from the same process. Add provider credentials in Settings before running
-agents against a hosted model provider.
+master key (`sk-local` by default). Compose starts the LiteLLM Agent Platform
+web/API service, a Postgres database, the OpenCode template runtime, and
+registers `local-opencode` in the UI automatically.
+
+To start only the base LAP stack:
+
+```bash
+docker compose up
+```
+
+To start other template runtime profiles and add them to the UI automatically:
+
+```bash
+docker compose --profile deepagents up
+docker compose --profile opencode --profile deepagents up
+```
+
+Profiles register `local-opencode` and `local-deepagents` through the LAP API
+after the services are healthy. Add provider credentials in Settings before
+running agents against a hosted model provider.
 
 ## Usage: Create an Agent
 

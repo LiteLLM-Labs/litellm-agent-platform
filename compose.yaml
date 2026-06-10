@@ -1,0 +1,142 @@
+x-runtime-registration: &runtime-registration
+  image: curlimages/curl:8.11.1
+  entrypoint: ["/bin/sh"]
+  environment:
+    LAP_URL: http://lap:4000
+    LAP_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local}
+    RUNTIME_API_SPEC: claude_managed_agents
+  command:
+    - -c
+    - |
+      set -eu
+
+      until curl -fsS "$$LAP_URL/health" >/dev/null; do
+        sleep 1
+      done
+      until curl -fsS "$$RUNTIME_API_BASE/health" >/dev/null; do
+        sleep 1
+      done
+
+      create_payload=$$(printf '{"alias":"%s","api_spec":"%s","api_base":"%s","api_key":"%s"}' "$$RUNTIME_ALIAS" "$$RUNTIME_API_SPEC" "$$RUNTIME_API_BASE" "$$RUNTIME_API_KEY")
+      update_payload=$$(printf '{"api_base":"%s","api_key":"%s"}' "$$RUNTIME_API_BASE" "$$RUNTIME_API_KEY")
+
+      curl -fsS -X POST "$$LAP_URL/api/runtime-harnesses" \
+        -H "Authorization: Bearer $$LAP_MASTER_KEY" \
+        -H "Content-Type: application/json" \
+        -d "$$create_payload" \
+      || curl -fsS -X PUT "$$LAP_URL/api/runtime-harnesses/$$RUNTIME_ALIAS" \
+        -H "Authorization: Bearer $$LAP_MASTER_KEY" \
+        -H "Content-Type: application/json" \
+        -d "$$update_payload"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: lap
+      POSTGRES_PASSWORD: lap
+      POSTGRES_DB: litellm_agents
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lap -d litellm_agents"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  lap:
+    build: .
+    ports:
+      - "4000:4000"
+    environment:
+      LITELLM_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local}
+      DATABASE_URL: postgres://lap:lap@postgres:5432/litellm_agents
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  opencode:
+    profiles: ["opencode"]
+    build: ./templates/opencode
+    environment:
+      LITELLM_BASE_URL: http://lap:4000/v1
+      LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-sk-local}
+      LITELLM_MODELS: ${OPENCODE_MODELS:-claude-sonnet-4-6}
+    volumes:
+      - opencode-data:/data
+    depends_on:
+      - lap
+
+  register-opencode:
+    <<: *runtime-registration
+    profiles: ["opencode"]
+    environment:
+      LAP_URL: http://lap:4000
+      LAP_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local}
+      RUNTIME_ALIAS: local-opencode
+      RUNTIME_API_SPEC: claude_managed_agents
+      RUNTIME_API_BASE: http://opencode:8080
+      RUNTIME_API_KEY: ${OPENCODE_RUNTIME_API_KEY:-local-opencode-key}
+    depends_on:
+      - lap
+      - opencode
+
+  deepagents:
+    profiles: ["deepagents"]
+    build: ./templates/deepagents
+    environment:
+      DEFAULT_MODEL: ${DEEPAGENTS_MODEL:-anthropic:claude-sonnet-4-5}
+      RUNTIME_API_KEY: ${DEEPAGENTS_RUNTIME_API_KEY:-local-deepagents-key}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - deepagents-data:/data
+    depends_on:
+      - lap
+
+  register-deepagents:
+    <<: *runtime-registration
+    profiles: ["deepagents"]
+    environment:
+      LAP_URL: http://lap:4000
+      LAP_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local}
+      RUNTIME_ALIAS: local-deepagents
+      RUNTIME_API_SPEC: claude_managed_agents
+      RUNTIME_API_BASE: http://deepagents:8080
+      RUNTIME_API_KEY: ${DEEPAGENTS_RUNTIME_API_KEY:-local-deepagents-key}
+    depends_on:
+      - lap
+      - deepagents
+
+  hermes:
+    profiles: ["hermes"]
+    build: ./templates/hermes
+    environment:
+      DEFAULT_MODEL: ${HERMES_MODEL:-anthropic/claude-sonnet-4-5}
+      RUNTIME_API_KEY: ${HERMES_RUNTIME_API_KEY:-local-hermes-key}
+      LAP_BASE_URL: http://lap:4000
+      LAP_API_KEY: ${LITELLM_MASTER_KEY:-sk-local}
+    volumes:
+      - hermes-data:/data
+    depends_on:
+      - lap
+
+  register-hermes:
+    <<: *runtime-registration
+    profiles: ["hermes"]
+    environment:
+      LAP_URL: http://lap:4000
+      LAP_MASTER_KEY: ${LITELLM_MASTER_KEY:-sk-local}
+      RUNTIME_ALIAS: local-hermes
+      RUNTIME_API_SPEC: claude_managed_agents
+      RUNTIME_API_BASE: http://hermes:8080
+      RUNTIME_API_KEY: ${HERMES_RUNTIME_API_KEY:-local-hermes-key}
+    depends_on:
+      - lap
+      - hermes
+
+volumes:
+  postgres-data:
+  opencode-data:
+  deepagents-data:
+  hermes-data:

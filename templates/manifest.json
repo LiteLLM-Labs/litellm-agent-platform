@@ -1,0 +1,28 @@
+{
+  "templates": [
+    {
+      "id": "deepagents",
+      "name": "DeepAgents",
+      "description": "LangChain DeepAgents exposed through the Anthropic Managed Agents API.",
+      "path": "templates/deepagents",
+      "default_alias": "deepagents",
+      "api_spec": "claude_managed_agents"
+    },
+    {
+      "id": "hermes",
+      "name": "Hermes Agent",
+      "description": "Nous Research Hermes Agent exposed through the Anthropic Managed Agents API.",
+      "path": "templates/hermes",
+      "default_alias": "hermes",
+      "api_spec": "claude_managed_agents"
+    },
+    {
+      "id": "opencode",
+      "name": "OpenCode Bridge",
+      "description": "OpenCode agent server that LAP can register as an Anthropic-compatible runtime.",
+      "path": "templates/opencode",
+      "default_alias": "opencode-anthropic",
+      "api_spec": "claude_managed_agents"
+    }
+  ]
+}

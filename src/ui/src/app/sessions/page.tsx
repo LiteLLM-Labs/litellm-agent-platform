@@ -21,16 +21,12 @@ import {
   listAgents,
   listSessions,
 } from "@/lib/api";
+import { runtimeBrandIconId } from "@/lib/runtime-branding";
 import type { Agent, AgentRuntimeId, RuntimeHarness, BuiltinRuntimeId } from "@/lib/types";
 import { resolveApiSpec } from "@/lib/types";
 
 const NEW_AGENT_VALUE = "__new_agent__";
 const CLAUDE_RUNTIME: AgentRuntimeId = "claude_managed_agents";
-
-function runtimeIconId(id: string) {
-  if (id === "gemini_antigravity") return "gemini";
-  return id === "claude_managed_agents" || id === "claude_agents" ? "claude" : id;
-}
 
 function runtimeLabel(runtime: RuntimeHarness | string): string {
   if (typeof runtime !== "string") return runtime.display_name;
@@ -312,7 +308,10 @@ function SessionsStart() {
                       Runtime
                     </span>
                     <span className="flex size-6 shrink-0 items-center justify-center rounded-md bg-muted">
-                      <BrandIcon id={runtimeIconId(runtime)} className="size-4" />
+                      <BrandIcon
+                        id={runtimeBrandIconId(runtime, resolveApiSpec(runtime, harnesses))}
+                        className="size-4"
+                      />
                     </span>
                     <span className="truncate text-sm font-medium">
                       {selectedRuntime?.display_name ?? (runtime ? runtimeLabel(runtime) : "Select runtime")}
@@ -324,7 +323,7 @@ function SessionsStart() {
                     <SelectItem key={item.alias} value={item.alias} disabled={!item.connected} className="py-3">
                       <span className="flex min-w-0 items-center gap-3">
                         <span className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-border bg-background">
-                          <BrandIcon id={runtimeIconId(item.alias)} className="size-4" />
+                          <BrandIcon id={runtimeBrandIconId(item.alias, item.api_spec)} className="size-4" />
                         </span>
                         <span className="min-w-0">
                           <span className="block truncate text-sm font-medium">{item.display_name}</span>

@@ -187,10 +187,36 @@ function GeminiIcon(props: SVGProps<SVGSVGElement>) {
 function OpenCodeIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" {...props}>
-      <rect width="48" height="48" rx="10" fill="#171717" />
+      <rect width="48" height="48" rx="10" fill="#000" />
       <path
         fill="#fff"
-        d="M14.6 31.6 7 24l7.6-7.6 2.8 2.8-4.8 4.8 4.8 4.8-2.8 2.8Zm18.8 0-2.8-2.8 4.8-4.8-4.8-4.8 2.8-2.8L41 24l-7.6 7.6ZM21.1 35h-4.2l10-22h4.2l-10 22Z"
+        fillRule="evenodd"
+        d="M32 12H16v24h16V12zm8 32H8V4h32v40z"
+      />
+    </svg>
+  );
+}
+
+function LangChainIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <rect width="48" height="48" rx="10" fill="#000" />
+      <path
+        fill="#7FC8FF"
+        d="M15.062 31.952a15.068 15.068 0 0 0 0-21.302L4.412 0A15.074 15.074 0 0 0 0 10.652c0 3.992 1.588 7.826 4.412 10.65l10.65 10.65ZM37.348 32.938a15.07 15.07 0 0 0-21.3 0l10.65 10.65a15.072 15.072 0 0 0 21.302 0l-10.652-10.65ZM4.436 43.564a15.072 15.072 0 0 0 10.652 4.412V32.914H.024c0 3.992 1.59 7.828 4.412 10.65ZM41.46 17.19a15.068 15.068 0 0 0-21.302.002l10.65 10.652L41.46 17.19Z"
+      />
+    </svg>
+  );
+}
+
+function HermesIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <image
+        width="48"
+        height="48"
+        preserveAspectRatio="xMidYMid meet"
+        href="https://raw.githubusercontent.com/lobehub/lobe-icons/refs/heads/master/packages/static-png/light/hermesagent.png"
       />
     </svg>
   );
@@ -213,6 +239,8 @@ const ICONS: Record<string, (p: SVGProps<SVGSVGElement>) => ReactNode> = {
   gemini: GeminiIcon,
   gemini_antigravity: GeminiIcon,
   gmail: GmailIcon,
+  hermes: HermesIcon,
+  langchain: LangChainIcon,
   linear: LinearIcon,
   opencode: OpenCodeIcon,
   pylon: PylonIcon,
