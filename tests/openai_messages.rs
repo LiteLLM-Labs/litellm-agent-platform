@@ -72,15 +72,19 @@ async fn mount_openai_json_response(upstream: &MockServer) {
     Mock::given(method("POST"))
         .and(path("/v1/responses"))
         .and(header_match("authorization", "Bearer sk-openai-test"))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "resp_test",
-            "object": "response",
-            "status": "completed",
-            "model": "gpt-5.5",
-            "output_text": "openai ok",
-            "output": [],
-            "usage": {"input_tokens": 4, "output_tokens": 2, "total_tokens": 6}
-        })))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .insert_header("x-request-id", "req_openai")
+                .set_body_json(json!({
+                    "id": "resp_test",
+                    "object": "response",
+                    "status": "completed",
+                    "model": "gpt-5.5",
+                    "output_text": "openai ok",
+                    "output": [],
+                    "usage": {"input_tokens": 4, "output_tokens": 2, "total_tokens": 6}
+                })),
+        )
         .mount(upstream)
         .await;
 }
@@ -160,6 +164,7 @@ async fn openai_model_on_messages_uses_responses_endpoint() {
     .await;
 
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.headers().get("request-id").unwrap(), "req_openai");
     let body = to_bytes(response.into_body(), 4096).await.unwrap();
     let body: Value = serde_json::from_slice(&body).unwrap();
     assert_eq!(body["type"], "message");

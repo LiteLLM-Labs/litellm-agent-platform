@@ -31,7 +31,11 @@ fn sdk_tree_matches_provider_endpoint_contract() {
     );
 
     assert_provider(&providers, "anthropic", ["anthropic_messages", "runtime"]);
-    assert_provider(&providers, "openai", ["openai_responses"]);
+    assert_provider(
+        &providers,
+        "openai",
+        ["anthropic_messages", "openai_responses"],
+    );
     assert_provider(&providers, "cursor", ["runtime"]);
     assert_provider(&providers, "gemini", ["runtime"]);
 

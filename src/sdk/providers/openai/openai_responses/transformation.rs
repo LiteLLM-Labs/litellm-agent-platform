@@ -10,10 +10,7 @@ use crate::{
     },
 };
 
-use super::messages::{
-    anthropic_messages_to_openai_responses, openai_response_to_anthropic_message,
-    openai_response_to_anthropic_sse,
-};
+use super::super::anthropic_messages::transformation as anthropic_messages;
 
 // Headers Codex attaches to each turn. Forwarded so upstream logging/analytics
 // keep request correlation; harmless to OpenAI if it ignores them.
@@ -83,7 +80,7 @@ impl Transformation for OpenAiResponsesTransformation {
     }
 
     fn messages_url(&self, deployment: &Deployment) -> String {
-        deployment.responses_url()
+        anthropic_messages::messages_url(deployment)
     }
 
     fn transform_messages_request(
@@ -92,15 +89,11 @@ impl Transformation for OpenAiResponsesTransformation {
         deployment: &Deployment,
         inbound_headers: &HeaderMap,
     ) -> Result<ProviderRequest, GatewayError> {
-        self.transform_openai_responses_request(
-            anthropic_messages_to_openai_responses(body, deployment),
-            deployment,
-            inbound_headers,
-        )
+        anthropic_messages::transform_request(self, body, deployment, inbound_headers)
     }
 
     fn transform_messages_response_headers(&self, upstream: &HeaderMap, stream: bool) -> HeaderMap {
-        self.transform_openai_responses_response_headers(upstream, stream)
+        anthropic_messages::transform_response_headers(self, upstream, stream)
     }
 
     fn transforms_messages_response_body(&self) -> bool {
@@ -115,18 +108,7 @@ impl Transformation for OpenAiResponsesTransformation {
         deployment: &Deployment,
         content_type: Option<&str>,
     ) -> Result<Vec<u8>, GatewayError> {
-        if !status.is_success() {
-            return Ok(body);
-        }
-        if stream {
-            return Ok(
-                openai_response_to_anthropic_sse(&body, content_type, deployment)?.into_bytes(),
-            );
-        }
-        let raw: Value = serde_json::from_slice(&body)?;
-        Ok(serde_json::to_vec(&openai_response_to_anthropic_message(
-            &raw, deployment,
-        ))?)
+        anthropic_messages::transform_response_body(body, status, stream, deployment, content_type)
     }
 }
 
