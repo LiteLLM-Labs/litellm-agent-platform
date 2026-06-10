@@ -171,17 +171,18 @@ function AgentEdit() {
     setFormError(null);
     try {
       if (!form.name.trim()) throw new Error("Name is required");
+      if (!form.model.trim()) throw new Error("Model is required");
       const cron = form.cron.trim();
       await updateAgent(id, {
         name: form.name,
         description: form.description,
         prompt: form.prompt,
         system: form.prompt,
+        model: form.model.trim(),
         runtime: form.runtime,
         cron: cron || null,
         timezone: form.timezone.trim() || "UTC",
         config: configWithSubAgents(form.config, form.subAgentIds),
-        ...(form.model ? { model: form.model } : {}),
       });
       router.push(`/agents/detail/?id=${encodeURIComponent(id)}`);
     } catch (e) {
@@ -364,7 +365,7 @@ function AgentEdit() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 pt-2">
-                  <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
+                  <Button onClick={save} disabled={saving || !form.model.trim()}>{saving ? "Saving…" : "Save changes"}</Button>
                   <Button variant="outline" onClick={() => router.push(`/agents/detail/?id=${encodeURIComponent(id)}`)} disabled={saving}>Cancel</Button>
                 </div>
               </div>
