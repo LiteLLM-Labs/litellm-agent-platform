@@ -99,8 +99,18 @@ export function translateOpencodeEvent(raw, ctx) {
     // skipped: it fires for the echoed user message and again as the final
     // assistant duplicate, so emitting it would double-send and echo input.
     case "message.part.delta": {
+      const meta = {};
+      const p = raw.properties || raw;
+      if (p.id != null) meta.id = p.id;
+      if (p.messageID != null) meta.messageID = p.messageID;
+      if (p.partID != null) meta.partID = p.partID;
+      if (p.sessionID != null) meta.sessionID = p.sessionID;
       const thinking = thinkingText(props);
-      if (thinking) return thinkingEvent(thinking, ctx.model);
+      if (thinking) {
+        const ev = thinkingEvent(thinking, ctx.model);
+        if (Object.keys(meta).length) ev.data = { ...meta, ...ev.data };
+        return ev;
+      }
       const text =
         props.delta?.text ||
         (typeof props.delta === "string" ? props.delta : "") ||
@@ -109,6 +119,7 @@ export function translateOpencodeEvent(raw, ctx) {
       return {
         event: "agent.message",
         data: {
+          ...meta,
           content: [{ type: "text", text }],
           model: ctx.model || null,
         },
@@ -131,7 +142,15 @@ export function translateOpencodeEvent(raw, ctx) {
     case "reasoning-delta": {
       const thinking = thinkingText(props, { allowBareDelta: true });
       if (!thinking) return null;
-      return thinkingEvent(thinking, ctx.model);
+      const ev = thinkingEvent(thinking, ctx.model);
+      const p2 = raw.properties || raw;
+      const meta2 = {};
+      if (p2.id != null) meta2.id = p2.id;
+      if (p2.messageID != null) meta2.messageID = p2.messageID;
+      if (p2.partID != null) meta2.partID = p2.partID;
+      if (p2.sessionID != null) meta2.sessionID = p2.sessionID;
+      if (Object.keys(meta2).length) ev.data = { ...meta2, ...ev.data };
+      return ev;
     }
     case "session.status": {
       const status = props.status?.type;
