@@ -18,11 +18,11 @@ import {
   type AvailableProvider,
 } from "@/lib/api";
 
-type Step = "login" | "provider" | "done";
+type Step = "checking" | "login" | "provider" | "done";
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const [step, setStep] = useState<Step>("login");
+  const [step, setStep] = useState<Step>("checking");
   const [masterKey, setMasterKey] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [anthropic, setAnthropic] = useState<AvailableProvider | null>(null);
@@ -35,7 +35,7 @@ export default function OnboardingPage() {
       setStep("login");
       return;
     }
-    void whoami()
+    whoami()
       .then(() => loadProviders())
       .catch(() => {
         clearStoredMasterKey();
@@ -59,7 +59,8 @@ export default function OnboardingPage() {
         null;
       setAnthropic(provider);
       setStep("provider");
-    } catch {
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load providers.");
       setStep("provider");
     }
   }
@@ -116,7 +117,13 @@ export default function OnboardingPage() {
           <span className="font-semibold text-lg">LiteLLM Agent Platform</span>
         </div>
 
-        <Steps current={step} />
+        {step !== "checking" && <Steps current={step} />}
+
+        {step === "checking" && (
+          <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+            Checking…
+          </div>
+        )}
 
         {step === "login" && (
           <form

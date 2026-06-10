@@ -2,8 +2,7 @@
 set -euo pipefail
 
 PROFILE="${1:-opencode}"
-PORT="${LITELLM_PORT:-4000}"
-URL="http://localhost:${PORT}"
+URL="http://localhost:4000"
 ONBOARDING="${URL}/onboarding"
 
 echo "Starting LiteLLM Agent Platform (profile: ${PROFILE})..."
