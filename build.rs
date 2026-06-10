@@ -93,6 +93,7 @@ fn provider_endpoint_module(path: &Path) -> Option<String> {
             if path.is_dir()
                 && path.join("mod.rs").exists()
                 && path.join("transformation.rs").exists()
+                && endpoint_module_registers_provider(&path)
             {
                 path.file_name()?.to_str().map(str::to_owned)
             } else {
@@ -100,4 +101,10 @@ fn provider_endpoint_module(path: &Path) -> Option<String> {
             }
         })
         .find(|name| name != "runtime")
+}
+
+fn endpoint_module_registers_provider(path: &Path) -> bool {
+    fs::read_to_string(path.join("mod.rs"))
+        .map(|content| content.contains("pub fn init("))
+        .unwrap_or(false)
 }
