@@ -126,13 +126,6 @@ pub(super) async fn assert_oauth_callback_reads_local_vault_secret(
     .await;
     request_json(
         fixture.app.clone(),
-        "DELETE",
-        &format!("/api/vault/default/{key}"),
-        None,
-    )
-    .await;
-    request_json(
-        fixture.app.clone(),
         "POST",
         "/api/vault/local",
         Some(json!({
