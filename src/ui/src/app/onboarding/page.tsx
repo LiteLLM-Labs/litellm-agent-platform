@@ -35,12 +35,13 @@ export default function OnboardingPage() {
       setStep("login");
       return;
     }
-    whoami()
-      .then(() => loadProviders())
-      .catch(() => {
-        clearStoredMasterKey();
-        setStep("login");
-      });
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("timeout")), 5000),
+    );
+    Promise.race([whoami().then(() => loadProviders()), timeout]).catch(() => {
+      clearStoredMasterKey();
+      setStep("login");
+    });
   }, []);
 
   async function loadProviders() {

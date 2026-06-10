@@ -8,8 +8,10 @@ ONBOARDING="${URL}/onboarding"
 echo "Starting LiteLLM Agent Platform (profile: ${PROFILE})..."
 docker compose --profile "${PROFILE}" up -d --build
 
+MASTER_KEY="${LITELLM_MASTER_KEY:-sk-local}"
+
 echo "Waiting for server at ${URL}..."
-until curl -fsS "${URL}/health" >/dev/null 2>&1; do
+until curl -fsS "${URL}/whoami" -H "Authorization: Bearer ${MASTER_KEY}" >/dev/null 2>&1; do
   sleep 1
 done
 
