@@ -9,20 +9,42 @@ pub async fn assert_agent_runtime_catalog(fixture: &AppFixture) {
         .collect();
     assert_eq!(
         ids,
-        vec!["claude_managed_agents", "cursor", "gemini_antigravity"]
+        vec![
+            "claude_managed_agents",
+            "cursor",
+            "gemini_antigravity",
+            "elastic_agent_builder"
+        ]
     );
     assert_eq!(
-        runtimes[2]["default_api_base"],
+        runtime(runtimes, "claude_managed_agents")["credential_provider_id"],
+        "anthropic"
+    );
+    assert_eq!(
+        runtime(runtimes, "cursor")["credential_provider_id"],
+        "cursor"
+    );
+    assert_eq!(
+        runtime(runtimes, "gemini_antigravity")["credential_provider_id"],
+        "gemini"
+    );
+    assert_eq!(
+        runtime(runtimes, "elastic_agent_builder")["credential_provider_id"],
+        "elastic"
+    );
+    assert_eq!(
+        runtime(runtimes, "gemini_antigravity")["default_api_base"],
         "https://generativelanguage.googleapis.com"
     );
-    assert_eq!(runtimes[0]["credential_provider_id"], "anthropic");
-    assert_eq!(runtimes[1]["credential_provider_id"], "cursor");
-    assert_eq!(runtimes[2]["credential_provider_id"], "gemini");
     assert_runtime_tools(runtimes);
 }
 
+fn runtime<'a>(runtimes: &'a [serde_json::Value], id: &str) -> &'a serde_json::Value {
+    runtimes.iter().find(|runtime| runtime["id"] == id).unwrap()
+}
+
 fn assert_runtime_tools(runtimes: &[serde_json::Value]) {
-    let claude_tools: Vec<_> = runtimes[0]["tools"]
+    let claude_tools: Vec<_> = runtime(runtimes, "claude_managed_agents")["tools"]
         .as_array()
         .unwrap()
         .iter()
@@ -41,7 +63,7 @@ fn assert_runtime_tools(runtimes: &[serde_json::Value]) {
             "web_search"
         ]
     );
-    let gemini_tools: Vec<_> = runtimes[2]["tools"]
+    let gemini_tools: Vec<_> = runtime(runtimes, "gemini_antigravity")["tools"]
         .as_array()
         .unwrap()
         .iter()

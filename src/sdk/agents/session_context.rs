@@ -30,4 +30,20 @@ impl SessionContext {
             run_id: interaction_id,
         }
     }
+
+    /// `provider_session_id` carries the encoded Elastic binding
+    /// (`agent_id`/`space`/`connector`), `run_id` carries the Elastic
+    /// `conversation_id` once a turn has established one.
+    pub(crate) fn elastic(
+        binding: String,
+        agent_id: String,
+        conversation_id: Option<String>,
+    ) -> Self {
+        Self {
+            runtime: AgentRuntime::ElasticAgentBuilder,
+            provider_session_id: Some(binding),
+            agent_id: Some(agent_id),
+            run_id: conversation_id,
+        }
+    }
 }

@@ -1,4 +1,5 @@
 mod client;
+mod client_state;
 mod events;
 mod resources;
 pub(crate) mod response_fields;
@@ -24,5 +25,6 @@ pub use types::{
     ListAgentsParams, ListModelsParams, ManagedAgent, ManagedAgentList, ManagedSessionRef,
     ModelInfo, ModelList, SendEventsParams, SendEventsResponse, Session, ANTHROPIC_VERSION,
     CLAUDE_MANAGED_AGENTS, CURSOR, DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_CURSOR_BASE_URL,
-    DEFAULT_GEMINI_BASE_URL, GEMINI_ANTIGRAVITY, GEMINI_API_REVISION, MANAGED_AGENTS_BETA,
+    DEFAULT_ELASTIC_BASE_URL, DEFAULT_GEMINI_BASE_URL, ELASTIC_AGENT_BUILDER, GEMINI_ANTIGRAVITY,
+    GEMINI_API_REVISION, MANAGED_AGENTS_BETA,
 };

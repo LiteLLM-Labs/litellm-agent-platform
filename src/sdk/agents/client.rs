@@ -1,13 +1,11 @@
-use std::{
-    collections::HashMap,
-    sync::{Arc, Mutex},
-};
+use std::{collections::HashMap, sync::Arc};
 
 use reqwest::{header, Method};
 use serde::Serialize;
 use serde_json::Value;
 
 use super::{
+    client_state::ClientState,
     events::{stream_events, AgentEventStream},
     resources::Beta,
     responses::{ensure_success, response_json},
@@ -25,17 +23,19 @@ pub struct Lap {
 struct Inner {
     http: reqwest::Client,
     runtimes: HashMap<AgentRuntime, RuntimeConfig>,
-    session_contexts: Mutex<HashMap<String, SessionContext>>,
-    cursor_run_ids: Mutex<HashMap<String, String>>,
+    state: Arc<ClientState>,
+    elastic_default_agent_id: Option<String>,
 }
 
 impl Lap {
     pub fn new(config: LapConfig) -> Self {
-        Self::with_http(configured_http_client(), runtime_configs(config))
+        let default = config.elastic_default_agent_id.clone();
+        Self::with_http(configured_http_client(), runtime_configs(config), default)
     }
 
     pub(crate) fn with_http_client(config: LapConfig, http: reqwest::Client) -> Self {
-        Self::with_http(http, runtime_configs(config))
+        let default = config.elastic_default_agent_id.clone();
+        Self::with_http(http, runtime_configs(config), default)
     }
 
     pub fn register_session(&self, session: ManagedSessionRef) -> Result<(), AgentSdkError> {
@@ -46,13 +46,17 @@ impl Lap {
         self.remember_session_context(&session_id, context)
     }
 
-    fn with_http(http: reqwest::Client, runtimes: HashMap<AgentRuntime, RuntimeConfig>) -> Self {
+    fn with_http(
+        http: reqwest::Client,
+        runtimes: HashMap<AgentRuntime, RuntimeConfig>,
+        elastic_default_agent_id: Option<String>,
+    ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 http,
                 runtimes,
-                session_contexts: Mutex::new(HashMap::new()),
-                cursor_run_ids: Mutex::new(HashMap::new()),
+                state: ClientState::new(),
+                elastic_default_agent_id,
             }),
         }
     }
@@ -107,6 +111,25 @@ impl Lap {
         Ok(self.adapter(runtime)?.normalize_stream(stream))
     }
 
+    /// Open an SSE stream over a `POST` request. Elastic's streaming converse
+    /// path (`POST /api/agent_builder/converse/async`) requires a request body,
+    /// unlike the `GET`-based streams used by other runtimes.
+    pub(crate) async fn stream_post<T: Serialize>(
+        &self,
+        runtime: AgentRuntime,
+        path: &str,
+        body: &T,
+    ) -> Result<AgentEventStream, AgentSdkError> {
+        let response = self
+            .request(runtime, Method::POST, path)?
+            .header(header::ACCEPT, "text/event-stream")
+            .json(body)
+            .send()
+            .await?;
+        let stream = stream_events(ensure_success(response).await?);
+        Ok(self.adapter(runtime)?.normalize_stream(stream))
+    }
+
     pub(crate) fn request(
         &self,
         runtime: AgentRuntime,
@@ -152,28 +175,17 @@ impl Lap {
         &self,
         session_id: &str,
     ) -> Result<AgentRuntime, AgentSdkError> {
-        let contexts = self
-            .inner
-            .session_contexts
-            .lock()
-            .map_err(|_| AgentSdkError::StateLock)?;
-        contexts
-            .get(session_id)
-            .map(|context| context.runtime)
-            .map(Ok)
-            .unwrap_or_else(|| self.default_runtime())
+        match self.inner.state.runtime_for_session(session_id)? {
+            Some(runtime) => Ok(runtime),
+            None => self.default_runtime(),
+        }
     }
 
     pub(crate) fn context_for_session(
         &self,
         session_id: &str,
     ) -> Result<Option<SessionContext>, AgentSdkError> {
-        let contexts = self
-            .inner
-            .session_contexts
-            .lock()
-            .map_err(|_| AgentSdkError::StateLock)?;
-        Ok(contexts.get(session_id).cloned())
+        self.inner.state.context_for_session(session_id)
     }
 
     pub(crate) fn remember_cursor_run(
@@ -181,25 +193,48 @@ impl Lap {
         agent_id: &str,
         run_id: &str,
     ) -> Result<(), AgentSdkError> {
-        self.inner
-            .cursor_run_ids
-            .lock()
-            .map_err(|_| AgentSdkError::StateLock)?
-            .insert(agent_id.to_owned(), run_id.to_owned());
-        Ok(())
+        self.inner.state.remember_cursor_run(agent_id, run_id)
     }
 
     pub(crate) fn cursor_run_for_agent(
         &self,
         agent_id: &str,
     ) -> Result<Option<String>, AgentSdkError> {
-        Ok(self
-            .inner
-            .cursor_run_ids
-            .lock()
-            .map_err(|_| AgentSdkError::StateLock)?
-            .get(agent_id)
-            .cloned())
+        self.inner.state.cursor_run_for_agent(agent_id)
+    }
+
+    pub(crate) fn elastic_default_agent_id(&self) -> Option<String> {
+        self.inner.elastic_default_agent_id.clone()
+    }
+
+    pub(crate) fn remember_pending_turn(
+        &self,
+        session_id: &str,
+        prompt: &str,
+    ) -> Result<(), AgentSdkError> {
+        self.inner.state.remember_pending_turn(session_id, prompt)
+    }
+
+    pub(crate) fn take_pending_turn(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<String>, AgentSdkError> {
+        self.inner.state.take_pending_turn(session_id)
+    }
+
+    pub(crate) fn remember_agent_meta(
+        &self,
+        agent_id: &str,
+        meta: serde_json::Value,
+    ) -> Result<(), AgentSdkError> {
+        self.inner.state.remember_agent_meta(agent_id, meta)
+    }
+
+    pub(crate) fn agent_meta(
+        &self,
+        agent_id: &str,
+    ) -> Result<Option<serde_json::Value>, AgentSdkError> {
+        self.inner.state.agent_meta(agent_id)
     }
 
     pub(crate) fn remember_session_context(
@@ -208,11 +243,8 @@ impl Lap {
         context: SessionContext,
     ) -> Result<(), AgentSdkError> {
         self.inner
-            .session_contexts
-            .lock()
-            .map_err(|_| AgentSdkError::StateLock)?
-            .insert(session_id.to_owned(), context);
-        Ok(())
+            .state
+            .remember_session_context(session_id, context)
     }
 
     pub(crate) fn remember_session(

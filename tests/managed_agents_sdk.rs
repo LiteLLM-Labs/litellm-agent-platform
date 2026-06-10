@@ -222,7 +222,12 @@ fn parses_sse_and_resolves_supported_runtimes() {
         .collect();
     assert_eq!(
         catalog_ids,
-        vec!["claude_managed_agents", "cursor", "gemini_antigravity"]
+        vec![
+            "claude_managed_agents",
+            "cursor",
+            "gemini_antigravity",
+            "elastic_agent_builder"
+        ]
     );
     assert!(AgentRuntime::try_from("opencode").is_err());
     assert!(AgentRuntime::try_from("not-a-runtime").is_err());

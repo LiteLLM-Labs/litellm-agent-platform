@@ -110,6 +110,10 @@ fn runtime_client(state: &AppState, created: &CreatedRuntimeSession) -> Lap {
             config.gemini_api_key = Some(created.resolved.credential.api_key.clone());
             config.gemini_base_url = created.resolved.credential.api_base.clone();
         }
+        AgentRuntime::ElasticAgentBuilder => {
+            config.elastic_api_key = Some(created.resolved.credential.api_key.clone());
+            config.elastic_base_url = created.resolved.credential.api_base.clone();
+        }
     }
     Lap::with_http_client(config, state.http.clone())
 }
@@ -125,7 +129,7 @@ async fn create_provider_agent(
         .agents()
         .create(CreateAgentParams {
             lap_agent_runtime: runtime,
-            lap_provider_options: None,
+            lap_provider_options: provider_options(runtime, created),
             name: gemini::provider_agent_name(runtime, created),
             model: AgentModel::Config(AgentModelConfig {
                 id: agent_model(&created.agent, &created.environment),
@@ -141,6 +145,10 @@ async fn create_provider_agent(
         })
         .await
         .map_err(agent_sdk_error)
+}
+
+fn provider_options(runtime: AgentRuntime, created: &CreatedRuntimeSession) -> Option<Value> {
+    (runtime == AgentRuntime::ElasticAgentBuilder).then(|| created.agent.config.clone())
 }
 
 async fn create_provider_environment(
