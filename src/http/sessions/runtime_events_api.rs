@@ -20,6 +20,9 @@ use crate::{
 };
 
 use super::{
+    runtime_events_reconcile::{
+        event_items, persist_runtime_event_values, reconcile_terminal_status_from_events,
+    },
     runtime_lifecycle::{
         event_error_message, mark_session_status, persist_runtime_event, terminal_event_status,
     },
@@ -160,36 +163,6 @@ pub async fn runtime_event_list(
     Ok(Json(events))
 }
 
-async fn reconcile_terminal_status_from_events(
-    state: &AppState,
-    pool: &PgPool,
-    session_id: &str,
-    current_status: &str,
-    events: &Value,
-) -> Result<(), GatewayError> {
-    let (terminal_status, terminal_error) = terminal_status_from_event_values(events);
-    if let Some(status) = terminal_status {
-        if current_status != status {
-            mark_session_status(state, pool, session_id, status, terminal_error).await?;
-        }
-    }
-    Ok(())
-}
-
-async fn persist_runtime_event_values(
-    pool: &PgPool,
-    session_id: &str,
-    events: &Value,
-) -> Result<(), GatewayError> {
-    let Some(items) = event_items(events) else {
-        return Ok(());
-    };
-    for event in items {
-        runtime_events::repository::append(pool, session_id, event.clone()).await?;
-    }
-    Ok(())
-}
-
 pub(crate) async fn runtime_event_stream_for_session(
     state: &AppState,
     pool: &PgPool,
@@ -241,72 +214,5 @@ async fn emit_runtime_event_list(
         for event in items {
             emit_runtime_event(callbacks, session_id, event).await;
         }
-    }
-}
-
-fn terminal_status_from_event_values(events: &Value) -> (Option<&'static str>, Option<String>) {
-    let mut terminal_status = None;
-    let mut terminal_error = None;
-    let Some(items) = event_items(events) else {
-        return (None, None);
-    };
-    for event in items {
-        match event.get("type").and_then(Value::as_str) {
-            Some("session.status_idle") => {
-                terminal_status = Some("idle");
-                terminal_error = None;
-            }
-            Some("session.error") => {
-                terminal_status = Some("error");
-                terminal_error = Some(event_value_error_message(event));
-            }
-            _ => {}
-        }
-    }
-    (terminal_status, terminal_error)
-}
-
-fn event_value_error_message(event: &Value) -> String {
-    event
-        .get("error")
-        .and_then(|error| {
-            error
-                .get("message")
-                .and_then(Value::as_str)
-                .or_else(|| error.as_str())
-        })
-        .unwrap_or("managed agent interaction failed")
-        .to_owned()
-}
-
-fn event_items(events: &Value) -> Option<&Vec<Value>> {
-    events
-        .as_array()
-        .or_else(|| events.get("data").and_then(Value::as_array))
-}
-
-#[cfg(test)]
-mod tests {
-    use serde_json::json;
-
-    use super::terminal_status_from_event_values;
-
-    #[test]
-    fn terminal_status_from_event_list_values() {
-        let (status, error) = terminal_status_from_event_values(&json!({
-            "data": [
-                { "type": "agent.message" },
-                { "type": "session.error", "error": { "message": "boom" } }
-            ]
-        }));
-        assert_eq!(status, Some("error"));
-        assert_eq!(error.as_deref(), Some("boom"));
-
-        let (status, error) = terminal_status_from_event_values(&json!([
-            { "type": "session.error", "error": "boom" },
-            { "type": "session.status_idle" }
-        ]));
-        assert_eq!(status, Some("idle"));
-        assert_eq!(error, None);
     }
 }

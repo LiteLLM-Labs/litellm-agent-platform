@@ -4,6 +4,7 @@ use sqlx::PgPool;
 
 use super::{read_events_until_completed, request_json, request_raw, AppFixture};
 
+mod claude_mcp_vault;
 mod claude_runtime;
 mod cursor_runtime;
 mod gemini_runtime;
@@ -22,6 +23,7 @@ mod slack_helpers;
 mod slack_mcp;
 mod slack_url_verification;
 
+pub use claude_mcp_vault::exercise_claude_gateway_mcp_vault;
 pub use claude_runtime::exercise_claude_runtime_session_storage;
 pub use cursor_runtime::exercise_cursor_runtime_stream;
 pub use gemini_runtime::exercise_gemini_runtime_session;

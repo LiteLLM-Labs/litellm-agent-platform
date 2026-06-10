@@ -17,6 +17,7 @@ use crate::{
 mod execution;
 mod runtime;
 mod runtime_events_api;
+mod runtime_events_reconcile;
 mod runtime_inputs;
 mod runtime_lifecycle;
 mod runtime_mcp_validation;

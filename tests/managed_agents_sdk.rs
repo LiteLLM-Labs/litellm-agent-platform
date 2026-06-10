@@ -2,6 +2,7 @@
 mod sdk_support;
 
 mod managed_agents_sdk {
+    pub mod claude;
     pub mod gemini;
 }
 
@@ -25,66 +26,6 @@ async fn creates_claude_managed_agent_with_anthropic_shape() {
 
     assert_eq!(agent.id, "agent_123");
     assert_eq!(agent.version, Some(1));
-}
-
-#[tokio::test]
-async fn claude_agent_create_strips_mcp_server_auth_from_agent_definition() {
-    let server = MockServer::start().await;
-    Mock::given(method("POST"))
-        .and(path("/v1/agents"))
-        .and(header("x-api-key", "sk-ant-test"))
-        .and(header(
-            "anthropic-beta",
-            litellm_rust::sdk::agents::MANAGED_AGENTS_BETA,
-        ))
-        .and(body_json(json!({
-            "name": "MCP Assistant",
-            "model": "claude-opus-4-8",
-            "system": "Use connected tools.",
-            "tools": [{ "type": "mcp_toolset", "mcp_server_name": "gateway" }],
-            "mcp_servers": [{
-                "type": "url",
-                "name": "gateway",
-                "url": "https://gateway.example.com/mcp"
-            }]
-        })))
-        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "id": "agent_mcp",
-            "version": 1
-        })))
-        .mount(&server)
-        .await;
-
-    let client = Lap::new(LapConfig {
-        anthropic_api_key: Some("sk-ant-test".to_owned()),
-        anthropic_base_url: server.uri(),
-        ..LapConfig::default()
-    });
-    let agent = client
-        .beta()
-        .agents()
-        .create(CreateAgentParams {
-            lap_agent_runtime: AgentRuntime::ClaudeManagedAgents,
-            lap_provider_options: None,
-            name: "MCP Assistant".to_owned(),
-            model: AgentModel::from("claude-opus-4-8"),
-            system: "Use connected tools.".to_owned(),
-            description: None,
-            tools: vec![json!({ "type": "mcp_toolset", "mcp_server_name": "gateway" })],
-            mcp_servers: vec![json!({
-                "type": "url",
-                "name": "gateway",
-                "url": "https://gateway.example.com/mcp",
-                "authorization_token": "sk-local"
-            })],
-            env_vars: None,
-            workspace: None,
-            metadata: None,
-        })
-        .await
-        .unwrap();
-
-    assert_eq!(agent.id, "agent_mcp");
 }
 
 #[tokio::test]
