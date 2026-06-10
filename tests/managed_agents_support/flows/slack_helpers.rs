@@ -119,6 +119,31 @@ pub(super) async fn assert_oauth_callback_reads_local_vault_secret(
     assert_oauth_callback(fixture, agent_id).await;
     request_json(
         fixture.app.clone(),
+        "DELETE",
+        &format!("/api/vault/local/{key}"),
+        None,
+    )
+    .await;
+    request_json(
+        fixture.app.clone(),
+        "DELETE",
+        &format!("/api/vault/default/{key}"),
+        None,
+    )
+    .await;
+    request_json(
+        fixture.app.clone(),
+        "POST",
+        "/api/vault/local",
+        Some(json!({
+            "key": format!("vault:local:{key}"),
+            "value": "client-secret",
+        })),
+    )
+    .await;
+    assert_oauth_callback(fixture, agent_id).await;
+    request_json(
+        fixture.app.clone(),
         "POST",
         "/api/vault/default",
         Some(json!({ "key": key, "value": "client-secret" })),

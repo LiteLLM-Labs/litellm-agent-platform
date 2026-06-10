@@ -45,11 +45,13 @@ pub(crate) async fn load_secret(state: &AppState, key: &str) -> Result<String, G
         return Ok(value);
     }
     let legacy_key = format!("vault:{DEFAULT_VAULT_USER}:{key}");
-    if let Some(value) = load_legacy_secret(state, pool, &legacy_key).await? {
+    if let Some(value) = load_legacy_secret(state, pool, &legacy_key, DEFAULT_VAULT_USER).await? {
         return Ok(value);
     }
     let legacy_ui_key = format!("vault:{LEGACY_UI_VAULT_USER}:{key}");
-    if let Some(value) = load_legacy_secret(state, pool, &legacy_ui_key).await? {
+    if let Some(value) =
+        load_legacy_secret(state, pool, &legacy_ui_key, LEGACY_UI_VAULT_USER).await?
+    {
         return Ok(value);
     }
     Err(GatewayError::InvalidConfig(format!(
@@ -61,9 +63,9 @@ async fn load_legacy_secret(
     state: &AppState,
     pool: &PgPool,
     key: &str,
+    owner_id: &str,
 ) -> Result<Option<String>, GatewayError> {
-    let Some(encrypted) = credentials::resolve_vault_key(pool, key, DEFAULT_VAULT_USER).await?
-    else {
+    let Some(encrypted) = credentials::resolve_vault_key(pool, key, owner_id).await? else {
         return Ok(None);
     };
     let encryption_key =
