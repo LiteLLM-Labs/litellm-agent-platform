@@ -121,6 +121,26 @@ async fn rejects_invalid_file_base64_against_postgres() {
 }
 
 #[tokio::test]
+async fn runtime_model_discovery_requires_credentials_against_postgres() {
+    let _guard = DB_TEST_LOCK.lock().await;
+    let Some(fixture) = AppFixture::new().await else {
+        eprintln!("skipping managed agent integration test: TEST_DATABASE_URL is not set");
+        return;
+    };
+
+    let (status, body) = request_json_raw(
+        fixture.app.clone(),
+        "GET",
+        "/v1/models?runtime=cursor",
+        None,
+    )
+    .await;
+
+    assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
+    assert!(body.contains("Cursor provider credentials are not configured"));
+}
+
+#[tokio::test]
 async fn runtime_agent_create_keeps_legacy_harness_against_postgres() {
     let _guard = DB_TEST_LOCK.lock().await;
     let Some(fixture) = AppFixture::new().await else {

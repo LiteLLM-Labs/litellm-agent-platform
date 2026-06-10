@@ -6,7 +6,8 @@ mod managed_agents_sdk {
 }
 
 use litellm_rust::sdk::agents::{
-    parse_sse, AgentEventKind, AgentEventPayload, AgentRuntime, Lap, LapConfig, ListModelsParams,
+    parse_sse, AgentEventKind, AgentEventPayload, AgentRuntime, AgentSdkError, Lap, LapConfig,
+    ListModelsParams,
 };
 use serde_json::json;
 use wiremock::{
@@ -106,6 +107,70 @@ async fn lists_cursor_runtime_models_with_openai_shape() {
     assert_eq!(models.object, "list");
     assert_eq!(models.data[0].id, "claude-4-sonnet");
     assert_eq!(models.data[0].owned_by, "cursor");
+}
+
+#[tokio::test]
+async fn preserves_empty_provider_model_list() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .and(header("authorization", "Bearer sk-cursor-test"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "object": "list",
+            "data": []
+        })))
+        .mount(&server)
+        .await;
+
+    let models = Lap::new(LapConfig {
+        cursor_api_key: Some("sk-cursor-test".to_owned()),
+        cursor_base_url: server.uri(),
+        ..LapConfig::default()
+    })
+    .beta()
+    .models()
+    .list(ListModelsParams {
+        lap_agent_runtime: AgentRuntime::Cursor,
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(models.object, "list");
+    assert!(models.data.is_empty());
+}
+
+#[tokio::test]
+async fn surfaces_provider_model_list_failures() {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .and(header("authorization", "Bearer sk-cursor-test"))
+        .respond_with(ResponseTemplate::new(401).set_body_json(json!({
+            "error": { "message": "bad key" }
+        })))
+        .mount(&server)
+        .await;
+
+    let error = Lap::new(LapConfig {
+        cursor_api_key: Some("sk-cursor-test".to_owned()),
+        cursor_base_url: server.uri(),
+        ..LapConfig::default()
+    })
+    .beta()
+    .models()
+    .list(ListModelsParams {
+        lap_agent_runtime: AgentRuntime::Cursor,
+    })
+    .await
+    .unwrap_err();
+
+    match error {
+        AgentSdkError::Provider { status, body } => {
+            assert_eq!(status, reqwest::StatusCode::UNAUTHORIZED);
+            assert!(body.contains("bad key"));
+        }
+        other => panic!("expected provider error, got {other:?}"),
+    }
 }
 
 #[tokio::test]

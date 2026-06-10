@@ -8,11 +8,13 @@ use axum::{
 use serde::Deserialize;
 
 use crate::{
-    db::managed_agents::harnesses,
     errors::GatewayError,
     proxy::{auth::master_key::require_any_gateway_key, state::AppState},
     sdk::{
-        agents::{AgentRuntime, ListModelsParams, ModelInfo, ModelList, CLAUDE_MANAGED_AGENTS},
+        agents::{
+            AgentRuntime, AgentSdkError, ListModelsParams, ModelInfo, ModelList,
+            CLAUDE_MANAGED_AGENTS,
+        },
         providers,
     },
 };
@@ -59,32 +61,26 @@ pub async fn models(
 }
 
 async fn runtime_models(state: &AppState, alias: &str) -> Result<ModelList, GatewayError> {
-    let runtime = runtime_for_alias(state, alias).await?;
     if let Some(pool) = state.db.as_ref() {
-        if let Ok(resolved) =
-            crate::http::runtime_resolution::resolve_runtime(pool, state, alias).await
-        {
-            if let Ok(client) = crate::http::sessions::lap_from_credential(&resolved) {
-                if let Ok(models) = client
-                    .beta()
-                    .models()
-                    .list(ListModelsParams {
-                        lap_agent_runtime: resolved.agent_runtime,
-                    })
-                    .await
-                {
-                    return Ok(models);
-                }
-            }
-        }
+        let resolved = crate::http::runtime_resolution::resolve_runtime(pool, state, alias).await?;
+        let client = crate::http::sessions::lap_from_credential(&resolved)?;
+        return client
+            .beta()
+            .models()
+            .list(ListModelsParams {
+                lap_agent_runtime: resolved.agent_runtime,
+            })
+            .await
+            .map_err(model_discovery_error);
     }
+    let runtime = static_runtime_for_alias(alias)?;
     Ok(ModelList::from_ids(
         runtime.default_model_ids().iter().copied(),
         alias,
     ))
 }
 
-async fn runtime_for_alias(state: &AppState, alias: &str) -> Result<AgentRuntime, GatewayError> {
+fn static_runtime_for_alias(alias: &str) -> Result<AgentRuntime, GatewayError> {
     let alias = if alias == CLAUDE_AGENTS_LEGACY {
         CLAUDE_MANAGED_AGENTS
     } else {
@@ -101,22 +97,16 @@ async fn runtime_for_alias(state: &AppState, alias: &str) -> Result<AgentRuntime
         return Ok(entry.runtime);
     }
 
-    let Some(pool) = state.db.as_ref() else {
-        return Err(GatewayError::InvalidJsonMessage(format!(
-            "unsupported runtime: {alias}"
-        )));
-    };
-    let harness = harnesses::repository::get_by_alias(pool, alias)
-        .await?
-        .ok_or_else(|| GatewayError::InvalidJsonMessage(format!("unsupported runtime: {alias}")))?;
-    if let Some(entry) = model_registry.entry_for_id(&harness.api_spec) {
-        return Ok(entry.runtime);
-    }
+    Err(GatewayError::InvalidJsonMessage(format!(
+        "unsupported runtime: {alias}"
+    )))
+}
 
-    runtime_registry
-        .entry_for_id(&harness.api_spec)
-        .map(|entry| entry.runtime)
-        .ok_or_else(|| {
-            GatewayError::InvalidConfig(format!("unknown api_spec: {}", harness.api_spec))
-        })
+fn model_discovery_error(error: AgentSdkError) -> GatewayError {
+    match error {
+        AgentSdkError::Provider { status, body } => GatewayError::SandboxError(format!(
+            "managed agent provider request failed with status {status}: {body}"
+        )),
+        other => GatewayError::SandboxError(other.to_string()),
+    }
 }

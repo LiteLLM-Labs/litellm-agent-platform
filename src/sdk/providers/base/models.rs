@@ -50,18 +50,11 @@ pub(crate) trait ModelEndpoint: Send + Sync + 'static {
     fn list_models<'a>(&'a self, client: &'a Lap, params: ListModelsParams) -> ModelListFuture<'a>;
 }
 
-pub(crate) async fn list_openai_shape_or_defaults(
+pub(crate) async fn list_openai_shape(
     client: &Lap,
     runtime: AgentRuntime,
     owned_by: &str,
 ) -> Result<ModelList, AgentSdkError> {
-    if let Ok(raw) = client.get(runtime, "/v1/models").await {
-        if let Some(models) = ModelList::from_provider_value(raw, owned_by) {
-            return Ok(models);
-        }
-    }
-    Ok(ModelList::from_ids(
-        runtime.default_model_ids().iter().copied(),
-        owned_by,
-    ))
+    let raw = client.get(runtime, "/v1/models").await?;
+    ModelList::from_provider_value(raw, owned_by).ok_or(AgentSdkError::MissingField("data"))
 }

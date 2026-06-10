@@ -54,7 +54,7 @@ impl ModelList {
             .iter()
             .filter_map(|item| model_info(item, &owned_by))
             .collect::<Vec<_>>();
-        (!data.is_empty()).then(|| Self {
+        Some(Self {
             object: "list".to_owned(),
             data,
         })
