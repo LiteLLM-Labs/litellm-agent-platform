@@ -211,7 +211,7 @@ async fn runtime_agent_create_preserves_tool_config_against_postgres() {
 
 async fn assert_explicit_empty_tools_preserved(fixture: &AppFixture) {
     let explicit_empty_tools = create_test_agent(
-        &fixture,
+        fixture,
         json!({
             "name": "empty-tools-agent",
             "owner_id": "user-1",
@@ -230,7 +230,7 @@ async fn assert_explicit_empty_tools_preserved(fixture: &AppFixture) {
 
 async fn assert_top_level_tools_override_config_tools(fixture: &AppFixture) {
     let overriding_tools = create_test_agent(
-        &fixture,
+        fixture,
         json!({
             "name": "overriding-tools-agent",
             "owner_id": "user-1",
@@ -246,7 +246,7 @@ async fn assert_top_level_tools_override_config_tools(fixture: &AppFixture) {
 
 async fn assert_invalid_config_normalized(fixture: &AppFixture) {
     let normalized_config = create_test_agent(
-        &fixture,
+        fixture,
         json!({
             "name": "normalized-config-agent",
             "owner_id": "user-1",
