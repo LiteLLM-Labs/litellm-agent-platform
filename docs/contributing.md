@@ -11,9 +11,11 @@
 
 ```bash
 git clone <repo>
-cd litellm-rust
+cd litellm-agent-platform
 cargo build
 ```
+
+The Rust crate is named `litellm-rust`, and the binary is `lite`.
 
 **2. Create a config**
 
