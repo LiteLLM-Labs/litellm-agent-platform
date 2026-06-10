@@ -191,6 +191,33 @@ async fn lists_runtime_models_from_catalog_defaults() {
 }
 
 #[tokio::test]
+async fn rejects_unknown_runtime_models_without_database() {
+    let upstream = MockServer::start().await;
+    let config = test_config(upstream.uri());
+    let app = router(build_state(&config));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method("GET")
+                .uri("/v1/models?runtime=unknown")
+                .header(header::AUTHORIZATION, "Bearer sk-local")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), 1024).await.unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        body["error"]["message"],
+        "invalid request json: unsupported runtime: unknown"
+    );
+}
+
+#[tokio::test]
 async fn forwards_streaming_messages_as_sse() {
     let upstream = MockServer::start().await;
     Mock::given(method("POST"))

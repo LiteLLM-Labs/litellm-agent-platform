@@ -101,7 +101,11 @@ async fn runtime_for_alias(state: &AppState, alias: &str) -> Result<AgentRuntime
         return Ok(entry.runtime);
     }
 
-    let pool = state.db.as_ref().ok_or(GatewayError::MissingDatabase)?;
+    let Some(pool) = state.db.as_ref() else {
+        return Err(GatewayError::InvalidJsonMessage(format!(
+            "unsupported runtime: {alias}"
+        )));
+    };
     let harness = harnesses::repository::get_by_alias(pool, alias)
         .await?
         .ok_or_else(|| GatewayError::InvalidJsonMessage(format!("unsupported runtime: {alias}")))?;
