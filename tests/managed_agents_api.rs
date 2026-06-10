@@ -134,6 +134,46 @@ async fn rejects_invalid_file_base64_against_postgres() {
 }
 
 #[tokio::test]
+async fn runtime_model_discovery_requires_credentials_against_postgres() {
+    let _guard = DB_TEST_LOCK.lock().await;
+    let Some(fixture) = AppFixture::new().await else {
+        eprintln!("skipping managed agent integration test: TEST_DATABASE_URL is not set");
+        return;
+    };
+
+    let (status, body) = request_json_raw(
+        fixture.app.clone(),
+        "GET",
+        "/v1/models?runtime=cursor",
+        None,
+    )
+    .await;
+
+    assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
+    assert!(body.contains("Cursor provider credentials are not configured"));
+}
+
+#[tokio::test]
+async fn gemini_runtime_models_are_unsupported_against_postgres() {
+    let _guard = DB_TEST_LOCK.lock().await;
+    let Some(fixture) = AppFixture::new().await else {
+        eprintln!("skipping managed agent integration test: TEST_DATABASE_URL is not set");
+        return;
+    };
+
+    let (status, body) = request_json_raw(
+        fixture.app.clone(),
+        "GET",
+        "/v1/models?runtime=gemini_antigravity",
+        None,
+    )
+    .await;
+
+    assert_eq!(status, axum::http::StatusCode::BAD_REQUEST);
+    assert!(body.contains("model discovery is not supported for runtime: gemini_antigravity"));
+}
+
+#[tokio::test]
 async fn runtime_agent_create_keeps_legacy_harness_against_postgres() {
     let _guard = DB_TEST_LOCK.lock().await;
     let Some(fixture) = AppFixture::new().await else {
@@ -171,7 +211,7 @@ async fn runtime_agent_create_preserves_tool_config_against_postgres() {
 
 async fn assert_explicit_empty_tools_preserved(fixture: &AppFixture) {
     let explicit_empty_tools = create_test_agent(
-        &fixture,
+        fixture,
         json!({
             "name": "empty-tools-agent",
             "owner_id": "user-1",
@@ -190,7 +230,7 @@ async fn assert_explicit_empty_tools_preserved(fixture: &AppFixture) {
 
 async fn assert_top_level_tools_override_config_tools(fixture: &AppFixture) {
     let overriding_tools = create_test_agent(
-        &fixture,
+        fixture,
         json!({
             "name": "overriding-tools-agent",
             "owner_id": "user-1",
@@ -206,7 +246,7 @@ async fn assert_top_level_tools_override_config_tools(fixture: &AppFixture) {
 
 async fn assert_invalid_config_normalized(fixture: &AppFixture) {
     let normalized_config = create_test_agent(
-        &fixture,
+        fixture,
         json!({
             "name": "normalized-config-agent",
             "owner_id": "user-1",

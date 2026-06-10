@@ -387,9 +387,18 @@ export interface ConnectedProvider {
   category?: ProviderCategory;
 }
 
+export interface ConfiguredProviderModel {
+  id: string;
+  provider_id: string;
+  source: string;
+  source_detail: string;
+  configured_model: string;
+}
+
 export interface ProvidersResponse {
   available_providers: AvailableProvider[];
   connected_providers: ConnectedProvider[];
+  configured_models: ConfiguredProviderModel[];
 }
 
 export async function listProviders(): Promise<ProvidersResponse> {
@@ -555,17 +564,14 @@ export async function sendMessageWithRuntimeModel(opts: {
   runtime?: string;
   apiSpec?: string | null;  // resolved api_spec; null = harnesses not yet loaded
 }): Promise<void> {
-  // Branch on api_spec (not the raw alias) so custom Cursor harnesses get the right route prefix
-  const spec = opts.apiSpec ?? opts.runtime;
-  const model =
-    spec === "claude_managed_agents" || spec === "claude_agents"
-      ? "anthropic/*"
-      : spec === "cursor"
-        ? "cursor/*"
-        : spec === "gemini_antigravity"
-          ? "gemini/*"
-          : opts.model;
-  return sendMessage({ sessionId: opts.sessionId, text: opts.text, model });
+  if (opts.runtime && !opts.model.trim()) {
+    throw new Error("Runtime model is required.");
+  }
+  return sendMessage({
+    sessionId: opts.sessionId,
+    text: opts.text,
+    model: opts.model,
+  });
 }
 
 export async function abortSession(id: string): Promise<void> {
@@ -576,27 +582,20 @@ export async function interruptSession(id: string): Promise<void> {
   await reqHarness(`/session/${encodeURIComponent(id)}/interrupt`, { method: "POST" });
 }
 
-export async function listModels(): Promise<string[]> {
-  const res = await req("/v1/models");
-  if (!res.ok) return [];
+export async function listModels(runtime?: string): Promise<string[]> {
+  const qs = runtime ? `?${new URLSearchParams({ runtime }).toString()}` : "";
+  const res = await req(`/v1/models${qs}`);
+  if (!res.ok) throw new ApiError(res.status, await res.text().catch(() => ""));
   const data = await res.json().catch(() => null);
   const items: Array<{ id: string }> = data?.data ?? [];
   return items.map((m) => m.id).filter(Boolean);
 }
 
-const DEFAULT_AGENT_DRAFT_MODEL = "claude-sonnet-4-6";
-
 function draftModelFrom(models: string[]): string {
   const concrete = models.filter((model) => !model.endsWith("/*"));
-  const anthropicWildcard = models.find((model) => model === "anthropic/*");
-  return (
-    concrete.find((model) => model === DEFAULT_AGENT_DRAFT_MODEL) ??
-    concrete.find((model) => model.endsWith(`/${DEFAULT_AGENT_DRAFT_MODEL}`)) ??
-    (anthropicWildcard ? `anthropic/${DEFAULT_AGENT_DRAFT_MODEL}` : undefined) ??
-    concrete.find((model) => /claude.*sonnet/i.test(model)) ??
-    concrete[0] ??
-    DEFAULT_AGENT_DRAFT_MODEL
-  );
+  const model = concrete[0] ?? models[0];
+  if (!model) throw new Error("No models are configured.");
+  return model;
 }
 
 function messageText(payload: unknown): string {
@@ -656,7 +655,8 @@ export async function draftAgentConfigWithModel(
   desire: string,
   runtimes: AgentRuntime[] = [],
 ): Promise<string> {
-  const model = draftModelFrom(await listModels().catch(() => []));
+  const models = await listModels();
+  const model = draftModelFrom(models);
   const res = await req("/v1/messages", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -664,7 +664,7 @@ export async function draftAgentConfigWithModel(
       model,
       max_tokens: 1200,
       system:
-        "You design managed agent configs for LiteLLM Agent Platform. Return only valid YAML, with no markdown fence and no prose. Use these primary keys when relevant: name, description, model, runtime, system, tools, schedule, vault_keys, skill_ids, rule_ids, sub_agents. The runtime must be claude_managed_agents unless the user explicitly names another supported runtime. The model should be claude-sonnet-4-6 unless a different model is clearly requested. Use tools as YAML list items with a type equal to a tool id available for the selected runtime, for example `- type: bash`. Do not emit provider-native toolset identifiers such as agent_toolset_20260401. If the selected runtime has no explicit LAP-managed tools, use tools: []. Do not include harness. Do not include provider-native multiagent or callable_agents. For sub-agents, only emit existing LAP agent references if the user provided exact IDs, using `sub_agents:` entries with `agent_id`. If useful helper agents are implied but no IDs are known, describe them in the system prompt as suggested roles instead of inventing IDs. Do not paste the user's request as a generic mission; synthesize a complete, specific system prompt that tells the agent how to behave, what to avoid, when to delegate to attached sub-agents, and when to ask for approval. Include schedule, vault_keys, skill_ids, or rule_ids only when the request clearly needs them.\n\n" +
+        `You design managed agent configs for LiteLLM Agent Platform. Return only valid YAML, with no markdown fence and no prose. Use these primary keys when relevant: name, description, model, runtime, system, tools, schedule, vault_keys, skill_ids, rule_ids, sub_agents. The runtime must be claude_managed_agents unless the user explicitly names another supported runtime. The model must be one of these available model IDs: ${models.join(", ")}. Use ${model} unless a different available model is clearly requested. Use tools as YAML list items with a type equal to a tool id available for the selected runtime, for example \`- type: bash\`. Do not emit provider-native toolset identifiers such as agent_toolset_20260401. If the selected runtime has no explicit LAP-managed tools, use tools: []. Do not include harness. Do not include provider-native multiagent or callable_agents. For sub-agents, only emit existing LAP agent references if the user provided exact IDs, using \`sub_agents:\` entries with \`agent_id\`. If useful helper agents are implied but no IDs are known, describe them in the system prompt as suggested roles instead of inventing IDs. Do not paste the user's request as a generic mission; synthesize a complete, specific system prompt that tells the agent how to behave, what to avoid, when to delegate to attached sub-agents, and when to ask for approval. Include schedule, vault_keys, skill_ids, or rule_ids only when the request clearly needs them.\n\n` +
         runtimeToolCatalogPrompt(runtimes),
       messages: [
         {

@@ -62,7 +62,7 @@ services:
     environment:
       LITELLM_BASE_URL: http://lap:4000/v1
       LITELLM_API_KEY: ${LITELLM_MASTER_KEY:-sk-local}
-      LITELLM_MODELS: ${OPENCODE_MODELS:-claude-sonnet-4-6}
+      LITELLM_MODELS: ${OPENCODE_MODELS:-}
     volumes:
       - opencode-data:/data
     depends_on:

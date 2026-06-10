@@ -42,7 +42,6 @@ export interface ParsedAgentDraft {
   error: string | null;
 }
 
-const DEFAULT_MODEL = "claude-sonnet-4-6";
 const DEFAULT_RUNTIME = "claude_managed_agents";
 const DEFAULT_OWNER = "local";
 const DEFAULT_FAILURE = "pause_and_notify";
@@ -61,7 +60,7 @@ function baseDraft(): AgentDraft {
   return {
     name: "Untitled Agent",
     description: "A blank starting point with the core toolset.",
-    model: DEFAULT_MODEL,
+    model: "",
     runtime: DEFAULT_RUNTIME,
     owner_id: DEFAULT_OWNER,
     system:
@@ -683,7 +682,7 @@ export function createInputFromDraft(
     name: draft.name.trim(),
     owner_id: draft.owner_id.trim() || DEFAULT_OWNER,
     description: draft.description.trim(),
-    model: draft.model.trim() || DEFAULT_MODEL,
+    model: draft.model.trim(),
     runtime,
     system: draft.system,
     prompt: draft.system,

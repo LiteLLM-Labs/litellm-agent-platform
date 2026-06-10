@@ -20,7 +20,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ScheduleEditor } from "@/components/schedule-editor";
-import { getAgent, updateAgent, listAgents, listModels, listAgentRuntimes } from "@/lib/api";
+import { apiErrorMessage, getAgent, updateAgent, listAgents, listModels, listAgentRuntimes } from "@/lib/api";
+import { modelOptions, selectedRuntimeModel } from "@/lib/model-options";
 import { DEFAULT_TIMEZONE } from "@/lib/schedule";
 import type { Agent, AgentRuntime, AgentRuntimeId } from "@/lib/types";
 
@@ -86,6 +87,8 @@ function AgentEdit() {
     config: {},
   });
   const [models, setModels] = useState<string[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [runtimes, setRuntimes] = useState<AgentRuntime[]>([]);
   const [loading, setLoading] = useState(true);
@@ -97,9 +100,8 @@ function AgentEdit() {
     if (!id) return;
     (async () => {
       try {
-        const [ag, modelList, agentList, runtimeList] = await Promise.all([
+        const [ag, agentList, runtimeList] = await Promise.all([
           getAgent(id),
-          listModels(),
           listAgents(),
           listAgentRuntimes(),
         ]);
@@ -115,7 +117,6 @@ function AgentEdit() {
           subAgentIds: subAgentIdsFromConfig(config),
           config,
         });
-        setModels(modelList);
         setAgents(agentList.filter((agent) => agent.id !== id));
         setRuntimes(runtimeList);
       } catch (e) {
@@ -126,22 +127,70 @@ function AgentEdit() {
     })();
   }, [id]);
 
+  useEffect(() => {
+    if (loading) return;
+    let cancelled = false;
+    const runtime = form.runtime.trim();
+    if (!runtime) {
+      setModels([]);
+      setModelsLoading(false);
+      setModelsError(null);
+      return;
+    }
+
+    setModels([]);
+    setModelsLoading(true);
+    setModelsError(null);
+    listModels(runtime)
+      .then((modelList) => {
+        if (cancelled) return;
+        setModels(modelList);
+        setForm((current) => ({
+          ...current,
+          model: selectedRuntimeModel(modelList, current.model),
+        }));
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setModels([]);
+        setModelsError(apiErrorMessage(err, "Failed to load runtime models"));
+        setForm((current) => ({ ...current, model: "" }));
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [form.runtime, loading]);
+
+  useEffect(() => {
+    if (models.length === 0) return;
+    setForm((current) => {
+      const nextModel = selectedRuntimeModel(models, current.model);
+      if (current.model.trim() === nextModel) return current;
+      return { ...current, model: nextModel };
+    });
+  }, [form.model, models]);
+
   const save = async () => {
     setSaving(true);
     setFormError(null);
     try {
       if (!form.name.trim()) throw new Error("Name is required");
+      if (!form.model.trim()) throw new Error("Model is required");
       const cron = form.cron.trim();
       await updateAgent(id, {
         name: form.name,
         description: form.description,
         prompt: form.prompt,
         system: form.prompt,
+        model: form.model.trim(),
         runtime: form.runtime,
         cron: cron || null,
         timezone: form.timezone.trim() || "UTC",
         config: configWithSubAgents(form.config, form.subAgentIds),
-        ...(form.model ? { model: form.model } : {}),
       });
       router.push(`/agents/detail/?id=${encodeURIComponent(id)}`);
     } catch (e) {
@@ -150,6 +199,8 @@ function AgentEdit() {
       setSaving(false);
     }
   };
+
+  const availableModels = modelOptions(models, form.model);
 
   return (
     <div className="flex h-screen bg-background text-foreground">
@@ -184,14 +235,20 @@ function AgentEdit() {
                   </div>
                   <div className="grid gap-1.5">
                     <Label>Model</Label>
-                    <ModelSelect value={form.model} models={models} onValueChange={(v) => setForm({ ...form, model: v })} />
+                    <ModelSelect value={form.model} models={availableModels} onValueChange={(v) => setForm({ ...form, model: v })} />
+                    {modelsLoading && (
+                      <p className="text-xs text-muted-foreground">Loading runtime models...</p>
+                    )}
+                    {modelsError && (
+                      <p className="text-xs text-destructive">{modelsError}</p>
+                    )}
                   </div>
                   <div className="grid gap-1.5">
                     <Label>Default runtime</Label>
                     <Select
                       value={form.runtime}
                       onValueChange={(value) => {
-                        if (isAgentRuntimeId(value)) setForm({ ...form, runtime: value });
+                        if (isAgentRuntimeId(value)) setForm({ ...form, runtime: value, model: "" });
                       }}
                     >
                       <SelectTrigger className="h-8 w-full">
@@ -316,7 +373,7 @@ function AgentEdit() {
                   )}
                 </div>
                 <div className="flex items-center gap-2 pt-2">
-                  <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save changes"}</Button>
+                  <Button onClick={save} disabled={saving || !form.model.trim()}>{saving ? "Saving…" : "Save changes"}</Button>
                   <Button variant="outline" onClick={() => router.push(`/agents/detail/?id=${encodeURIComponent(id)}`)} disabled={saving}>Cancel</Button>
                 </div>
               </div>

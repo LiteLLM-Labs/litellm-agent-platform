@@ -19,7 +19,7 @@ pub(super) fn runtime_sdk_client(
     lap_from_credential(resolved)
 }
 
-pub(super) fn lap_from_credential(
+pub(crate) fn lap_from_credential(
     resolved: &crate::http::runtime_resolution::ResolvedRuntime,
 ) -> Result<Lap, GatewayError> {
     let mut config = LapConfig::default();

@@ -29,7 +29,6 @@ docker run --rm -p 8080:8080 \
   -v opencode-workspace:/tmp/opencode-workspace \
   -e LITELLM_BASE_URL=https://your-litellm-gateway/v1 \
   -e LITELLM_API_KEY=sk-... \
-  -e LITELLM_MODELS=claude-sonnet-4-6 \
   opencode-agent-server
 ```
 
@@ -65,7 +64,7 @@ The server accepts Anthropic-style headers but does not validate the inbound API
 key. LAP still needs a value so it can store the runtime credential.
 
 After adding the runtime, select `opencode-local` in a LAP session and use a
-model from `LITELLM_MODELS`, such as `claude-sonnet-4-6`.
+model returned by your LiteLLM gateway's `/v1/models` endpoint.
 
 ## Per-agent model selection
 
@@ -87,8 +86,7 @@ For LiteLLM-backed deployments, a bare name like `gpt-5.5` is normalized to
 opencode's provider/model object `{ "providerID": "litellm", "modelID": "gpt-5.5" }`,
 and the model is registered in the generated `opencode.json` before opencode
 reboots. Pass `litellm/gpt-5.5` to set the provider/model split explicitly. The
-target model must be in `LITELLM_MODELS` (or otherwise routable by your
-configured LiteLLM gateway).
+target model must be routable by your configured LiteLLM gateway.
 
 > The object form `{ "id": "gpt-5.5" }` is still accepted for backward
 > compatibility, but the string form is the documented API.
@@ -110,7 +108,7 @@ BASE=http://localhost:8080 MODEL=gpt-5.5 ./scripts/smoke.sh
 | `ANTHROPIC_API_KEY` | — | native Anthropic key (alternative to LiteLLM) |
 | `LITELLM_BASE_URL` | — | LiteLLM gateway base URL (include `/v1`) |
 | `LITELLM_API_KEY` | — | LiteLLM gateway key |
-| `LITELLM_MODELS` | `claude-sonnet-4-6` | comma-separated models to register |
+| `LITELLM_MODELS` | — | optional comma-separated models to pre-register in opencode |
 | `OPENSANDBOX_API_URL` | — | OpenSandbox controller URL (enables sandboxed execution) |
 | `OPENSANDBOX_API_KEY` | — | OpenSandbox API key |
 | `OPENSANDBOX_IMAGE` | — | sandbox execd image |

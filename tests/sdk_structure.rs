@@ -24,6 +24,7 @@ fn sdk_tree_matches_provider_endpoint_contract() {
         set([
             "anthropic_messages.rs",
             "mod.rs",
+            "models.rs",
             "openai_responses.rs",
             "runtime.rs",
         ])

@@ -31,6 +31,7 @@ pub(crate) use runtime::create_runtime_session_for_agent;
 use runtime::{create_runtime_session, execute_runtime_prompt};
 pub(crate) use runtime_events_api::runtime_event_stream_for_session;
 pub use runtime_events_api::{runtime_event_list, runtime_events};
+pub(crate) use runtime_sdk::lap_from_credential;
 use runtime_sdk::{register_runtime_session, runtime_sdk_client};
 use storage::{db, persist_message, resolve_session_request, session};
 pub use types::{CreateSessionRequest, MessageResponse, PromptRequest, SessionResponse};
@@ -106,8 +107,13 @@ pub async fn prompt_async(
 ) -> Result<StatusCode, GatewayError> {
     let pool = db(&state, &headers)?.clone();
     let prompt = input.prompt_text()?;
-    let model = input.model_id().unwrap_or("claude-sonnet-4-6").to_owned();
-    enqueue_prompt_text(state, pool, &session_id, prompt, model).await?;
+    let model = input
+        .model_id()
+        .ok_or(GatewayError::MissingModel)?
+        .to_owned();
+    let runtime_model = Some(model.clone());
+    enqueue_prompt_text_with_runtime_model(state, pool, &session_id, prompt, model, runtime_model)
+        .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -118,6 +124,17 @@ pub(crate) async fn enqueue_prompt_text(
     prompt: String,
     model: String,
 ) -> Result<(), GatewayError> {
+    enqueue_prompt_text_with_runtime_model(state, pool, session_id, prompt, model, None).await
+}
+
+async fn enqueue_prompt_text_with_runtime_model(
+    state: Arc<AppState>,
+    pool: sqlx::PgPool,
+    session_id: &str,
+    prompt: String,
+    model: String,
+    runtime_model: Option<String>,
+) -> Result<(), GatewayError> {
     let session_id = session_id.to_owned();
     let row = session(&pool, &session_id).await?;
 
@@ -127,7 +144,7 @@ pub(crate) async fn enqueue_prompt_text(
         .track_run(row.agent_id.as_deref().unwrap_or(&row.harness), &session_id);
 
     if row.runtime.is_some() {
-        execute_runtime_prompt(state, &pool, row, prompt).await?;
+        execute_runtime_prompt(state, &pool, row, prompt, runtime_model).await?;
         return Ok(());
     }
 

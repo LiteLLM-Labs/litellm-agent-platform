@@ -23,6 +23,19 @@ impl SessionEvents<'_> {
             .await
     }
 
+    pub(crate) async fn send_with_model(
+        &self,
+        session_id: &str,
+        model: Option<String>,
+        params: SendEventsParams,
+    ) -> Result<SendEventsResponse, AgentSdkError> {
+        let runtime = self.client.runtime_for_session(session_id)?;
+        self.client
+            .adapter(runtime)?
+            .send_events_with_model(self.client, session_id, model, params)
+            .await
+    }
+
     pub async fn stream(&self, session_id: &str) -> Result<AgentEventStream, AgentSdkError> {
         let runtime = self.client.runtime_for_session(session_id)?;
         self.client

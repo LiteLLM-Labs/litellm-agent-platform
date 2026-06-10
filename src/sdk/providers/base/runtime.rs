@@ -182,6 +182,16 @@ pub(crate) trait RuntimeAdapter: Send + Sync + 'static {
         params: SendEventsParams,
     ) -> AdapterFuture<'a, SendEventsResponse>;
 
+    fn send_events_with_model<'a>(
+        &'a self,
+        client: &'a Lap,
+        session_id: &'a str,
+        _model: Option<String>,
+        params: SendEventsParams,
+    ) -> AdapterFuture<'a, SendEventsResponse> {
+        self.send_events(client, session_id, params)
+    }
+
     fn stream_events<'a>(
         &'a self,
         client: &'a Lap,

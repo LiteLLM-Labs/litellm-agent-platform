@@ -70,6 +70,7 @@ import {
   listRules,
   listSkills,
 } from "@/lib/api";
+import { modelOptions, selectedRuntimeModel } from "@/lib/model-options";
 import { runtimeBrandIconId } from "@/lib/runtime-branding";
 import { scheduleLabel } from "@/lib/schedule";
 import type { Agent, AgentRuntime, Rule, Skill, RuntimeHarness } from "@/lib/types";
@@ -100,6 +101,8 @@ export default function NewAgentPage() {
   const [runtimes, setRuntimes] = useState<AgentRuntime[]>([]);
   const [harnesses, setHarnesses] = useState<RuntimeHarness[]>([]);
   const [models, setModels] = useState<string[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
   const [agents, setAgents] = useState<Agent[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
@@ -121,11 +124,10 @@ export default function NewAgentPage() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([listAgentRuntimes(), listModels(), listAgents(), listSkills(), listRules()])
-      .then(([runtimeValues, modelValues, agentValues, skillValues, ruleValues]) => {
+    Promise.all([listAgentRuntimes(), listAgents(), listSkills(), listRules()])
+      .then(([runtimeValues, agentValues, skillValues, ruleValues]) => {
         if (cancelled) return;
         setRuntimes(runtimeValues);
-        setModels(modelValues);
         setAgents(agentValues);
         setSkills(skillValues);
         setRules(ruleValues);
@@ -138,7 +140,6 @@ export default function NewAgentPage() {
       .catch(() => {
         if (cancelled) return;
         setRuntimes([]);
-        setModels([]);
         setAgents([]);
         setSkills([]);
         setRules([]);
@@ -187,6 +188,66 @@ export default function NewAgentPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    const runtime = draft.runtime.trim();
+    if (!runtime) {
+      setModels([]);
+      setModelsLoading(false);
+      setModelsError(null);
+      return;
+    }
+
+    setModels([]);
+    setModelsLoading(true);
+    setModelsError(null);
+    listModels(runtime)
+      .then((modelValues) => {
+        if (cancelled) return;
+        setModels(modelValues);
+        setConfigText((current) => {
+          const currentDraft = parseAgentDraftConfig(current);
+          if (currentDraft.error && currentDraft.error !== "Model is required.") return current;
+          if (currentDraft.draft.runtime.trim() !== runtime) return current;
+          const nextModel = selectedRuntimeModel(modelValues, currentDraft.draft.model);
+          if (currentDraft.draft.model.trim() === nextModel) return current;
+          return stringifyAgentDraft({ ...currentDraft.draft, model: nextModel });
+        });
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setModels([]);
+        setModelsError(apiErrorMessage(err, "Failed to load runtime models"));
+        setConfigText((current) => {
+          const currentDraft = parseAgentDraftConfig(current);
+          if (currentDraft.error && currentDraft.error !== "Model is required.") return current;
+          if (currentDraft.draft.runtime.trim() !== runtime) return current;
+          if (!currentDraft.draft.model.trim()) return current;
+          return stringifyAgentDraft({ ...currentDraft.draft, model: "" });
+        });
+      })
+      .finally(() => {
+        if (!cancelled) setModelsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [draft.runtime]);
+
+  useEffect(() => {
+    if (models.length === 0) return;
+    const runtime = draft.runtime.trim();
+    setConfigText((current) => {
+      const currentDraft = parseAgentDraftConfig(current);
+      if (currentDraft.error && currentDraft.error !== "Model is required.") return current;
+      if (currentDraft.draft.runtime.trim() !== runtime) return current;
+      const nextModel = selectedRuntimeModel(models, currentDraft.draft.model);
+      if (currentDraft.draft.model.trim() === nextModel) return current;
+      return stringifyAgentDraft({ ...currentDraft.draft, model: nextModel });
+    });
+  }, [draft.model, draft.runtime, models]);
 
   useEffect(() => {
     listRuntimeHarnesses()
@@ -338,6 +399,8 @@ export default function NewAgentPage() {
               mcpIntegrations={mcpIntegrations}
               mcpLoading={mcpLoading}
               models={models}
+              modelsError={modelsError}
+              modelsLoading={modelsLoading}
               parsedError={parsed.error}
               prompt={prompt}
               rules={rules}
@@ -518,6 +581,8 @@ function ConfigStep({
   mcpIntegrations,
   mcpLoading,
   models,
+  modelsError,
+  modelsLoading,
   parsedError,
   prompt,
   rules,
@@ -547,6 +612,8 @@ function ConfigStep({
   mcpIntegrations: Integration[];
   mcpLoading: boolean;
   models: string[];
+  modelsError: string | null;
+  modelsLoading: boolean;
   parsedError: string | null;
   prompt: string;
   rules: Rule[];
@@ -704,6 +771,8 @@ function ConfigStep({
               mcpIntegrations={mcpIntegrations}
               mcpLoading={mcpLoading}
               models={models}
+              modelsError={modelsError}
+              modelsLoading={modelsLoading}
               rules={rules}
               skills={skills}
               runtimes={runtimes}
@@ -823,6 +892,8 @@ function AgentDraftControls({
   mcpIntegrations,
   mcpLoading,
   models,
+  modelsError,
+  modelsLoading,
   rules,
   skills,
   runtimes,
@@ -835,13 +906,15 @@ function AgentDraftControls({
   mcpIntegrations: Integration[];
   mcpLoading: boolean;
   models: string[];
+  modelsError: string | null;
+  modelsLoading: boolean;
   rules: Rule[];
   skills: Skill[];
   runtimes: AgentRuntime[];
   onChange: (next: AgentDraft) => void;
 }) {
   const update = (patch: Partial<AgentDraft>) => onChange({ ...draft, ...patch });
-  const availableModels = models.length > 0 ? models : [draft.model].filter(Boolean);
+  const availableModels = modelOptions(models, draft.model);
   const runtime = runtimes.find((entry) => entry.id === draft.runtime);
   const selectedHarness = harnesses.find((entry) => entry.alias === draft.runtime);
   const toolOptions =
@@ -915,6 +988,12 @@ function AgentDraftControls({
               onValueChange={(model) => update({ model })}
             />
           </div>
+          {modelsLoading && (
+            <p className="text-xs text-[#9d9384]">Loading runtime models...</p>
+          )}
+          {modelsError && (
+            <p className="text-xs text-red-300">{modelsError}</p>
+          )}
         </div>
 
         {harnesses.length >= 1 && (
@@ -922,7 +1001,7 @@ function AgentDraftControls({
             <Label className="text-[#c9c0b1]">Runtime</Label>
             <Select
               value={draft.runtime || "claude_managed_agents"}
-              onValueChange={(v) => update({ runtime: v ?? "claude_managed_agents" })}
+              onValueChange={(v) => update({ runtime: v ?? "claude_managed_agents", model: "" })}
             >
               <SelectTrigger className="h-11 w-full max-w-sm overflow-hidden border-white/10 bg-[#242321] px-3 text-[#f7f2e8]">
                 <RuntimeSelectOption
@@ -1314,7 +1393,7 @@ function RuntimeSelectOption({
 }
 
 function runtimeApiSpec(value: string): string {
-  if (value === "claude_managed_agents" || value === "claude_agents") return "claude_managed_agents";
+  if (value === "claude_managed_agents") return "claude_managed_agents";
   if (value === "cursor") return "cursor";
   if (value === "gemini_antigravity") return "gemini_antigravity";
   if (value === "opencode") return "opencode";
@@ -1322,7 +1401,7 @@ function runtimeApiSpec(value: string): string {
 }
 
 function runtimeLabel(value: string): string {
-  if (value === "claude_managed_agents" || value === "claude_agents") return "Claude Managed Agents";
+  if (value === "claude_managed_agents") return "Claude Managed Agents";
   if (value === "cursor") return "Cursor";
   if (value === "gemini_antigravity") return "Gemini Antigravity";
   if (value === "opencode") return "OpenCode";
@@ -1330,7 +1409,7 @@ function runtimeLabel(value: string): string {
 }
 
 function runtimeSubtitle(value: string): string {
-  if (value === "claude_managed_agents" || value === "claude_agents") return "Anthropic sessions and tools";
+  if (value === "claude_managed_agents") return "Anthropic sessions and tools";
   if (value === "cursor") return "Background repo agents";
   if (value === "gemini_antigravity") return "Google managed sandbox";
   if (value === "opencode") return "OpenCode server";

@@ -16,6 +16,7 @@ import {
 } from "./opencode.mjs";
 import { buildSandboxProvider } from "./sandbox.mjs";
 import { createApp } from "./app.mjs";
+import { fetchLiteLlmModels } from "./model-list.mjs";
 
 // ---- boot config ----------------------------------------------------------
 const PORT = process.env.PORT || 8080;
@@ -30,13 +31,11 @@ const store = createStore(DB_PATH);
 // opencode only loads custom agents in a git project — make the workspace one.
 await gitInit(WORKDIR);
 
-// Optionally route opencode's model calls through a LiteLLM gateway. When
-// LITELLM_BASE_URL + LITELLM_API_KEY are set, opencode addresses models as
-// "litellm/<model>" (e.g. litellm/claude-sonnet-4-6).
+// Optionally route opencode's model calls through a LiteLLM gateway.
 const LITELLM_BASE_URL = process.env.LITELLM_BASE_URL || null;
 const LITELLM_API_KEY = process.env.LITELLM_API_KEY || null;
 const LITELLM_PROVIDER_ID = "litellm";
-const LITELLM_MODELS = (process.env.LITELLM_MODELS || "claude-sonnet-4-6")
+const LITELLM_MODELS = (process.env.LITELLM_MODELS || "")
   .split(",")
   .map((m) => m.trim())
   .filter(Boolean);
@@ -72,6 +71,17 @@ if (sandbox.error) {
   );
 }
 const DEFAULT_MODEL_PROVIDER_ID = LITELLM_BASE_URL && LITELLM_API_KEY ? LITELLM_PROVIDER_ID : null;
+
+async function listModels() {
+  if (!LITELLM_BASE_URL || !LITELLM_API_KEY) {
+    throw new Error("LITELLM_BASE_URL and LITELLM_API_KEY are required for model discovery");
+  }
+  return fetchLiteLlmModels({
+    baseURL: LITELLM_BASE_URL,
+    apiKey: LITELLM_API_KEY,
+    ownedBy: LITELLM_PROVIDER_ID,
+  });
+}
 
 const ocOpts = { port: OC_PORT, cwd: WORKDIR };
 
@@ -146,6 +156,7 @@ const app = createApp({
   workdir: WORKDIR,
   defaultModelProviderID: DEFAULT_MODEL_PROVIDER_ID,
   litellmProviderID: LITELLM_PROVIDER_ID,
+  listModels,
   ensureProviderModel,
   provisionAgent,
   writeMcpConfig,

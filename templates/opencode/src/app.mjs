@@ -38,6 +38,7 @@ export function createApp({
   workdir,
   defaultModelProviderID,
   litellmProviderID,
+  listModels = async () => ({ object: "list", data: [] }),
   ensureProviderModel,
   provisionAgent,
   writeMcpConfig,
@@ -98,6 +99,10 @@ export function createApp({
       opencode = false;
     }
     res.json({ ok: true, opencode });
+  }));
+
+  app.get("/v1/models", wrap(async (_req, res) => {
+    res.json(await listModels());
   }));
 
   app.post("/v1/agents", wrap(async (req, res) => {

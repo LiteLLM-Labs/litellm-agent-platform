@@ -1,19 +1,22 @@
 use std::time::{Duration, Instant};
 
-use reqwest::{Method, StatusCode};
+use reqwest::StatusCode;
 use serde_json::{json, Value};
 
+mod helpers;
 mod request_body;
 mod stream;
 
 use crate::sdk::agents::{
     response_fields::{id, nested_id, nested_string_field},
-    responses::response_json,
     AgentEventStream, AgentRuntime, AgentSdkError, CreateAgentParams,
     CreateEnvironmentParams, CreateSessionParams, Environment, Lap, ManagedAgent,
     ManagedSessionRef, SendEventsParams, SendEventsResponse, Session, SessionContext,
 };
 use crate::sdk::providers::base::runtime::{AdapterFuture, RuntimeAdapter};
+use helpers::{
+    agent_id_from_context, cursor_agent_id, latest_run_id, prompt_from_events, run_id,
+};
 use request_body::create_agent_body;
 use stream::normalize_cursor_stream;
 
@@ -146,9 +149,26 @@ impl RuntimeAdapter for CursorRuntime {
         session_id: &'a str,
         params: SendEventsParams,
     ) -> AdapterFuture<'a, SendEventsResponse> {
+        self.send_events_with_model(client, session_id, None, params)
+    }
+
+    fn send_events_with_model<'a>(
+        &'a self,
+        client: &'a Lap,
+        session_id: &'a str,
+        model: Option<String>,
+        params: SendEventsParams,
+    ) -> AdapterFuture<'a, SendEventsResponse> {
         Box::pin(async move {
             let agent_id = cursor_agent_id(client, session_id)?;
-            let body = json!({ "prompt": prompt_from_events(&params.events)? });
+            let mut body = serde_json::Map::from_iter([(
+                "prompt".to_owned(),
+                prompt_from_events(&params.events)?,
+            )]);
+            if let Some(model) = model {
+                body.insert("model".to_owned(), Value::String(model));
+            }
+            let body = Value::Object(body);
             let deadline = Instant::now() + Duration::from_secs(300);
             let mut delay = Duration::from_millis(500);
             loop {
@@ -225,71 +245,4 @@ impl RuntimeAdapter for CursorRuntime {
             Ok(())
         })
     }
-}
-
-pub(crate) fn run_id(raw: &Value) -> Option<String> {
-    raw.get("run")
-        .and_then(|value| value.get("id"))
-        .and_then(Value::as_str)
-        .or_else(|| {
-            raw.get("agent")
-                .and_then(|value| value.get("latestRunId"))
-                .and_then(Value::as_str)
-        })
-        .or_else(|| raw.get("latestRunId").and_then(Value::as_str))
-        .map(str::to_owned)
-}
-
-pub(crate) fn prompt_from_events(events: &[Value]) -> Result<Value, AgentSdkError> {
-    let mut text = Vec::new();
-    for event in events {
-        if event.get("type").and_then(Value::as_str) != Some("user.message") {
-            continue;
-        }
-        let Some(content) = event.get("content").and_then(Value::as_array) else {
-            continue;
-        };
-        for block in content {
-            if block.get("type").and_then(Value::as_str) == Some("text") {
-                if let Some(value) = block.get("text").and_then(Value::as_str) {
-                    text.push(value.to_owned());
-                }
-            }
-        }
-    }
-    if text.is_empty() {
-        return Err(AgentSdkError::InvalidRequest(
-            "cursor runtime requires at least one user.message text block".to_owned(),
-        ));
-    }
-    Ok(json!({ "text": text.join("\n\n") }))
-}
-
-pub(crate) fn agent_id_from_context(session_id: &str, context: Option<&SessionContext>) -> String {
-    context
-        .and_then(|context| context.agent_id.clone())
-        .or_else(|| context.and_then(|context| context.provider_session_id.clone()))
-        .unwrap_or_else(|| session_id.to_owned())
-}
-
-#[allow(dead_code)]
-fn cursor_agent_id(client: &Lap, session_id: &str) -> Result<String, AgentSdkError> {
-    Ok(agent_id_from_context(
-        session_id,
-        client.context_for_session(session_id)?.as_ref(),
-    ))
-}
-
-#[allow(dead_code)]
-async fn latest_run_id(client: &Lap, agent_id: &str) -> Result<String, AgentSdkError> {
-    let response = client
-        .request(
-            AgentRuntime::Cursor,
-            Method::GET,
-            &format!("/v1/agents/{agent_id}"),
-        )?
-        .send()
-        .await?;
-    let raw = response_json(response).await?;
-    run_id(&raw).ok_or(AgentSdkError::MissingField("latestRunId"))
 }

@@ -36,7 +36,7 @@ import { InspectorPanel } from "@/components/inspector-panel";
 import { getMessages, getSession, createSession, deleteSession, subscribeRuntimeEvents, listModels, abortSession, interruptSession, listAgents, listApprovals, acceptApproval, rejectApproval, sendMessageWithRuntimeModel, listRuntimeEvents, listRuntimeHarnesses } from "@/lib/api";
 import type { PendingApproval, RuntimeAgentEvent } from "@/lib/api";
 import { ToolApprovalPanel } from "@/components/tool-approval-panel";
-import type { Agent, AgentRuntimeId, HarnessMessage, RuntimeHarness, BuiltinRuntimeId } from "@/lib/types";
+import type { Agent, AgentRuntimeId, HarnessMessage, RuntimeHarness } from "@/lib/types";
 import { resolveApiSpec } from "@/lib/types";
 import type { Frame } from "@/components/inspector-panel";
 import SessionsPage from "../sessions/page";
@@ -66,24 +66,15 @@ function shortPrompt(prompt: string): string {
 }
 
 function runtimeLabel(runtime?: string): string {
-  if (runtime === "claude_managed_agents" || runtime === "claude_agents") return "Claude Managed Agents";
+  if (runtime === "claude_managed_agents") return "Claude Managed Agents";
   if (runtime === "cursor") return "Cursor";
   if (runtime === "gemini_antigravity") return "Gemini Antigravity";
   return BUILTIN_AGENTS[runtime ?? ""] ?? runtime ?? "Claude Code";
 }
 
-function runtimeModelId(alias?: string, harnesses: RuntimeHarness[] = []): string | null {
-  if (!alias) return null;
-  const spec = resolveApiSpec(alias, harnesses);
-  if (spec === "claude_managed_agents") return "anthropic/*";
-  if (spec === "cursor") return "cursor/*";
-  if (spec === "gemini_antigravity") return "gemini/*";
-  return null;
-}
-
 function providerSessionUrl(runtime?: string, providerSessionId?: string, providerUrl?: string): string | null {
   if (providerUrl) return providerUrl;
-  if ((runtime === "claude_managed_agents" || runtime === "claude_agents") && providerSessionId) {
+  if (runtime === "claude_managed_agents" && providerSessionId) {
     return `https://platform.claude.com/workspaces/default/sessions/${encodeURIComponent(providerSessionId)}`;
   }
   return null;
@@ -520,9 +511,9 @@ function ChatInner() {
   }, [messages, queuedPrompts, runtimeMessages, sessionRuntime, sid]);
   const hasStarted = Boolean(displayMessages && displayMessages.length > 0);
   const modelOptions = useMemo(() => {
-    const runtimeModel = runtimeModelId(sessionRuntime, harnesses);
-    return runtimeModel ? [runtimeModel, ...models.filter((item) => item !== runtimeModel)] : models;
-  }, [models, sessionRuntime, harnesses]);
+    if (sessionRuntime) return models;
+    return models.length > 0 ? models : FALLBACK_MODELS;
+  }, [models, sessionRuntime]);
 
   const onCopyPrompt = useCallback(() => {
     if (!activePrompt) return;
@@ -533,18 +524,30 @@ function ChatInner() {
   }, [activePrompt]);
 
   useEffect(() => {
-    listModels().then((fetched) => {
-      if (fetched.length > 0) {
-        setModels(fetched);
-        setModel((prev) => (fetched.includes(prev) ? prev : fetched[0]));
+    let cancelled = false;
+    const initialModels = sessionRuntime ? [] : FALLBACK_MODELS;
+    setModels(initialModels);
+    setModel((prev) => (initialModels.includes(prev) ? prev : initialModels[0] ?? ""));
+    listModels(sessionRuntime).then((fetched) => {
+      if (cancelled) return;
+      const nextModels = sessionRuntime ? fetched : fetched.length > 0 ? fetched : FALLBACK_MODELS;
+      setModels(nextModels);
+      setModel((prev) => (nextModels.includes(prev) ? prev : nextModels[0] ?? ""));
+    }).catch((err) => {
+      if (cancelled) return;
+      if (sessionRuntime) {
+        setModels([]);
+        setModel("");
+        setError(err instanceof Error ? err.message : String(err));
+      } else {
+        setModels(FALLBACK_MODELS);
+        setModel((prev) => (FALLBACK_MODELS.includes(prev) ? prev : FALLBACK_MODELS[0]));
       }
-    }).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    const runtimeModel = runtimeModelId(sessionRuntime, harnesses);
-    if (runtimeModel) setModel(runtimeModel);
-  }, [models, sessionRuntime, harnesses]);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sessionRuntime]);
 
   // Fetch session metadata to get the locked agent
   useEffect(() => {
@@ -556,7 +559,10 @@ function ChatInner() {
     setQueuedPrompts([]);
     setInterruptingQueuedPromptId(null);
     setError(null);
+    setSessionRuntime(undefined);
     setSessionLoaded(false);
+    setSessionStatus("idle");
+    setSessionHarness("claude-code");
     setProviderSessionId(undefined);
     setProviderUrl(undefined);
     setSessionTitle("");
@@ -669,6 +675,10 @@ function ChatInner() {
 
   const sendOrQueueRuntimePrompt = useCallback(async (text: string) => {
     if (!sid) return;
+    if (!model.trim()) {
+      setError("No runtime models are available for this session.");
+      return;
+    }
     if (sessionStatus === "busy") {
       queueRuntimePrompt(text);
       return;
@@ -692,6 +702,10 @@ function ChatInner() {
 
   const interruptAndSendQueuedPrompt = useCallback(async (id: string) => {
     if (!sid || !sessionRuntime || interruptingQueuedPromptId) return;
+    if (!model.trim()) {
+      setError("No runtime models are available for this session.");
+      return;
+    }
     const prompt = queuedPrompts.find((item) => item.id === id);
     if (!prompt) return;
 
@@ -766,6 +780,7 @@ function ChatInner() {
       void refetch();
     }
     if (autostartPrompt && autostartedRef.current !== sid) {
+      if (sessionRuntime && !model.trim()) return;
       autostartedRef.current = sid;
       beginRuntimeTurn(autostartPrompt);
       void sendMessageWithRuntimeModel({
@@ -1152,6 +1167,7 @@ function ChatInner() {
           } : undefined}
           onAbort={sessionRuntime ? () => abortSession(sid).catch(() => {}) : undefined}
           busy={Boolean(sessionRuntime && sessionStatus === "busy")}
+          disabled={Boolean(sessionRuntime && !model.trim())}
         />
       </div>
 

@@ -31,6 +31,12 @@ function buildHarness() {
     workdir: "/tmp/test-workspace",
     defaultModelProviderID: "litellm",
     litellmProviderID: "litellm",
+    listModels: async () => ({
+      object: "list",
+      data: [
+        { id: "gpt-5.5", object: "model", created: 0, owned_by: "litellm" },
+      ],
+    }),
     ensureProviderModel: async (cwd, model) => {
       calls.ensureProviderModel.push({ cwd, model });
     },
@@ -79,6 +85,21 @@ async function req(base, method, path, body) {
   }
   return { status: res.status, json, text };
 }
+
+test("GET /v1/models returns the configured OpenAI-shaped model list", async (t) => {
+  const { app } = buildHarness();
+  const { base, close } = await listen(app);
+  t.after(() => close());
+
+  const models = await req(base, "GET", "/v1/models");
+  assert.equal(models.status, 200);
+  assert.deepEqual(models.json, {
+    object: "list",
+    data: [
+      { id: "gpt-5.5", object: "model", created: 0, owned_by: "litellm" },
+    ],
+  });
+});
 
 test("per-agent gpt-5.5 model flows from create through prompt_async", async (t) => {
   const { app, calls } = buildHarness();

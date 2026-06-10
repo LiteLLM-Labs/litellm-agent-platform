@@ -1,4 +1,4 @@
-use axum::http::{header, HeaderMap, HeaderName, HeaderValue};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue, StatusCode};
 use serde_json::Value;
 
 use crate::{
@@ -8,6 +8,11 @@ use crate::{
         providers::base::openai_responses::BaseOpenAiResponsesTransformation,
         providers::base::{ProviderRequest, Transformation},
     },
+};
+
+use super::messages::{
+    anthropic_messages_to_openai_responses, openai_response_to_anthropic_message,
+    openai_response_to_anthropic_sse,
 };
 
 // Headers Codex attaches to each turn. Forwarded so upstream logging/analytics
@@ -75,6 +80,53 @@ impl Transformation for OpenAiResponsesTransformation {
 
     fn transform_response_headers(&self, upstream: &HeaderMap, stream: bool) -> HeaderMap {
         self.transform_openai_responses_response_headers(upstream, stream)
+    }
+
+    fn messages_url(&self, deployment: &Deployment) -> String {
+        deployment.responses_url()
+    }
+
+    fn transform_messages_request(
+        &self,
+        body: Value,
+        deployment: &Deployment,
+        inbound_headers: &HeaderMap,
+    ) -> Result<ProviderRequest, GatewayError> {
+        self.transform_openai_responses_request(
+            anthropic_messages_to_openai_responses(body, deployment),
+            deployment,
+            inbound_headers,
+        )
+    }
+
+    fn transform_messages_response_headers(&self, upstream: &HeaderMap, stream: bool) -> HeaderMap {
+        self.transform_openai_responses_response_headers(upstream, stream)
+    }
+
+    fn transforms_messages_response_body(&self) -> bool {
+        true
+    }
+
+    fn transform_messages_response_body(
+        &self,
+        body: Vec<u8>,
+        status: StatusCode,
+        stream: bool,
+        deployment: &Deployment,
+        content_type: Option<&str>,
+    ) -> Result<Vec<u8>, GatewayError> {
+        if !status.is_success() {
+            return Ok(body);
+        }
+        if stream {
+            return Ok(
+                openai_response_to_anthropic_sse(&body, content_type, deployment)?.into_bytes(),
+            );
+        }
+        let raw: Value = serde_json::from_slice(&body)?;
+        Ok(serde_json::to_vec(&openai_response_to_anthropic_message(
+            &raw, deployment,
+        ))?)
     }
 }
 

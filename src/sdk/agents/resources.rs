@@ -4,9 +4,11 @@ use super::{
     types::{
         AgentSdkError, CreateAgentParams, CreateEnvironmentParams, CreateSessionParams,
         DeleteAgentParams, DeleteAgentResponse, Environment, GetAgentParams, ListAgentsParams,
-        ManagedAgent, ManagedAgentList, SendEventsParams, SendEventsResponse, Session,
+        ListModelsParams, ManagedAgent, ManagedAgentList, ModelList, SendEventsParams,
+        SendEventsResponse, Session,
     },
 };
+use crate::sdk::providers;
 
 // Re-export SessionEvents so it can be referenced as resources::SessionEvents.
 pub use super::session_events::SessionEvents;
@@ -30,6 +32,12 @@ impl<'a> Beta<'a> {
 
     pub fn sessions(&self) -> Sessions<'a> {
         Sessions {
+            client: self.client,
+        }
+    }
+
+    pub fn models(&self) -> Models<'a> {
+        Models {
             client: self.client,
         }
     }
@@ -78,6 +86,20 @@ impl Agents<'_> {
 
 pub struct Environments<'a> {
     client: &'a Lap,
+}
+
+pub struct Models<'a> {
+    client: &'a Lap,
+}
+
+impl Models<'_> {
+    pub async fn list(&self, params: ListModelsParams) -> Result<ModelList, AgentSdkError> {
+        let runtime = params.lap_agent_runtime;
+        providers::model_endpoint(runtime)
+            .ok_or(AgentSdkError::RuntimeNotConfigured(runtime))?
+            .list_models(self.client, params)
+            .await
+    }
 }
 
 impl Environments<'_> {

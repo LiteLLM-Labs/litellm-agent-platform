@@ -7,6 +7,10 @@ use serde_json::Value;
 mod errors;
 pub use errors::AgentSdkError;
 
+#[path = "types_models.rs"]
+mod models;
+pub use models::{ListModelsParams, ModelInfo, ModelList};
+
 #[path = "types_runtime.rs"]
 mod runtime;
 pub use runtime::{
@@ -171,6 +175,22 @@ pub struct CreateSessionParams {
 #[derive(Debug, Clone, Serialize)]
 pub struct SendEventsParams {
     pub events: Vec<Value>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct SendEventsRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) model: Option<String>,
+    pub(crate) events: Vec<Value>,
+}
+
+impl From<SendEventsParams> for SendEventsRequest {
+    fn from(params: SendEventsParams) -> Self {
+        Self {
+            model: None,
+            events: params.events,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

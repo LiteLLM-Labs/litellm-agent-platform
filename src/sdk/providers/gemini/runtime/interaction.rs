@@ -1,8 +1,6 @@
 use serde_json::{json, Map, Value};
 
-use crate::sdk::agents::{
-    AgentEvent, AgentSdkError, Lap, SendEventsParams,
-};
+use crate::sdk::agents::{AgentEvent, AgentSdkError, Lap, SendEventsRequest};
 
 use super::DEFAULT_ENVIRONMENT_ID;
 
@@ -14,7 +12,7 @@ pub(super) struct GeminiContext {
 
 pub(super) fn interaction_body(
     context: &GeminiContext,
-    params: &SendEventsParams,
+    params: &SendEventsRequest,
 ) -> Result<Value, AgentSdkError> {
     let mut body = Map::new();
     body.insert("agent".to_owned(), Value::String(context.agent_id.clone()));
@@ -24,6 +22,9 @@ pub(super) fn interaction_body(
         Value::String(context.environment_id.clone()),
     );
     body.insert("store".to_owned(), Value::Bool(true));
+    if let Some(model) = params.model.as_deref() {
+        body.insert("model".to_owned(), Value::String(model.to_owned()));
+    }
     if let Some(interaction_id) = &context.interaction_id {
         body.insert(
             "previous_interaction_id".to_owned(),

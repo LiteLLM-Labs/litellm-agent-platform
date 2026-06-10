@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::{
     body::{to_bytes, Body},
@@ -16,7 +16,6 @@ use litellm_rust::{
     },
 };
 use serde_json::json;
-use std::collections::HashMap;
 use tower::util::ServiceExt;
 use wiremock::{
     matchers::{header as header_match, method, path},
@@ -24,16 +23,20 @@ use wiremock::{
 };
 
 fn test_config(api_base: String) -> GatewayConfig {
+    config_with_models(vec![ModelEntry {
+        model_name: "claude".to_owned(),
+        litellm_params: LiteLlmParams {
+            model: "anthropic/claude-sonnet-4-5".to_owned(),
+            api_key: Some("sk-ant-test".to_owned()),
+            api_base: Some(api_base),
+            extra: Default::default(),
+        },
+    }])
+}
+
+fn config_with_models(model_list: Vec<ModelEntry>) -> GatewayConfig {
     GatewayConfig {
-        model_list: vec![ModelEntry {
-            model_name: "claude".to_owned(),
-            litellm_params: LiteLlmParams {
-                model: "anthropic/claude-sonnet-4-5".to_owned(),
-                api_key: Some("sk-ant-test".to_owned()),
-                api_base: Some(api_base),
-                extra: Default::default(),
-            },
-        }],
+        model_list,
         mcp_servers: Default::default(),
         general_settings: GeneralSettings {
             master_key: Some("sk-local".to_owned()),

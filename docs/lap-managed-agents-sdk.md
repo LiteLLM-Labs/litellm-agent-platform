@@ -133,8 +133,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 - `LapConfig::anthropic(...)` configures the `claude_managed_agents` runtime.
 - `LapConfig::cursor(...)` configures the `cursor` runtime.
 - `LapConfig::gemini_antigravity(...)` configures the `gemini_antigravity` runtime.
-- Gateway and UI runtime configuration uses `claude_agents`; the SDK runtime id
-  remains `claude_managed_agents`.
 - `lap_agent_runtime` selects the runtime.
 - `lap_provider_options` is reserved for LAP gateway adapters that must carry
   provider-specific fields such as Cursor `repos` and `autoCreatePR`.
@@ -158,6 +156,7 @@ client.beta().agents().create(...)
 client.beta().agents().list(...)
 client.beta().agents().get(...)
 client.beta().agents().delete(...)
+client.beta().models().list(...)
 client.beta().environments().create(...)
 client.beta().sessions().create(...)
 client.beta().sessions().events().send(...)
