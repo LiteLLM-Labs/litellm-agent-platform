@@ -291,6 +291,23 @@ Copy structure from `templates/opencode/README.md`:
 
 Copy from `templates/opencode/docs/`, replacing `opencode-anthropic-server` → `<name>-server` and `opencode` → `<name>` throughout.
 
+### `templates/manifest.json` (required — do not skip)
+
+Register the new template by appending an entry to the `templates` array in
+`templates/manifest.json`. This manifest is the source of truth for which
+templates LAP can install; a template not listed here is invisible.
+
+```json
+{
+  "id": "<name>",
+  "name": "<Display Name>",
+  "description": "<one sentence> exposed through the Anthropic Managed Agents API.",
+  "path": "templates/<name>",
+  "default_alias": "<name>",
+  "api_spec": "claude_managed_agents"
+}
+```
+
 ---
 
 ## Step 5b: Wire into the LAP UI (if the runtime deserves its own dropdown entry)
@@ -446,7 +463,7 @@ All steps should pass (health, agent create, session create, message send, `agen
 
 ---
 
-## Step 7: File PR to litellm-agent-platform-2
+## Step 7: File PR to litellm-agent-platform
 
 Branch: `feat/template-<name>`
 

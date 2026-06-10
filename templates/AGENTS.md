@@ -15,7 +15,7 @@ skill.
 
 ## Registration
 
-After scaffolding, register the template in [`manifest.json`](./manifest.json)
-with an entry: `id`, `name`, `description`, `path`, `default_alias`, and
-`api_spec` (currently always `claude_managed_agents`). The manifest is the
-source of truth for which templates LAP can install.
+Every template must be listed in [`manifest.json`](./manifest.json) — the
+source of truth for which templates LAP can install. The `create-harness` skill
+adds this entry as part of scaffolding (see its `manifest.json` step); a
+template missing from the manifest is invisible to LAP.
