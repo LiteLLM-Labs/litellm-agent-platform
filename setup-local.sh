@@ -7,7 +7,7 @@ URL="http://localhost:${PORT}"
 ONBOARDING="${URL}/onboarding"
 
 echo "Starting LiteLLM Agent Platform (profile: ${PROFILE})..."
-docker compose --profile "${PROFILE}" up -d
+docker compose --profile "${PROFILE}" up -d --build
 
 echo "Waiting for server at ${URL}..."
 until curl -fsS "${URL}/health" >/dev/null 2>&1; do
