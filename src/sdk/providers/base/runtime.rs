@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::sdk::agents::{
     AgentEventStream, AgentRuntime, AgentSdkError, CreateAgentParams, CreateEnvironmentParams,
     CreateSessionParams, DeleteAgentParams, DeleteAgentResponse, Environment, GetAgentParams, Lap,
-    ListAgentsParams, ManagedAgent, ManagedAgentList, ManagedSessionRef, SendEventsRequest,
+    ListAgentsParams, ManagedAgent, ManagedAgentList, ManagedSessionRef, SendEventsParams,
     SendEventsResponse, Session, SessionContext,
 };
 
@@ -179,8 +179,18 @@ pub(crate) trait RuntimeAdapter: Send + Sync + 'static {
         &'a self,
         client: &'a Lap,
         session_id: &'a str,
-        params: SendEventsRequest,
+        params: SendEventsParams,
     ) -> AdapterFuture<'a, SendEventsResponse>;
+
+    fn send_events_with_model<'a>(
+        &'a self,
+        client: &'a Lap,
+        session_id: &'a str,
+        _model: Option<String>,
+        params: SendEventsParams,
+    ) -> AdapterFuture<'a, SendEventsResponse> {
+        self.send_events(client, session_id, params)
+    }
 
     fn stream_events<'a>(
         &'a self,

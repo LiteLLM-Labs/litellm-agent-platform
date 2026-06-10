@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use crate::sdk::agents::{AgentSdkError, SendEventsRequest};
+use crate::sdk::agents::{AgentSdkError, SendEventsParams};
 
 pub(super) fn session_body(title: String, resources: Option<Value>) -> Value {
     let mut body = serde_json::Map::from_iter([("title".to_owned(), Value::String(title))]);
@@ -10,10 +10,8 @@ pub(super) fn session_body(title: String, resources: Option<Value>) -> Value {
     Value::Object(body)
 }
 
-pub(super) fn message_body(params: &SendEventsRequest) -> Result<Value, AgentSdkError> {
-    Ok(json!({
-        "parts": parts_from_events(&params.events)?,
-    }))
+pub(super) fn message_body(params: &SendEventsParams) -> Result<Value, AgentSdkError> {
+    Ok(json!({ "parts": parts_from_events(&params.events)? }))
 }
 
 fn parts_from_events(events: &[Value]) -> Result<Vec<Value>, AgentSdkError> {

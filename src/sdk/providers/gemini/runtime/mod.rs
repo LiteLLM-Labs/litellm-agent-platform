@@ -12,7 +12,8 @@ use crate::sdk::agents::{
     response_fields::id, AgentEventStream, AgentRuntime, AgentSdkError, CreateAgentParams,
     CreateEnvironmentParams, CreateSessionParams, DeleteAgentParams, DeleteAgentResponse,
     Environment, GetAgentParams, Lap, ListAgentsParams, ManagedAgent, ManagedAgentList,
-    SendEventsRequest, SendEventsResponse, Session, SessionContext, GEMINI_ANTIGRAVITY,
+    SendEventsParams, SendEventsRequest, SendEventsResponse, Session, SessionContext,
+    GEMINI_ANTIGRAVITY,
 };
 use crate::sdk::providers::base::runtime::{AdapterFuture, RuntimeAdapter};
 use agent::{create_agent_body, list_agents_path, managed_agent};
@@ -184,15 +185,29 @@ impl RuntimeAdapter for GeminiAntigravityRuntime {
         &'a self,
         client: &'a Lap,
         session_id: &'a str,
-        params: SendEventsRequest,
+        params: SendEventsParams,
+    ) -> AdapterFuture<'a, SendEventsResponse> {
+        self.send_events_with_model(client, session_id, None, params)
+    }
+
+    fn send_events_with_model<'a>(
+        &'a self,
+        client: &'a Lap,
+        session_id: &'a str,
+        model: Option<String>,
+        params: SendEventsParams,
     ) -> AdapterFuture<'a, SendEventsResponse> {
         Box::pin(async move {
             let context = gemini_context(client, session_id)?;
+            let request = SendEventsRequest {
+                model,
+                events: params.events,
+            };
             let raw = client
                 .post(
                     AgentRuntime::GeminiAntigravity,
                     "/v1beta/interactions",
-                    &interaction_body(&context, &params)?,
+                    &interaction_body(&context, &request)?,
                 )
                 .await?;
             let interaction_id = id(&raw)?;

@@ -11,7 +11,7 @@ use crate::sdk::agents::{
     responses::response_json,
     AgentEventStream, AgentRuntime, AgentSdkError, CreateAgentParams,
     CreateEnvironmentParams, CreateSessionParams, Environment, Lap, ManagedAgent,
-    ManagedSessionRef, SendEventsRequest, SendEventsResponse, Session, SessionContext,
+    ManagedSessionRef, SendEventsParams, SendEventsResponse, Session, SessionContext,
 };
 use crate::sdk::providers::base::runtime::{AdapterFuture, RuntimeAdapter};
 use request_body::create_agent_body;
@@ -144,7 +144,17 @@ impl RuntimeAdapter for CursorRuntime {
         &'a self,
         client: &'a Lap,
         session_id: &'a str,
-        params: SendEventsRequest,
+        params: SendEventsParams,
+    ) -> AdapterFuture<'a, SendEventsResponse> {
+        self.send_events_with_model(client, session_id, None, params)
+    }
+
+    fn send_events_with_model<'a>(
+        &'a self,
+        client: &'a Lap,
+        session_id: &'a str,
+        model: Option<String>,
+        params: SendEventsParams,
     ) -> AdapterFuture<'a, SendEventsResponse> {
         Box::pin(async move {
             let agent_id = cursor_agent_id(client, session_id)?;
@@ -152,8 +162,8 @@ impl RuntimeAdapter for CursorRuntime {
                 "prompt".to_owned(),
                 prompt_from_events(&params.events)?,
             )]);
-            if let Some(model) = params.model.as_deref() {
-                body.insert("model".to_owned(), Value::String(model.to_owned()));
+            if let Some(model) = model {
+                body.insert("model".to_owned(), Value::String(model));
             }
             let body = Value::Object(body);
             let deadline = Instant::now() + Duration::from_secs(300);
