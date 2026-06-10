@@ -15,8 +15,9 @@ pub use models::{ListModelsParams, ModelInfo, ModelList};
 mod runtime;
 pub use runtime::{
     AgentRuntime, AgentRuntimeCatalogEntry, ANTHROPIC_VERSION, CLAUDE_MANAGED_AGENTS, CURSOR,
-    DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_CURSOR_BASE_URL, DEFAULT_GEMINI_BASE_URL,
-    GEMINI_ANTIGRAVITY, GEMINI_API_REVISION, MANAGED_AGENTS_BETA,
+    DEFAULT_ANTHROPIC_BASE_URL, DEFAULT_CURSOR_BASE_URL, DEFAULT_ELASTIC_BASE_URL,
+    DEFAULT_GEMINI_BASE_URL, ELASTIC_AGENT_BUILDER, GEMINI_ANTIGRAVITY, GEMINI_API_REVISION,
+    MANAGED_AGENTS_BETA,
 };
 
 #[derive(Debug, Clone)]
@@ -27,6 +28,11 @@ pub struct LapConfig {
     pub cursor_base_url: String,
     pub gemini_api_key: Option<String>,
     pub gemini_base_url: String,
+    pub elastic_api_key: Option<String>,
+    pub elastic_base_url: String,
+    /// Runtime-level default Elastic agent ID, used when an agent does not
+    /// specify its own `elastic_agent_id`.
+    pub elastic_default_agent_id: Option<String>,
 }
 
 impl LapConfig {
@@ -50,6 +56,14 @@ impl LapConfig {
             ..Self::default()
         }
     }
+
+    pub fn elastic(api_key: impl Into<String>, base_url: impl Into<String>) -> Self {
+        Self {
+            elastic_api_key: Some(api_key.into()),
+            elastic_base_url: base_url.into(),
+            ..Self::default()
+        }
+    }
 }
 
 impl Default for LapConfig {
@@ -61,6 +75,9 @@ impl Default for LapConfig {
             cursor_base_url: DEFAULT_CURSOR_BASE_URL.to_owned(),
             gemini_api_key: None,
             gemini_base_url: DEFAULT_GEMINI_BASE_URL.to_owned(),
+            elastic_api_key: None,
+            elastic_base_url: DEFAULT_ELASTIC_BASE_URL.to_owned(),
+            elastic_default_agent_id: None,
         }
     }
 }

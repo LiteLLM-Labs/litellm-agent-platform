@@ -36,6 +36,10 @@ pub(crate) fn lap_from_credential(
             config.gemini_api_key = Some(resolved.credential.api_key.clone());
             config.gemini_base_url = resolved.credential.api_base.clone();
         }
+        AgentRuntime::ElasticAgentBuilder => {
+            config.elastic_api_key = Some(resolved.credential.api_key.clone());
+            config.elastic_base_url = resolved.credential.api_base.clone();
+        }
     }
     Ok(Lap::new(config))
 }

@@ -27,15 +27,24 @@ struct Inner {
     runtimes: HashMap<AgentRuntime, RuntimeConfig>,
     session_contexts: Mutex<HashMap<String, SessionContext>>,
     cursor_run_ids: Mutex<HashMap<String, String>>,
+    /// Generic per-session prompt stash for runtimes whose provider call is
+    /// deferred to the streaming phase (e.g. Elastic Agent Builder).
+    pending_turns: Mutex<HashMap<String, String>>,
+    /// Generic per-agent provider metadata stash, captured at agent-bind time
+    /// and consumed when the session is created within the same client.
+    agent_meta: Mutex<HashMap<String, Value>>,
+    elastic_default_agent_id: Option<String>,
 }
 
 impl Lap {
     pub fn new(config: LapConfig) -> Self {
-        Self::with_http(configured_http_client(), runtime_configs(config))
+        let default = config.elastic_default_agent_id.clone();
+        Self::with_http(configured_http_client(), runtime_configs(config), default)
     }
 
     pub(crate) fn with_http_client(config: LapConfig, http: reqwest::Client) -> Self {
-        Self::with_http(http, runtime_configs(config))
+        let default = config.elastic_default_agent_id.clone();
+        Self::with_http(http, runtime_configs(config), default)
     }
 
     pub fn register_session(&self, session: ManagedSessionRef) -> Result<(), AgentSdkError> {
@@ -46,13 +55,20 @@ impl Lap {
         self.remember_session_context(&session_id, context)
     }
 
-    fn with_http(http: reqwest::Client, runtimes: HashMap<AgentRuntime, RuntimeConfig>) -> Self {
+    fn with_http(
+        http: reqwest::Client,
+        runtimes: HashMap<AgentRuntime, RuntimeConfig>,
+        elastic_default_agent_id: Option<String>,
+    ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 http,
                 runtimes,
                 session_contexts: Mutex::new(HashMap::new()),
                 cursor_run_ids: Mutex::new(HashMap::new()),
+                pending_turns: Mutex::new(HashMap::new()),
+                agent_meta: Mutex::new(HashMap::new()),
+                elastic_default_agent_id,
             }),
         }
     }
@@ -101,6 +117,25 @@ impl Lap {
         let response = self
             .request(runtime, Method::GET, path)?
             .header(header::ACCEPT, "text/event-stream")
+            .send()
+            .await?;
+        let stream = stream_events(ensure_success(response).await?);
+        Ok(self.adapter(runtime)?.normalize_stream(stream))
+    }
+
+    /// Open an SSE stream over a `POST` request. Elastic's streaming converse
+    /// path (`POST /api/agent_builder/converse/async`) requires a request body,
+    /// unlike the `GET`-based streams used by other runtimes.
+    pub(crate) async fn stream_post<T: Serialize>(
+        &self,
+        runtime: AgentRuntime,
+        path: &str,
+        body: &T,
+    ) -> Result<AgentEventStream, AgentSdkError> {
+        let response = self
+            .request(runtime, Method::POST, path)?
+            .header(header::ACCEPT, "text/event-stream")
+            .json(body)
             .send()
             .await?;
         let stream = stream_events(ensure_success(response).await?);
@@ -196,6 +231,58 @@ impl Lap {
         Ok(self
             .inner
             .cursor_run_ids
+            .lock()
+            .map_err(|_| AgentSdkError::StateLock)?
+            .get(agent_id)
+            .cloned())
+    }
+
+    pub(crate) fn elastic_default_agent_id(&self) -> Option<String> {
+        self.inner.elastic_default_agent_id.clone()
+    }
+
+    pub(crate) fn remember_pending_turn(
+        &self,
+        session_id: &str,
+        prompt: &str,
+    ) -> Result<(), AgentSdkError> {
+        self.inner
+            .pending_turns
+            .lock()
+            .map_err(|_| AgentSdkError::StateLock)?
+            .insert(session_id.to_owned(), prompt.to_owned());
+        Ok(())
+    }
+
+    pub(crate) fn take_pending_turn(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<String>, AgentSdkError> {
+        Ok(self
+            .inner
+            .pending_turns
+            .lock()
+            .map_err(|_| AgentSdkError::StateLock)?
+            .remove(session_id))
+    }
+
+    pub(crate) fn remember_agent_meta(
+        &self,
+        agent_id: &str,
+        meta: Value,
+    ) -> Result<(), AgentSdkError> {
+        self.inner
+            .agent_meta
+            .lock()
+            .map_err(|_| AgentSdkError::StateLock)?
+            .insert(agent_id.to_owned(), meta);
+        Ok(())
+    }
+
+    pub(crate) fn agent_meta(&self, agent_id: &str) -> Result<Option<Value>, AgentSdkError> {
+        Ok(self
+            .inner
+            .agent_meta
             .lock()
             .map_err(|_| AgentSdkError::StateLock)?
             .get(agent_id)

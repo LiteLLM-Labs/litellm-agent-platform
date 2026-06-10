@@ -71,6 +71,7 @@ pub(super) async fn drain_provider_stream(
     futures_util::pin_mut!(provider_stream);
     let mut terminal_status = None;
     let mut terminal_error = None;
+    let mut provider_run_id: Option<String> = None;
     while let Some(event) = provider_stream.next().await {
         let event = match event {
             Ok(event) => event,
@@ -80,6 +81,16 @@ pub(super) async fn drain_provider_stream(
                 return Err(error);
             }
         };
+        // Runtimes that establish their provider run mid-stream (e.g. Elastic's
+        // conversation_id) surface it as `provider_run_id` on their events.
+        if let Some(run_id) = event
+            .data
+            .get("provider_run_id")
+            .and_then(Value::as_str)
+            .filter(|run_id| !run_id.is_empty())
+        {
+            provider_run_id = Some(run_id.to_owned());
+        }
         if let Some(status) = terminal_event_status(&event) {
             terminal_status = Some(status);
             if status == "error" {
@@ -92,6 +103,9 @@ pub(super) async fn drain_provider_stream(
         }
     }
     let status = terminal_status.unwrap_or("idle");
+    if let Some(run_id) = provider_run_id {
+        sessions::repository::set_provider_run(pool, session_id, &run_id, status).await?;
+    }
     mark_session_status(state, pool, session_id, status, terminal_error).await?;
     Ok(())
 }
