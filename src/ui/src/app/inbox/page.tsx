@@ -431,6 +431,7 @@ function InboxInner() {
 
                   {selected.kind === "approval" && selected.status === "pending" && (
                     <ToolApprovalPanel
+                      key={selected.id}
                       approval={{
                         id: selected.id,
                         tool: selected.title,

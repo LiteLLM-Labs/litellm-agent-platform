@@ -48,7 +48,7 @@ export function ToolApprovalPanel({ approval, onAccept, onReject, busy }: ToolAp
 
   const buildArgs = (): Record<string, unknown> => {
     const out: Record<string, unknown> = {};
-    for (const k of keys) out[k] = fromStringValue(approval.arguments[k], fields[k]);
+    for (const k of keys) out[k] = fromStringValue(approval.arguments[k], fields[k] ?? "");
     return out;
   };
 
@@ -103,19 +103,13 @@ export function ToolApprovalPanel({ approval, onAccept, onReject, busy }: ToolAp
               </div>
             ) : (
               keys.map((k) => (
-                <div key={k} className="space-y-1.5">
-                  <label className="flex items-center justify-between gap-2 text-xs">
-                    <span className="font-medium text-muted-foreground">{toFieldLabel(k)}</span>
-                    <span className="truncate font-mono text-[10px] text-muted-foreground/70">{k}</span>
-                  </label>
-                  <textarea
-                    value={fields[k]}
-                    onChange={(e) => setFields((f) => ({ ...f, [k]: e.target.value }))}
-                    rows={fields[k].includes("\n") ? Math.min(fields[k].split("\n").length, 10) : 2}
-                    className="min-h-11 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs leading-5 outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-                    disabled={busy}
-                  />
-                </div>
+                <ArgumentField
+                  key={k}
+                  name={k}
+                  value={fields[k] ?? ""}
+                  onChange={(value) => setFields((f) => ({ ...f, [k]: value }))}
+                  disabled={busy}
+                />
               ))
             )}
           </div>
@@ -159,6 +153,34 @@ export function ToolApprovalPanel({ approval, onAccept, onReject, busy }: ToolAp
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+function ArgumentField({
+  name,
+  value,
+  onChange,
+  disabled,
+}: {
+  name: string;
+  value: string;
+  onChange: (value: string) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <label className="flex items-center justify-between gap-2 text-xs">
+        <span className="font-medium text-muted-foreground">{toFieldLabel(name)}</span>
+        <span className="truncate font-mono text-[10px] text-muted-foreground/70">{name}</span>
+      </label>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={value.includes("\n") ? Math.min(value.split("\n").length, 10) : 2}
+        className="min-h-11 w-full resize-y rounded-md border border-input bg-background px-3 py-2 font-mono text-xs leading-5 outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+        disabled={disabled}
+      />
     </div>
   );
 }
