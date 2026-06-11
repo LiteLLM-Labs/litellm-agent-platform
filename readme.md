@@ -1,6 +1,6 @@
 # LiteLLM Agent Platform
 
-Self-hosted agent builder - Build agents on top of OpenCode, Hermes, Claude
+1 place to call all your agents - OpenCode, Hermes, Claude
 Managed Agents, Cursor Agents API, DeepAgents.
 
 [![Discord](https://img.shields.io/badge/Discord-Chat-5865F2?logo=discord&logoColor=white)](https://discord.gg/Nkxw3rm3EE)
