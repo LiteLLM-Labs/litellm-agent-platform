@@ -38,6 +38,7 @@ fn public_routes() -> Router<Arc<AppState>> {
         .route("/", get(ui::redirect_to_sessions))
         .route("/inbox", get(ui::inbox_html))
         .route("/inbox/", get(ui::inbox_html))
+        .route("/inbox.txt", get(ui::inbox_index_txt))
         .route("/inbox/index.txt", get(ui::inbox_index_txt))
         .route("/docs", get(swagger_ui))
         .route("/openapi.json", get(openapi_json))

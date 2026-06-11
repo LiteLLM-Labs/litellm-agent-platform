@@ -75,7 +75,16 @@ async fn assert_serves_inbox_html_without_cache(app: axum::Router) {
 }
 
 async fn assert_serves_inbox_rsc_payload(app: axum::Router) {
-    let response = get(app, "/inbox/index.txt").await;
+    let response = get(app.clone(), "/inbox/index.txt").await;
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store, max-age=0"
+    );
+    let body = to_bytes(response.into_body(), 1024).await.unwrap();
+    assert!(std::str::from_utf8(&body).unwrap().contains("inbox rsc"));
+
+    let response = get(app, "/inbox.txt").await;
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
         response.headers().get(header::CACHE_CONTROL).unwrap(),
