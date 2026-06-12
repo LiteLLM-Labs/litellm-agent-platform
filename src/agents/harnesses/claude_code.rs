@@ -1,19 +1,33 @@
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::agents::{
-    config::AgentDefinition,
-    events,
-    harnesses::{is_stdout, HarnessEvent, HarnessEvents, HarnessRunContext, HarnessRunSpec},
-    sandboxes::AgentOutputChunk,
+use crate::{
+    agents::{
+        config::AgentDefinition,
+        events,
+        harnesses::{is_stdout, HarnessEvent, HarnessEvents, HarnessRunContext, HarnessRunSpec},
+        sandboxes::AgentOutputChunk,
+    },
+    mcp::session_resolver::ResolvedMcpServer,
 };
 
 pub const ID: &str = "claude-code";
 
-pub fn build_run(agent: &AgentDefinition, prompt: &str) -> HarnessRunSpec {
+pub fn build_run(
+    agent: &AgentDefinition,
+    prompt: &str,
+    mcp_servers: &[ResolvedMcpServer],
+) -> HarnessRunSpec {
+    let mcp_env = if mcp_servers.is_empty() {
+        String::new()
+    } else {
+        let serialized = serde_json::to_string(mcp_servers).unwrap_or_default();
+        format!("LITELLM_AGENT_MCP_SERVERS={} ", shell_quote(&serialized))
+    };
+
     HarnessRunSpec {
         command: format!(
-            "set -euo pipefail\nnpm install --silent --no-audit --no-fund @anthropic-ai/claude-agent-sdk@latest >/dev/null\nLITELLM_AGENT_PROMPT={} LITELLM_AGENT_MODEL={} LITELLM_AGENT_SYSTEM={} node --input-type=module <<'LITELLM_CLAUDE_AGENT_SDK'\n{}\nLITELLM_CLAUDE_AGENT_SDK",
+            "set -euo pipefail\nnpm install --silent --no-audit --no-fund @anthropic-ai/claude-agent-sdk@latest >/dev/null\n{mcp_env}LITELLM_AGENT_PROMPT={} LITELLM_AGENT_MODEL={} LITELLM_AGENT_SYSTEM={} node --input-type=module <<'LITELLM_CLAUDE_AGENT_SDK'\n{}\nLITELLM_CLAUDE_AGENT_SDK",
             shell_quote(prompt),
             shell_quote(&agent.model),
             shell_quote(&agent.system),
@@ -28,6 +42,12 @@ const CLAUDE_AGENT_SDK_SCRIPT: &str = r#"import { query } from "@anthropic-ai/cl
 const prompt = process.env.LITELLM_AGENT_PROMPT ?? "";
 const model = process.env.LITELLM_AGENT_MODEL || undefined;
 const append = process.env.LITELLM_AGENT_SYSTEM || undefined;
+const mcpRaw = process.env.LITELLM_AGENT_MCP_SERVERS || "[]";
+const mcpServers = JSON.parse(mcpRaw).map((s) => ({
+  name: s.name,
+  url: s.url,
+  headers: s.headers ?? {},
+}));
 const startedAt = Date.now();
 let sawResult = false;
 let text = "";
@@ -40,6 +60,7 @@ const options = {
     ? { type: "preset", preset: "claude_code", append }
     : { type: "preset", preset: "claude_code" },
   ...(model ? { model } : {}),
+  ...(mcpServers.length > 0 ? { mcpServers } : {}),
 };
 
 function write(frame) {

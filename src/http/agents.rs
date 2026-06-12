@@ -21,6 +21,7 @@ use crate::{
         sandboxes::{SandboxCommand, SandboxRunner},
     },
     errors::GatewayError,
+    mcp::session_resolver,
     proxy::{auth::master_key::require_master_key, state::AppState},
 };
 
@@ -155,7 +156,14 @@ async fn execute_agent_run(
     run_id: &str,
 ) -> Result<(), GatewayError> {
     let store = &state.agent_runs;
-    let mut harness_run = build_harness_run(&agent, &prompt)?;
+    let mcp_servers = session_resolver::resolve(
+        &agent.mcp_servers,
+        &state.mcp_servers,
+        &state.config,
+        state.db.as_ref(),
+    )
+    .await?;
+    let mut harness_run = build_harness_run(&agent, &prompt, &mcp_servers)?;
     let context = HarnessRunContext::new(run_id);
     push_harness_events(store, run_id, harness_run.events.start(&context));
 
@@ -233,7 +241,7 @@ struct AgentResponse<'a> {
     model: &'a str,
     harness: &'a str,
     system: &'a str,
-    mcp_servers: &'a [serde_yaml::Value],
+    mcp_servers: &'a [crate::mcp::session_resolver::AgentMcpServerSpec],
     tools: &'a [HashMap<String, serde_yaml::Value>],
     skills: &'a [serde_yaml::Value],
 }

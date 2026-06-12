@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     agents::{harnesses, sandboxes},
     errors::GatewayError,
+    mcp::session_resolver::AgentMcpServerSpec,
 };
 
 #[derive(Debug, Clone, Deserialize)]
@@ -121,7 +122,7 @@ pub struct AgentDefinition {
     pub harness: Option<String>,
     pub system: String,
     #[serde(default)]
-    pub mcp_servers: Vec<serde_yaml::Value>,
+    pub mcp_servers: Vec<AgentMcpServerSpec>,
     #[serde(default)]
     pub tools: Vec<HashMap<String, serde_yaml::Value>>,
     #[serde(default)]

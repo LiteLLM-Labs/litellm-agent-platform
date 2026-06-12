@@ -14,6 +14,7 @@ use crate::{
     },
     db::managed_agents::runs::repository,
     errors::GatewayError,
+    mcp::session_resolver,
     proxy::state::AppState,
 };
 
@@ -58,7 +59,14 @@ async fn execute_managed_agent_run(
     prompt: String,
     run_id: &str,
 ) -> Result<(), GatewayError> {
-    let mut harness_run = build_harness_run(&agent, &prompt)?;
+    let mcp_servers = session_resolver::resolve(
+        &agent.mcp_servers,
+        &state.mcp_servers,
+        &state.config,
+        Some(pool),
+    )
+    .await?;
+    let mut harness_run = build_harness_run(&agent, &prompt, &mcp_servers)?;
     let context = HarnessRunContext::new(run_id);
     emit_events(
         &state,

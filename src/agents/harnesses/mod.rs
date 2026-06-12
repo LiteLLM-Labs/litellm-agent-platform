@@ -8,6 +8,7 @@ use crate::{
         sandboxes::{AgentOutputChunk, AgentOutputStreamKind},
     },
     errors::GatewayError,
+    mcp::session_resolver::ResolvedMcpServer,
 };
 
 #[derive(Debug, Clone)]
@@ -85,9 +86,10 @@ pub fn is_supported(harness: &str) -> bool {
 pub fn build_harness_run(
     agent: &AgentDefinition,
     prompt: &str,
+    mcp_servers: &[ResolvedMcpServer],
 ) -> Result<HarnessRunSpec, GatewayError> {
     match agent.resolved_harness() {
-        claude_code::ID => Ok(claude_code::build_run(agent, prompt)),
+        claude_code::ID => Ok(claude_code::build_run(agent, prompt, mcp_servers)),
         harness => Err(GatewayError::InvalidConfig(format!(
             "unsupported harness: {harness}"
         ))),

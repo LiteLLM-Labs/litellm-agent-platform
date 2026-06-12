@@ -16,6 +16,7 @@ use crate::{
         sessions::schema::SessionRow,
     },
     errors::GatewayError,
+    mcp::session_resolver,
     proxy::state::AppState,
 };
 
@@ -33,7 +34,14 @@ pub(super) async fn execute_prompt(
     }
 
     let agent = agent_definition(&pool, &state, &row, &model).await?;
-    let mut harness_run = build_harness_run(&agent, &prompt)?;
+    let mcp_servers = session_resolver::resolve(
+        &agent.mcp_servers,
+        &state.mcp_servers,
+        &state.config,
+        Some(&pool),
+    )
+    .await?;
+    let mut harness_run = build_harness_run(&agent, &prompt, &mcp_servers)?;
     let context = HarnessRunContext::new(&row.id);
     push_events(&state, &row.id, harness_run.events.start(&context));
 

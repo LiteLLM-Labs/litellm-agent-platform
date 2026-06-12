@@ -25,6 +25,8 @@ struct McpVaultCredential {
 struct StoredVault {
     vault_id: Option<String>,
     credential_urls: BTreeSet<String>,
+    /// Hash of each credential's token keyed by URL, for staleness detection.
+    credential_hashes: BTreeMap<String, String>,
 }
 
 pub(super) async fn vault_ids(
@@ -56,11 +58,17 @@ pub(super) async fn vault_ids(
     };
 
     for credential in required {
-        if stored.credential_urls.contains(&credential.url) {
+        let token_hash = stable_hash(&credential.token);
+        let is_stale = stored
+            .credential_hashes
+            .get(&credential.url)
+            .is_none_or(|h| *h != token_hash);
+        if !is_stale {
             continue;
         }
         create_credential(state, created, &vault_id, &credential).await?;
-        stored.credential_urls.insert(credential.url);
+        stored.credential_urls.insert(credential.url.clone());
+        stored.credential_hashes.insert(credential.url, token_hash);
         changed = true;
     }
 
@@ -126,6 +134,16 @@ async fn load_stored_vault(pool: &PgPool, store_name: &str) -> Result<StoredVaul
                     .collect()
             })
             .unwrap_or_default(),
+        credential_hashes: row
+            .credential_values
+            .get("credential_hashes")
+            .and_then(Value::as_object)
+            .map(|obj| {
+                obj.iter()
+                    .filter_map(|(k, v)| v.as_str().map(|v| (k.clone(), v.to_owned())))
+                    .collect()
+            })
+            .unwrap_or_default(),
     })
 }
 
@@ -145,6 +163,7 @@ async fn save_stored_vault(
         json!({
             "vault_id": stored.vault_id,
             "credential_urls": credential_urls,
+            "credential_hashes": stored.credential_hashes,
         }),
         json!({
             "provider": "anthropic",
