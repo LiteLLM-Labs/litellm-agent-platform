@@ -2,6 +2,7 @@ pub(crate) mod config;
 mod dispatch;
 pub(crate) mod dm_api;
 mod events;
+mod factory_access;
 mod form;
 mod interactivity;
 pub(crate) mod manifest_api;

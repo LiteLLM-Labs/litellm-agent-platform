@@ -13,6 +13,7 @@ use crate::{
 
 use super::{
     config::{bot_token_key, load_secret},
+    factory_access::auto_connect_arguments,
     reply_lock::SlackPromptLock,
     reply_storage::last_message_seq,
     reply_stream::{SlackReply, SlackReplyParams},
@@ -141,14 +142,7 @@ async fn auto_connect_factory_child(
     let Some(child) = latest_unconnected_factory_child(pool, session_id).await? else {
         return Ok(None);
     };
-    let arguments = serde_json::json!({
-        "agent_id": child.id,
-        "team_id": message.team_id,
-        "channel_id": message.channel,
-        "thread_ts": message.thread_ts,
-        "dm_user_id": message.user_id,
-        "requested_by": message.user_id,
-    });
+    let arguments = auto_connect_arguments(&child.id, message);
     let connected = factory_slack_app::create_child_slack_app(
         state,
         pool,
