@@ -60,6 +60,9 @@ async fn handle_event_callback(
     };
     let (agent, config) =
         super::dispatch::route_agent(&pool, agent, config, payload, &message).await?;
+    if !dm_user_allowed(&config, &message) {
+        return Ok(());
+    }
     let event_key = slack_event_key(payload, &message);
     if !slack::repository::record_event(&pool, &agent.id, &event_key).await? {
         return Ok(());
@@ -152,4 +155,76 @@ fn fallback_event_key(payload: &Value, message: &SlackIncomingMessage) -> String
         "fallback:{}:{}:{}:{}:{}",
         message.channel, message.thread_ts, ts, user, text
     )
+}
+
+fn dm_user_allowed(config: &SlackAgentConfig, message: &SlackIncomingMessage) -> bool {
+    if !message.is_direct_message {
+        return true;
+    }
+    let Some(allowed) = config.allowed_dm_user_ids.as_ref() else {
+        return true;
+    };
+    let allowed = allowed
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if allowed.is_empty() {
+        return true;
+    }
+    let Some(user_id) = message.user_id.as_deref() else {
+        return false;
+    };
+    allowed
+        .iter()
+        .any(|allowed_user| allowed_user.eq_ignore_ascii_case(user_id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{dm_user_allowed, SlackAgentConfig, SlackIncomingMessage};
+
+    fn message(user_id: Option<&str>, is_direct_message: bool) -> SlackIncomingMessage {
+        SlackIncomingMessage {
+            channel: "D123".to_owned(),
+            thread_ts: "1.000001".to_owned(),
+            reply_thread_ts: "1.000001".to_owned(),
+            team_id: Some("T123".to_owned()),
+            user_id: user_id.map(str::to_owned),
+            prompt: "hello".to_owned(),
+            is_direct_message,
+            requires_existing_thread: false,
+        }
+    }
+
+    #[test]
+    fn dm_allowlist_blocks_unlisted_direct_message_users() {
+        let config = SlackAgentConfig {
+            allowed_dm_user_ids: Some(vec!["U123".to_owned(), "U456".to_owned()]),
+            ..Default::default()
+        };
+
+        assert!(dm_user_allowed(&config, &message(Some("U123"), true)));
+        assert!(!dm_user_allowed(&config, &message(Some("U999"), true)));
+        assert!(!dm_user_allowed(&config, &message(None, true)));
+    }
+
+    #[test]
+    fn dm_allowlist_does_not_block_channel_events_or_empty_lists() {
+        let restricted = SlackAgentConfig {
+            allowed_dm_user_ids: Some(vec!["U123".to_owned()]),
+            ..Default::default()
+        };
+        let empty = SlackAgentConfig {
+            allowed_dm_user_ids: Some(vec![]),
+            ..Default::default()
+        };
+
+        assert!(dm_user_allowed(&restricted, &message(Some("U999"), false)));
+        assert!(dm_user_allowed(&empty, &message(Some("U999"), true)));
+        assert!(dm_user_allowed(
+            &SlackAgentConfig::default(),
+            &message(Some("U999"), true)
+        ));
+    }
 }

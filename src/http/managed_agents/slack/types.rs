@@ -15,6 +15,7 @@ pub(crate) struct SlackAgentConfig {
     pub bot_token_key: Option<String>,
     pub slack_team_name: Option<String>,
     pub bot_user_id: Option<String>,
+    pub allowed_dm_user_ids: Option<Vec<String>>,
     pub oauth_error: Option<String>,
 }
 
@@ -26,6 +27,7 @@ pub(super) struct SlackIncomingMessage {
     pub team_id: Option<String>,
     pub user_id: Option<String>,
     pub prompt: String,
+    pub is_direct_message: bool,
     pub requires_existing_thread: bool,
 }
 

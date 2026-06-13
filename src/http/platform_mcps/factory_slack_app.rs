@@ -49,7 +49,13 @@ pub(crate) async fn create_child_slack_app(
         optional_str(arguments, "team_id"),
     )
     .await?;
-    let app = created_child_app(&child, &provider_id, app_name, &created)?;
+    let app = created_child_app(
+        &child,
+        &provider_id,
+        app_name,
+        &created,
+        allowed_dm_user_ids(arguments),
+    )?;
     save_child_credentials(state, pool, &app).await?;
     let child = save_child_slack_app(pool, &child, app.config).await?;
     let oauth_state = slack::repository::create_oauth_state(pool, &child.id, &provider_id).await?;
@@ -73,6 +79,7 @@ pub(crate) async fn create_child_slack_app(
         "agent_url": agent_url(state, &child.id)?,
         "install_url": install_url,
         "oauth_authorize_url": created.oauth_authorize_url,
+        "allowed_dm_user_ids": child_allowed_dm_user_ids(&child),
         "slack_display": "A dedicated Slack app was created for this agent. Open install_url to add that new bot to the workspace.",
         "source_thread_ts": source_thread_ts,
         "agent": child
@@ -143,6 +150,7 @@ fn created_child_app(
     provider_id: &str,
     app_name: String,
     created: &manifest_api::SlackManifestCreateResponse,
+    allowed_dm_user_ids: Vec<String>,
 ) -> Result<CreatedChildApp, GatewayError> {
     let credentials = created.credentials.as_ref().ok_or_else(|| {
         GatewayError::SandboxError("slack apps.manifest.create omitted credentials".to_owned())
@@ -161,6 +169,7 @@ fn created_child_app(
             provider_id: provider_id.to_owned(),
             client_secret_key: client_secret_key(child.id.as_str(), &SlackAgentConfig::default()),
             signing_secret_key: signing_secret_key(child.id.as_str(), &SlackAgentConfig::default()),
+            allowed_dm_user_ids,
         },
         client_secret: required_owned(
             credentials.client_secret.clone(),
@@ -203,6 +212,7 @@ struct ChildSlackApp {
     provider_id: String,
     client_secret_key: String,
     signing_secret_key: String,
+    allowed_dm_user_ids: Vec<String>,
 }
 
 async fn save_child_slack_app(
@@ -267,7 +277,8 @@ fn patch_child_slack(config: &Value, app: ChildSlackApp) -> Value {
             "provider_id": app.provider_id,
             "status": "credentials_saved",
             "client_secret_key": app.client_secret_key,
-            "signing_secret_key": app.signing_secret_key
+            "signing_secret_key": app.signing_secret_key,
+            "allowed_dm_user_ids": app.allowed_dm_user_ids
         }),
     );
     Value::Object(root)
@@ -286,4 +297,46 @@ fn optional_str<'a>(arguments: &'a Value, field: &str) -> Option<&'a str> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|value| !value.is_empty())
+}
+
+fn allowed_dm_user_ids(arguments: &Value) -> Vec<String> {
+    let values = arguments
+        .get("allowed_dm_user_ids")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .chain(
+            arguments
+                .get("allowed_dm_user_ids")
+                .and_then(Value::as_str)
+                .into_iter()
+                .flat_map(|value| value.split(|ch: char| matches!(ch, ',' | '\n' | ' ' | '\t'))),
+        );
+    let mut ids = Vec::new();
+    for value in values {
+        let id = value
+            .trim()
+            .trim_start_matches("<@")
+            .trim_end_matches('>')
+            .trim();
+        if id.is_empty() || ids.iter().any(|existing| existing == id) {
+            continue;
+        }
+        ids.push(id.to_owned());
+    }
+    ids
+}
+
+fn child_allowed_dm_user_ids(child: &ManagedAgentRow) -> Vec<String> {
+    child
+        .config
+        .get("slack")
+        .and_then(|slack| slack.get("allowed_dm_user_ids"))
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
 }

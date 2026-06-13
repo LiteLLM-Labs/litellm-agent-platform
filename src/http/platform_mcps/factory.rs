@@ -45,7 +45,12 @@ pub fn tool_defs() -> Vec<Value> {
                     "thread_ts": { "type": "string" },
                     "team_id": { "type": "string" },
                     "dm_user_id": { "type": "string" },
-                    "requested_by": { "type": "string" }
+                    "requested_by": { "type": "string" },
+                    "allowed_dm_user_ids": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Slack user IDs allowed to DM the agent. Omit or pass an empty list to allow anyone."
+                    }
                 },
                 "required": ["agent_id", "channel_id", "thread_ts"]
             }

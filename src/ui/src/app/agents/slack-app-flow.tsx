@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type Dispatch, type SetStateAction } from "react";
-import { ArrowLeft, Check, ExternalLink, Info } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink, Info, Loader2 } from "lucide-react";
 import { BrandIcon } from "@/components/brand-icons";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { createSlackOAuthState, savePersonalVaultKey, updateAgent } from "@/lib/api";
 import type { Agent } from "@/lib/types";
@@ -50,6 +51,7 @@ export interface SlackConfig {
   bot_token_key?: string;
   slack_team_name?: string;
   bot_user_id?: string;
+  allowed_dm_user_ids?: string[];
   oauth_error?: string | null;
 }
 
@@ -58,6 +60,26 @@ interface SlackCredentials {
   clientId: string;
   clientSecret: string;
   signingSecret: string;
+}
+
+function normalizeSlackUserId(value: string) {
+  return value.trim().replace(/^<@/, "").replace(/>$/, "").trim();
+}
+
+function parseAllowedDmUserIds(value: string): string[] {
+  const ids: string[] = [];
+  value
+    .split(/[,\s]+/)
+    .map(normalizeSlackUserId)
+    .filter(Boolean)
+    .forEach((id) => {
+      if (!ids.some((existing) => existing.toLowerCase() === id.toLowerCase())) ids.push(id);
+    });
+  return ids;
+}
+
+function formatAllowedDmUserIds(config: SlackConfig) {
+  return (config.allowed_dm_user_ids ?? []).join("\n");
 }
 
 function providerIdFor(agentId: string) {
@@ -167,6 +189,7 @@ export function useSlackAppFlow(setAgents: Dispatch<SetStateAction<Agent[] | nul
     clientSecret: "",
     signingSecret: "",
   });
+  const [allowedDmUserIdsText, setAllowedDmUserIdsText] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -180,10 +203,28 @@ export function useSlackAppFlow(setAgents: Dispatch<SetStateAction<Agent[] | nul
       clientSecret: "",
       signingSecret: "",
     });
+    setAllowedDmUserIdsText(formatAllowedDmUserIds(existing));
     setCreated(Boolean(existing.app_id || existing.client_id));
     setStep(existing.client_id ? 3 : existing.app_id ? 2 : 1);
     setError(null);
     setOpen(true);
+  };
+
+  const allowedDmUserIds = () => parseAllowedDmUserIds(allowedDmUserIdsText);
+
+  const persistSlackConfig = async (patch: Partial<SlackConfig>) => {
+    if (!agent) throw new Error("Agent is required");
+    const currentConfig = ((agent.config ?? {}) as Record<string, unknown>) || {};
+    const existing = slackConfig(agent);
+    const updated = await updateAgent(agent.id, {
+      config: {
+        ...currentConfig,
+        slack: { ...existing, ...patch },
+      },
+    });
+    setAgent(updated);
+    setAgents((prev) => prev?.map((a) => (a.id === updated.id ? updated : a)) ?? null);
+    return updated;
   };
 
   const saveCredentials = async () => {
@@ -208,23 +249,16 @@ export function useSlackAppFlow(setAgents: Dispatch<SetStateAction<Agent[] | nul
         signingSecretKey,
         credentials.signingSecret.trim(),
       );
-      const currentConfig = ((agent.config ?? {}) as Record<string, unknown>) || {};
-      const updated = await updateAgent(agent.id, {
-        config: {
-          ...currentConfig,
-          slack: {
-            app_name: name.trim(),
-            app_id: credentials.appId.trim(),
-            client_id: credentials.clientId.trim(),
-            provider_id: providerIdFor(agent.id),
-            status: "credentials_saved",
-            client_secret_key: clientSecretKey,
-            signing_secret_key: signingSecretKey,
-          },
-        },
+      await persistSlackConfig({
+        app_name: name.trim(),
+        app_id: credentials.appId.trim(),
+        client_id: credentials.clientId.trim(),
+        provider_id: providerIdFor(agent.id),
+        status: "credentials_saved",
+        client_secret_key: clientSecretKey,
+        signing_secret_key: signingSecretKey,
+        allowed_dm_user_ids: allowedDmUserIds(),
       });
-      setAgent(updated);
-      setAgents((prev) => prev?.map((a) => (a.id === updated.id ? updated : a)) ?? null);
       setCredentials((c) => ({ ...c, clientSecret: "", signingSecret: "" }));
       setStep(3);
     } catch (e) {
@@ -239,16 +273,23 @@ export function useSlackAppFlow(setAgents: Dispatch<SetStateAction<Agent[] | nul
     setSaving(true);
     setError(null);
     try {
-      const currentConfig = ((agent.config ?? {}) as Record<string, unknown>) || {};
-      const existing = slackConfig(agent);
-      const updated = await updateAgent(agent.id, {
-        config: {
-          ...currentConfig,
-          slack: { ...existing, status: "approval_requested" },
-        },
+      await persistSlackConfig({
+        status: "approval_requested",
+        allowed_dm_user_ids: allowedDmUserIds(),
       });
-      setAgent(updated);
-      setAgents((prev) => prev?.map((a) => (a.id === updated.id ? updated : a)) ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const saveSlackPermissions = async () => {
+    if (!agent) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await persistSlackConfig({ allowed_dm_user_ids: allowedDmUserIds() });
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -267,8 +308,9 @@ export function useSlackAppFlow(setAgents: Dispatch<SetStateAction<Agent[] | nul
     setError(null);
     const popup = window.open("about:blank", "_blank", "noopener,noreferrer");
     try {
-      const state = await createSlackOAuthState(agent.id);
-      const url = slackAuthorizeUrl(agent, clientId, state);
+      const updated = await persistSlackConfig({ allowed_dm_user_ids: allowedDmUserIds() });
+      const state = await createSlackOAuthState(updated.id);
+      const url = slackAuthorizeUrl(updated, slackConfig(updated).client_id || clientId, state);
       if (popup) popup.location.href = url;
       else window.location.href = url;
     } catch (e) {
@@ -352,7 +394,7 @@ export function useSlackAppFlow(setAgents: Dispatch<SetStateAction<Agent[] | nul
                   </div>
                   <div className="grid gap-4 rounded-lg border border-border bg-muted/20 p-5">
                     <div>
-                      <h3 className="text-base font-semibold">Create the Slack app</h3>
+                      <h3 className="text-base font-semibold tracking-tight">Create the Slack app</h3>
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">
                         The button opens Slack with the Lite Agents manifest already filled in.
                       </p>
@@ -379,7 +421,7 @@ export function useSlackAppFlow(setAgents: Dispatch<SetStateAction<Agent[] | nul
               {step === 2 && (
                 <div className="grid gap-5">
                   <div className="grid gap-1">
-                    <h3 className="text-base font-semibold">Paste Slack app credentials</h3>
+                    <h3 className="text-base font-semibold tracking-tight">Paste Slack app credentials</h3>
                     <p className="text-sm leading-6 text-muted-foreground">
                       Secrets are stored in the vault. Only the key names are saved on the agent.
                     </p>
@@ -441,7 +483,7 @@ export function useSlackAppFlow(setAgents: Dispatch<SetStateAction<Agent[] | nul
               {step === 3 && agent && (
                 <div className="grid gap-6">
                   <div className="grid gap-1">
-                    <h3 className="text-base font-semibold">Connect OAuth</h3>
+                    <h3 className="text-base font-semibold tracking-tight">Connect OAuth</h3>
                     <p className="text-sm leading-6 text-muted-foreground">
                       Slack redirects back to Lite Agents after OAuth. A successful callback stores the bot token in the vault.
                     </p>
@@ -462,6 +504,38 @@ export function useSlackAppFlow(setAgents: Dispatch<SetStateAction<Agent[] | nul
                               ? "OAuth failed"
                               : "Not connected"}
                       </p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 rounded-lg border border-border bg-muted/20 p-5">
+                    <div className="grid gap-1">
+                      <h3 className="text-base font-semibold tracking-tight">Direct Message Access</h3>
+                      <p className="text-sm leading-6 text-muted-foreground">
+                        Leave empty to allow any Slack user to DM this agent.
+                      </p>
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="slack-allowed-dm-users">Allowed users</Label>
+                      <Textarea
+                        id="slack-allowed-dm-users"
+                        value={allowedDmUserIdsText}
+                        onChange={(e) => setAllowedDmUserIdsText(e.target.value)}
+                        placeholder={"U0123456789\n<@U0987654321>"}
+                        rows={4}
+                        className="resize-none font-mono text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Enter one Slack user ID or mention per line.
+                      </p>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button variant="outline" onClick={saveSlackPermissions} disabled={saving}>
+                        {saving ? (
+                          <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />
+                        ) : (
+                          <Check className="size-3.5" />
+                        )}
+                        Save Permissions
+                      </Button>
                     </div>
                   </div>
                   {error && <p className="text-sm text-destructive">{error}</p>}
@@ -499,7 +573,8 @@ export function useSlackAppFlow(setAgents: Dispatch<SetStateAction<Agent[] | nul
                     Back
                   </Button>
                   <Button onClick={saveCredentials} disabled={saving}>
-                    {saving ? "Saving..." : "Save Credentials"}
+                    {saving && <Loader2 className="size-3.5 animate-spin motion-reduce:animate-none" />}
+                    {saving ? "Saving…" : "Save Credentials"}
                   </Button>
                 </>
               )}

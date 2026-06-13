@@ -146,6 +146,7 @@ async fn auto_connect_factory_child(
         "team_id": message.team_id,
         "channel_id": message.channel,
         "thread_ts": message.thread_ts,
+        "dm_user_id": message.user_id,
         "requested_by": message.user_id,
     });
     let connected = factory_slack_app::create_child_slack_app(
@@ -202,13 +203,29 @@ fn factory_connected_text(payload: &serde_json::Value) -> String {
         .get("install_url")
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default();
+    let allowed_dm_user_ids = payload
+        .get("allowed_dm_user_ids")
+        .and_then(serde_json::Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_str)
+        .map(|id| format!("<@{id}>"))
+        .collect::<Vec<_>>();
+    let permissions = match allowed_dm_user_ids.is_empty() {
+        true => String::new(),
+        false => format!(
+            "         - *Slack DM access:* only {}\n",
+            allowed_dm_user_ids.join(", ")
+        ),
+    };
     format!(
         ":white_check_mark: *{}* is ready.\n\n\
          - *Status:* `{}`\n\
          - *Platform link:* <{}|Open agent>\n\
+{}\
          - *Slack install link:* <{}|Install the dedicated Slack app>\n\n\
          Open the Slack install link to add the new bot to this workspace. ",
-        agent_name, status, agent_url, install_url
+        agent_name, status, agent_url, permissions, install_url
     )
 }
 
