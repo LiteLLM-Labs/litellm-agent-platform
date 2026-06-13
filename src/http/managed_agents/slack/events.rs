@@ -165,13 +165,18 @@ fn dm_user_allowed(config: &SlackAgentConfig, message: &SlackIncomingMessage) ->
     let Some(allowed) = config.allowed_dm_user_ids.as_ref() else {
         return true;
     };
-    let allowed = allowed
+    let requested = allowed
+        .iter()
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .collect::<Vec<_>>();
+    if requested.is_empty() {
+        return true;
+    }
+    let allowed = requested
         .iter()
         .filter_map(|value| normalize_slack_user_id(value))
         .collect::<Vec<_>>();
-    if allowed.is_empty() {
-        return true;
-    }
     let Some(user_id) = message.user_id.as_deref().and_then(normalize_slack_user_id) else {
         return false;
     };
@@ -238,5 +243,15 @@ mod tests {
         assert!(dm_user_allowed(&config, &message(Some("U123"), true)));
         assert!(dm_user_allowed(&config, &message(Some("U456"), true)));
         assert!(!dm_user_allowed(&config, &message(Some("U999"), true)));
+    }
+
+    #[test]
+    fn dm_allowlist_with_only_invalid_ids_blocks_direct_messages() {
+        let config = SlackAgentConfig {
+            allowed_dm_user_ids: Some(vec!["not-a-slack-user".to_owned()]),
+            ..Default::default()
+        };
+
+        assert!(!dm_user_allowed(&config, &message(Some("U123"), true)));
     }
 }
