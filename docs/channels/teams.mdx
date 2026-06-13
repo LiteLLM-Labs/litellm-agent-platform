@@ -1,0 +1,104 @@
+---
+title: "Microsoft Teams"
+description: "Add an agent as a bot in Microsoft Teams."
+---
+
+The Teams channel lets people talk to a LAP agent from Microsoft Teams. Each connected LAP agent uses one Bot Framework registration and one Teams app package.
+
+## Prerequisites
+
+- LiteLLM Agent Platform deployed at a public HTTPS URL
+- A LAP agent with a working runtime and model
+- A Microsoft 365 tenant where you can upload custom Teams apps, or an admin who can publish the app
+- Permission to create or edit an Azure Bot registration, or an existing Bot Framework bot
+
+For local testing, expose LAP with an HTTPS tunnel and use that public URL when you configure the bot endpoint.
+
+## 1. Register the bot
+
+Create an Azure Bot or reuse an existing Bot Framework bot.
+
+Set the bot messaging endpoint to the agent-specific Teams endpoint:
+
+```text
+$LAP_URL/api/agents/<agent-id>/teams/messages
+```
+
+For example:
+
+```text
+https://agents.example.com/api/agents/agent_123/teams/messages
+```
+
+Enable the **Microsoft Teams** channel for the bot.
+
+Keep these values handy:
+
+- Microsoft App ID
+- Tenant ID
+- App password or client secret value
+
+## 2. Open the agent Teams flow
+
+In the LAP UI, open **Agents**, choose an agent, then click **Add to Teams**.
+
+The flow shows the same messaging endpoint that the Azure Bot must use:
+
+```text
+$LAP_URL/api/agents/<agent-id>/teams/messages
+```
+
+## 3. Save bot credentials
+
+Paste these values into the LAP flow:
+
+- Microsoft App ID
+- Tenant ID
+- App password
+
+Click **Save Bot Credentials**.
+
+LAP stores the app password in the vault and saves only the vault key name on the agent config.
+
+## 4. Download the Teams package
+
+Click **Download Teams Package**.
+
+The package contains the Teams app manifest and icons for this agent. The manifest points Teams at the Microsoft App ID you saved in LAP and enables personal, group chat, and team scopes.
+
+## 5. Install the app in Teams
+
+Upload the downloaded `.zip` package through one of these paths:
+
+- **Teams** -> **Apps** -> **Manage your apps** -> **Upload an app**
+- Teams Developer Portal
+- Microsoft Teams admin center, if your organization requires admin publishing
+
+If custom app upload is disabled, ask a Teams admin to publish or allow the app for your tenant.
+
+## 6. Talk to your agent
+
+Start a direct message with the bot:
+
+```text
+Can you summarize the latest incident notes?
+```
+
+Or mention it in a group chat or team channel:
+
+```text
+@YourAgent check the deployment status and summarize the result
+```
+
+The bot starts or reuses an agent session for that Teams conversation, streams the response, and replies in the same conversation.
+
+## Troubleshooting
+
+- **No callback reaches LAP:** Confirm the Azure Bot messaging endpoint uses the public HTTPS LAP URL and ends with `/api/agents/<agent-id>/teams/messages`.
+- **Teams upload is blocked:** Custom app upload may be disabled. Use Teams admin center publishing.
+- **Unauthorized callback:** Confirm the Microsoft App ID, tenant ID, and app password saved in LAP match the Azure Bot registration.
+- **Bot replies with an agent error:** Confirm the agent runtime and model provider credentials work from the LAP UI before testing Teams.
+
+## Routing to different agents
+
+Create a separate Teams app package for each LAP agent you want to expose. Each package points to its own `/api/agents/<agent-id>/teams/messages` endpoint.
