@@ -67,6 +67,7 @@ import {
   listMcpServerTools,
   listMcpUserCredentials,
   listModels,
+  listPlatformMcps,
   listPublicMcpServers,
   listRules,
   listSkills,
@@ -79,7 +80,7 @@ import {
 } from "@/lib/model-options";
 import { runtimeBrandIconId } from "@/lib/runtime-branding";
 import { scheduleLabel } from "@/lib/schedule";
-import type { Agent, AgentRuntime, Rule, Skill, RuntimeHarness } from "@/lib/types";
+import type { Agent, AgentRuntime, PlatformMcp, Rule, Skill, RuntimeHarness } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 type BuilderStep = "create" | "config";
@@ -112,6 +113,7 @@ export default function NewAgentPage() {
   const [agents, setAgents] = useState<Agent[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [rules, setRules] = useState<Rule[]>([]);
+  const [platformMcps, setPlatformMcps] = useState<PlatformMcp[]>([]);
   const [mcpIntegrations, setMcpIntegrations] = useState<Integration[]>([]);
   const [mcpLoading, setMcpLoading] = useState(true);
   const [mcpError, setMcpError] = useState<string | null>(null);
@@ -131,13 +133,20 @@ export default function NewAgentPage() {
   useEffect(() => {
     let cancelled = false;
 
-    Promise.all([listAgentRuntimes(), listAgents(), listSkills(), listRules()])
-      .then(([runtimeValues, agentValues, skillValues, ruleValues]) => {
+    Promise.all([
+      listAgentRuntimes(),
+      listAgents(),
+      listSkills(),
+      listRules(),
+      listPlatformMcps().catch(() => [] as PlatformMcp[]),
+    ])
+      .then(([runtimeValues, agentValues, skillValues, ruleValues, platformMcpValues]) => {
         if (cancelled) return;
         setRuntimes(runtimeValues);
         setAgents(agentValues);
         setSkills(skillValues);
         setRules(ruleValues);
+        setPlatformMcps(platformMcpValues);
         setConfigText((current) =>
           current === INITIAL_CONFIG
             ? stringifyAgentDraft(withRuntimeDefaultTools(AGENT_TEMPLATES[0].draft, runtimeValues))
@@ -150,6 +159,7 @@ export default function NewAgentPage() {
         setAgents([]);
         setSkills([]);
         setRules([]);
+        setPlatformMcps([]);
       });
 
     const loadMcpIntegrations = async () => {
@@ -439,6 +449,7 @@ export default function NewAgentPage() {
               models={models}
               modelsError={modelsError}
               modelsLoading={modelsLoading}
+              platformMcps={platformMcps}
               parsedError={parsed.error}
               prompt={prompt}
               rules={rules}
@@ -622,6 +633,7 @@ function ConfigStep({
   models,
   modelsError,
   modelsLoading,
+  platformMcps,
   parsedError,
   prompt,
   rules,
@@ -653,6 +665,7 @@ function ConfigStep({
   models: string[];
   modelsError: string | null;
   modelsLoading: boolean;
+  platformMcps: PlatformMcp[];
   parsedError: string | null;
   prompt: string;
   rules: Rule[];
@@ -812,6 +825,7 @@ function ConfigStep({
               models={models}
               modelsError={modelsError}
               modelsLoading={modelsLoading}
+              platformMcps={platformMcps}
               rules={rules}
               skills={skills}
               runtimes={runtimes}
@@ -933,6 +947,7 @@ function AgentDraftControls({
   models,
   modelsError,
   modelsLoading,
+  platformMcps,
   rules,
   skills,
   runtimes,
@@ -947,6 +962,7 @@ function AgentDraftControls({
   models: string[];
   modelsError: string | null;
   modelsLoading: boolean;
+  platformMcps: PlatformMcp[];
   rules: Rule[];
   skills: Skill[];
   runtimes: AgentRuntime[];
@@ -961,6 +977,7 @@ function AgentDraftControls({
     draft.tools.map((tool) => tool.type).filter(Boolean);
   const selectedTools = new Set(draft.tools.map((tool) => tool.type).filter(Boolean));
   const selectedSubAgents = new Set(draft.sub_agents.map((agent) => agent.agent_id));
+  const selectedPlatformMcps = new Set(draft.platform_mcp_ids);
   const setTool = (toolId: string, enabled: boolean) => {
     const next = new Set(selectedTools);
     if (enabled) next.add(toolId);
@@ -986,6 +1003,13 @@ function AgentDraftControls({
       mcp_server_ids: enabled
         ? Array.from(new Set([...draft.mcp_server_ids, integrationId]))
         : draft.mcp_server_ids.filter((id) => id !== integrationId),
+    });
+  };
+  const togglePlatformMcp = (mcpId: string, enabled: boolean) => {
+    update({
+      platform_mcp_ids: enabled
+        ? Array.from(new Set([...draft.platform_mcp_ids, mcpId]))
+        : draft.platform_mcp_ids.filter((id) => id !== mcpId),
     });
   };
 
@@ -1115,6 +1139,54 @@ function AgentDraftControls({
               </label>
             ))}
           </div>
+        </div>
+
+        <div className="grid gap-2 rounded-md border border-white/10 bg-black/10 p-3 text-foreground">
+          <div className="flex items-start justify-between gap-3">
+            <div className="grid gap-1">
+              <Label className="text-sm font-medium">Platform tools</Label>
+              <p className="max-w-xl text-xs leading-5 text-muted-foreground">
+                Attach LAP-native capabilities such as Slack actions, managed-agent creation, approval requests, and sub-agent orchestration.
+              </p>
+            </div>
+            <span className="shrink-0 font-mono text-xs text-muted-foreground">
+              {draft.platform_mcp_ids.length} attached
+            </span>
+          </div>
+          {platformMcps.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No platform tools available.</p>
+          ) : (
+            <div className="grid max-h-[320px] gap-2 overflow-y-auto pr-1">
+              {platformMcps.map((mcp) => {
+                const enabled = selectedPlatformMcps.has(mcp.id);
+                return (
+                  <label
+                    key={mcp.id}
+                    className={cn(
+                      "flex min-w-0 cursor-pointer items-start gap-2.5 rounded-md border border-white/10 bg-white/5 px-2.5 py-2 text-xs hover:bg-white/10",
+                      enabled && "border-white/30 bg-white/10",
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={(event) => togglePlatformMcp(mcp.id, event.target.checked)}
+                      className="mt-0.5 size-3.5 shrink-0"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{mcp.name}</span>
+                        <span className="truncate font-mono text-muted-foreground">{mcp.id}</span>
+                      </div>
+                      <div className="mt-0.5 line-clamp-2 text-muted-foreground">
+                        {mcp.description}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="grid gap-2 rounded-md border border-white/10 bg-black/10 p-3 text-[#f7f2e8]">
@@ -1505,6 +1577,7 @@ function ConfigPreview({
           <TokenList label="Vault keys" values={draft.vault_keys} />
           <TokenList label="Skill IDs" values={draft.skill_ids} />
           <TokenList label="Rule IDs" values={draft.rule_ids} />
+          <TokenList label="Platform MCPs" values={draft.platform_mcp_ids} />
           <TokenList label="Sub-agents" values={draft.sub_agents.map((agent) => agent.agent_id)} />
         </div>
 

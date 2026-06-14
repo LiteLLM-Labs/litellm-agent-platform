@@ -1,8 +1,8 @@
 import { PHASE_DEVELOPMENT_SERVER } from "next/constants.js";
 
 export default function nextConfig(phase) {
-  const apiBase = process.env.LITELLM_DEV_API_BASE?.replace(/\/+$/, "");
   const isDev = phase === PHASE_DEVELOPMENT_SERVER;
+  const apiBase = (process.env.LITELLM_DEV_API_BASE ?? (isDev ? "http://localhost:4000" : "")).replace(/\/+$/, "");
   return {
     output: isDev ? undefined : "export",
     trailingSlash: !isDev,

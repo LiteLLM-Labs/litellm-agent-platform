@@ -53,7 +53,33 @@ cargo run -- --config config.yaml
 
 Server listens on `http://localhost:4000` by default.
 
-**4. Verify**
+**4. Run the UI dev server**
+
+When iterating on `src/ui`, keep the Rust gateway running and start Next from
+the UI package:
+
+```bash
+cd src/ui
+npm run dev
+```
+
+The UI dev server listens on `http://localhost:3210`. In development, Next
+rewrites gateway routes such as `/api/*`, `/v1/*`, and `/session/*` to
+`http://localhost:4000` by default, so `LITELLM_DEV_API_BASE` is not required
+for the normal local setup.
+
+Set `LITELLM_DEV_API_BASE` only when the gateway is running somewhere else:
+
+```bash
+LITELLM_DEV_API_BASE=http://localhost:4001 npm run dev
+```
+
+If the UI shows a large `HTTP 404: <!DOCTYPE html>` error for an API call, the
+browser is probably talking to the Next dev server instead of the gateway.
+Confirm the gateway is running and, for non-default ports, set
+`LITELLM_DEV_API_BASE`.
+
+**5. Verify**
 
 ```bash
 # Health check

@@ -2,8 +2,8 @@ use serde_json::{json, Value};
 
 use super::{
     factory, session_management, AGENT_MEMORY_MCP_ID, CHECK_HUMAN_APPROVAL_MCP_ID,
-    EDIT_AGENT_SKILL_MCP_ID, LIST_SUB_AGENTS_MCP_ID, REQUEST_HUMAN_APPROVAL_MCP_ID,
-    RUN_SUB_AGENT_MCP_ID, SEND_SLACK_MESSAGE_MCP_ID,
+    CREATE_SLACK_CHANNEL_MCP_ID, EDIT_AGENT_SKILL_MCP_ID, LIST_SUB_AGENTS_MCP_ID,
+    REQUEST_HUMAN_APPROVAL_MCP_ID, RUN_SUB_AGENT_MCP_ID, SEND_SLACK_MESSAGE_MCP_ID,
 };
 
 pub fn tool_defs() -> Vec<Value> {
@@ -13,6 +13,7 @@ pub fn tool_defs() -> Vec<Value> {
         agent_memory_tool(),
         edit_agent_skill_tool(),
         send_slack_message_tool(),
+        create_slack_channel_tool(),
         list_sub_agents_tool(),
         run_sub_agent_tool(),
         request_human_approval_tool(),
@@ -167,6 +168,37 @@ fn send_slack_message_tool() -> Value {
                 "text": { "type": "string" }
             },
             "required": ["text"]
+        }
+    })
+}
+
+fn create_slack_channel_tool() -> Value {
+    json!({
+        "name": CREATE_SLACK_CHANNEL_MCP_ID,
+        "description": "Create a Slack public or private channel using this agent's connected Slack bot, optionally inviting users by Slack ID or email.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Channel name without #, such as incident-war-room."
+                },
+                "is_private": {
+                    "type": "boolean",
+                    "description": "When true, create a private channel."
+                },
+                "user_ids": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Slack user IDs to invite, such as U123."
+                },
+                "emails": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Slack user emails to resolve and invite."
+                }
+            },
+            "required": ["name"]
         }
     })
 }

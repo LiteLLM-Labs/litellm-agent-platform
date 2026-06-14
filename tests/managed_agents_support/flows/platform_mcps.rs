@@ -31,6 +31,7 @@ async fn assert_catalog(fixture: &AppFixture) {
             "agent_memory",
             "edit_agent_skill",
             "send_slack_message",
+            "create_slack_channel",
             "create_managed_agent",
             "connect_agent_to_slack",
             "list_slack_agent_bindings",

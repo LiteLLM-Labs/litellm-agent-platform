@@ -36,6 +36,16 @@ export class ApiError extends Error {
 function responseErrorText(body: string): string {
   const trimmed = body.trim();
   if (!trimmed) return "";
+  const lower = trimmed.slice(0, 500).toLowerCase();
+  if (lower.includes("<!doctype html") || lower.includes("<html")) {
+    if (lower.includes("404") && lower.includes("this page could not be found")) {
+      return [
+        "Gateway API route returned a Next.js 404 page.",
+        "Next dev proxies to http://localhost:4000 by default; set LITELLM_DEV_API_BASE if the gateway runs elsewhere.",
+      ].join(" ");
+    }
+    return "Gateway API route returned an HTML page instead of JSON.";
+  }
   try {
     const parsed = JSON.parse(trimmed) as {
       error?: { message?: unknown } | string;
@@ -290,7 +300,7 @@ export async function createGatewaySession(
 export async function listAgentRuntimes(): Promise<AgentRuntime[]> {
   const res = await req("/api/agent-runtimes");
   const data = await jsonOrThrow<{ runtimes: AgentRuntime[] }>(res);
-  return data.runtimes;
+  return Array.isArray(data.runtimes) ? data.runtimes : [];
 }
 
 export async function listPlatformMcps(): Promise<PlatformMcp[]> {
@@ -727,7 +737,7 @@ export async function draftAgentConfigWithModel(
       model,
       max_tokens: 1200,
       system:
-        `You design managed agent configs for LiteLLM Agent Platform. Return only valid YAML, with no markdown fence and no prose. Use these primary keys when relevant: name, description, model, runtime, system, tools, schedule, vault_keys, skill_ids, rule_ids, sub_agents. The runtime must be claude_managed_agents unless the user explicitly names another supported runtime. The model must be one of these available model IDs: ${models.join(", ")}. Use ${model} unless a different available model is clearly requested. Use tools as YAML list items with a type equal to a tool id available for the selected runtime, for example \`- type: bash\`. Do not emit provider-native toolset identifiers such as agent_toolset_20260401. If the selected runtime has no explicit LAP-managed tools, use tools: []. Do not include harness. Do not include provider-native multiagent or callable_agents. For sub-agents, only emit existing LAP agent references if the user provided exact IDs, using \`sub_agents:\` entries with \`agent_id\`. If useful helper agents are implied but no IDs are known, describe them in the system prompt as suggested roles instead of inventing IDs. Do not paste the user's request as a generic mission; synthesize a complete, specific system prompt that tells the agent how to behave, what to avoid, when to delegate to attached sub-agents, and when to ask for approval. Include schedule, vault_keys, skill_ids, or rule_ids only when the request clearly needs them.\n\n` +
+        `You design managed agent configs for LiteLLM Agent Platform. Return only valid YAML, with no markdown fence and no prose. Use these primary keys when relevant: name, description, model, runtime, system, tools, schedule, vault_keys, skill_ids, rule_ids, sub_agents, platform_mcp_ids. The runtime must be claude_managed_agents unless the user explicitly names another supported runtime. The model must be one of these available model IDs: ${models.join(", ")}. Use ${model} unless a different available model is clearly requested. Use tools as YAML list items with a type equal to a tool id available for the selected runtime, for example \`- type: bash\`. Do not emit provider-native toolset identifiers such as agent_toolset_20260401. If the selected runtime has no explicit LAP-managed tools, use tools: []. Do not include harness. Do not include provider-native multiagent or callable_agents. For sub-agents, only emit existing LAP agent references if the user provided exact IDs, using \`sub_agents:\` entries with \`agent_id\`. If useful helper agents are implied but no IDs are known, describe them in the system prompt as suggested roles instead of inventing IDs. Use platform_mcp_ids only for LAP-native platform MCP tools such as send_slack_message and create_slack_channel. Do not paste the user's request as a generic mission; synthesize a complete, specific system prompt that tells the agent how to behave, what to avoid, when to delegate to attached sub-agents, and when to ask for approval. Include schedule, vault_keys, skill_ids, rule_ids, or platform_mcp_ids only when the request clearly needs them.\n\n` +
         runtimeToolCatalogPrompt(runtimes),
       messages: [
         {

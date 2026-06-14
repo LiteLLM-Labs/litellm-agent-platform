@@ -32,6 +32,7 @@ pub const PLATFORM_SESSION_MCP_ID: &str = "read_platform_session";
 pub const SEND_PLATFORM_SESSION_MESSAGE_MCP_ID: &str = "send_platform_session_message";
 pub const AGENT_MEMORY_MCP_ID: &str = "agent_memory";
 pub const SEND_SLACK_MESSAGE_MCP_ID: &str = "send_slack_message";
+pub const CREATE_SLACK_CHANNEL_MCP_ID: &str = "create_slack_channel";
 pub const EDIT_AGENT_SKILL_MCP_ID: &str = "edit_agent_skill";
 pub const PLATFORM_MCP_SERVER_NAME: &str = "platform";
 pub const CREATE_MANAGED_AGENT_MCP_ID: &str = "create_managed_agent";
@@ -177,6 +178,9 @@ async fn call_tool(
         EDIT_AGENT_SKILL_MCP_ID => skill::edit_agent_skill(pool, agent_id, arguments).await?,
         SEND_SLACK_MESSAGE_MCP_ID => {
             slack::send_message(state.as_ref(), pool, agent_id, arguments).await?
+        }
+        CREATE_SLACK_CHANNEL_MCP_ID => {
+            slack::create_channel(state.as_ref(), pool, agent_id, arguments).await?
         }
         CREATE_MANAGED_AGENT_MCP_ID => {
             factory::create_managed_agent(state.as_ref(), pool, arguments).await?

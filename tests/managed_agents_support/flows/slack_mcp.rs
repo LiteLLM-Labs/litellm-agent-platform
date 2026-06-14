@@ -6,14 +6,45 @@ use super::{
 };
 
 pub async fn enable_and_assert_slack_messages(fixture: &AppFixture, agent_id: &str) {
-    let post_baseline = slack_api_call_count(fixture, "/chat.postMessage").await;
+    let baselines = SlackCallBaselines::capture(fixture).await;
+    enable_slack_mcp(fixture, agent_id).await;
+    assert_channel_message(fixture, agent_id).await;
+    assert_dm_message(fixture, agent_id).await;
+    assert_created_channel(fixture, agent_id).await;
+    baselines.assert_counts(fixture).await;
+    disable_slack_mcp(fixture, agent_id).await;
+}
+
+struct SlackCallBaselines {
+    post_message: usize,
+    lookup_email: usize,
+}
+
+impl SlackCallBaselines {
+    async fn capture(fixture: &AppFixture) -> Self {
+        Self {
+            post_message: slack_api_call_count(fixture, "/chat.postMessage").await,
+            lookup_email: slack_api_call_count(fixture, "/users.lookupByEmail").await,
+        }
+    }
+
+    async fn assert_counts(&self, fixture: &AppFixture) {
+        assert_slack_api_call_count(fixture, "/users.lookupByEmail", self.lookup_email + 2).await;
+        assert_slack_api_call_count(fixture, "/conversations.open", 1).await;
+        assert_slack_api_call_count(fixture, "/conversations.create", 1).await;
+        assert_slack_api_call_count(fixture, "/conversations.invite", 1).await;
+        assert_slack_api_call_count(fixture, "/chat.postMessage", self.post_message + 2).await;
+    }
+}
+
+async fn enable_slack_mcp(fixture: &AppFixture, agent_id: &str) {
     request_json(
         fixture.app.clone(),
         "PATCH",
         &format!("/api/agents/{agent_id}"),
         Some(json!({
             "config": {
-                "platform_mcp_ids": ["send_slack_message"],
+                "platform_mcp_ids": ["send_slack_message", "create_slack_channel"],
                 "slack": {
                     "status": "connected",
                     "client_id": "client-id",
@@ -25,7 +56,9 @@ pub async fn enable_and_assert_slack_messages(fixture: &AppFixture, agent_id: &s
         })),
     )
     .await;
+}
 
+async fn assert_channel_message(fixture: &AppFixture, agent_id: &str) {
     let channel = call_send_slack_message(
         fixture,
         agent_id,
@@ -37,7 +70,9 @@ pub async fn enable_and_assert_slack_messages(fixture: &AppFixture, agent_id: &s
     .await;
     assert_eq!(channel["channel_id"], "C123");
     assert_eq!(channel["ts"], "200.000001");
+}
 
+async fn assert_dm_message(fixture: &AppFixture, agent_id: &str) {
     let dm = call_send_slack_message(
         fixture,
         agent_id,
@@ -50,11 +85,25 @@ pub async fn enable_and_assert_slack_messages(fixture: &AppFixture, agent_id: &s
     assert_eq!(dm["user_id"], "U-DM");
     assert_eq!(dm["channel_id"], "D123");
     assert_eq!(dm["ts"], "200.000001");
+}
 
-    assert_slack_api_call_count(fixture, "/users.lookupByEmail", 1).await;
-    assert_slack_api_call_count(fixture, "/conversations.open", 1).await;
-    assert_slack_api_call_count(fixture, "/chat.postMessage", post_baseline + 2).await;
-    disable_slack_mcp(fixture, agent_id).await;
+async fn assert_created_channel(fixture: &AppFixture, agent_id: &str) {
+    let channel = call_create_slack_channel(
+        fixture,
+        agent_id,
+        json!({
+            "name": "Incident War Room",
+            "is_private": true,
+            "user_ids": ["U123"],
+            "emails": ["teammate@example.com"]
+        }),
+    )
+    .await;
+    assert_eq!(channel["channel_id"], "C-WAR");
+    assert_eq!(channel["name"], "incident-war-room");
+    assert_eq!(channel["is_private"], true);
+    assert_eq!(channel["invited_user_ids"], json!(["U123", "U-DM"]));
+    assert_eq!(channel["invite_error"], Value::Null);
 }
 
 async fn call_send_slack_message(fixture: &AppFixture, agent_id: &str, arguments: Value) -> Value {
@@ -68,6 +117,30 @@ async fn call_send_slack_message(fixture: &AppFixture, agent_id: &str, arguments
             "method": "tools/call",
             "params": {
                 "name": "send_slack_message",
+                "arguments": arguments
+            }
+        })),
+    )
+    .await;
+    let text = response["result"]["content"][0]["text"].as_str().unwrap();
+    serde_json::from_str(text).unwrap()
+}
+
+async fn call_create_slack_channel(
+    fixture: &AppFixture,
+    agent_id: &str,
+    arguments: Value,
+) -> Value {
+    let response = request_json(
+        fixture.app.clone(),
+        "POST",
+        &format!("/mcp/platform/{agent_id}"),
+        Some(json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "create_slack_channel",
                 "arguments": arguments
             }
         })),

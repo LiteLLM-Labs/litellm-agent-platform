@@ -291,10 +291,13 @@ Rules:
 | Source of truth | Derived in `createInputFromDraft` — never read back |
 |---|---|
 | `mcp_server_ids` | `mcp_servers`, `mcp_toolset` tool entries |
+| `platform_mcp_ids` | `config.platform_mcp_ids` |
 | `vault_keys` | vault resolution in the backend |
 | `skill_ids` | skill attachment at session time |
 
 **MCP rule**: `createInputFromDraft` strips all `mcp_toolset` entries from `draft.tools` and rebuilds them from `mcp_server_ids`. If an ID is not in the `INTEGRATIONS` catalog it is silently dropped — no toolset, no server URL.
+
+**Platform MCP rule**: `platform_mcp_ids` is independent of registry-backed MCP integrations. It is copied only to `config.platform_mcp_ids`; never convert platform MCP IDs into `mcp_servers` entries or `mcp_toolset` tools.
 
 ---
 

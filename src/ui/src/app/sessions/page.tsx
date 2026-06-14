@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  apiErrorMessage,
   createAgent,
   createSession,
   listRuntimeHarnesses,
@@ -107,7 +108,7 @@ function SessionsStart() {
         setAgentCount(nextAgents.length);
         setSavedAgents(nextAgents);
       })
-      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load runtimes"));
+      .catch((err) => setError(apiErrorMessage(err, "Failed to load sessions")));
   }, []);
 
   const selectedRuntime = useMemo(
@@ -202,7 +203,7 @@ function SessionsStart() {
       }
       router.push(`/chat/?${params.toString()}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to start session");
+      setError(apiErrorMessage(err, "Failed to start session"));
     } finally {
       setStarting(false);
     }

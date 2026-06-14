@@ -19,6 +19,8 @@ export interface AgentDraft {
   sub_agents: AgentSubAgent[];
   /** IDs of integrations from the resolved MCP catalog to attach as MCP servers. */
   mcp_server_ids: string[];
+  /** IDs of LAP-native platform MCP tools to expose to the agent. */
+  platform_mcp_ids: string[];
   max_runtime_minutes: number;
   on_failure: string;
 }
@@ -73,6 +75,7 @@ function baseDraft(): AgentDraft {
     rule_ids: [],
     sub_agents: [],
     mcp_server_ids: [],
+    platform_mcp_ids: [],
     max_runtime_minutes: 30,
     on_failure: DEFAULT_FAILURE,
   };
@@ -87,6 +90,7 @@ export function blankAgentDraft(): AgentDraft {
     rule_ids: [],
     sub_agents: [],
     mcp_server_ids: [],
+    platform_mcp_ids: [],
   };
 }
 
@@ -112,6 +116,7 @@ function withDraft(patch: Partial<AgentDraft>): AgentDraft {
     rule_ids: [...(patch.rule_ids ?? [])],
     sub_agents: [...(patch.sub_agents ?? [])],
     mcp_server_ids: [...(patch.mcp_server_ids ?? [])],
+    platform_mcp_ids: [...(patch.platform_mcp_ids ?? [])],
   };
 }
 
@@ -187,6 +192,7 @@ export const AGENT_TEMPLATES: AgentTemplate[] = [
       system:
         "You are an incident commander agent. Triage incoming alerts, collect timeline facts, identify likely owners, draft status updates, and keep an incident checklist current. Ask before paging people, opening tickets, or posting to shared channels unless a human has already approved the action.",
       vault_keys: ["SENTRY_AUTH_TOKEN", "LINEAR_API_KEY", "SLACK_BOT_TOKEN"],
+      platform_mcp_ids: ["send_slack_message", "create_slack_channel"],
       max_runtime_minutes: 60,
     }),
   },
@@ -300,6 +306,18 @@ function subAgentsForPrompt(prompt: string): AgentSubAgent[] {
   return [];
 }
 
+function platformMcpIdsForPrompt(prompt: string): string[] {
+  const lower = prompt.toLowerCase();
+  const ids: string[] = [];
+  if (/(slack|dm|direct message|channel|war room|standup|incident)/.test(lower)) {
+    ids.push("send_slack_message");
+  }
+  if (/(slack|channel|war room|incident)/.test(lower)) {
+    ids.push("create_slack_channel");
+  }
+  return unique(ids);
+}
+
 function generatedSystem(template: AgentTemplate, prompt: string): string {
   const objective = sentence(prompt);
   return `${template.draft.system}\n\nUse this agent configuration to accomplish the requested workflow: ${objective} Before taking irreversible external actions, summarize the intended action and wait for explicit user approval. Keep outputs structured, concise, and easy to review.`;
@@ -309,6 +327,7 @@ export function buildAgentDraftFromPrompt(prompt: string): AgentDraft {
   const promptVaultKeys = vaultKeysForPrompt(prompt);
   const promptCron = cronForPrompt(prompt);
   const promptSubAgents = subAgentsForPrompt(prompt);
+  const promptPlatformMcps = platformMcpIdsForPrompt(prompt);
   if (/\bhello\s*,?\s*world\b/i.test(prompt)) {
     return {
       ...blankAgentDraft(),
@@ -319,6 +338,7 @@ export function buildAgentDraftFromPrompt(prompt: string): AgentDraft {
       cron: promptCron,
       vault_keys: promptVaultKeys,
       sub_agents: promptSubAgents,
+      platform_mcp_ids: promptPlatformMcps,
     };
   }
 
@@ -333,6 +353,7 @@ export function buildAgentDraftFromPrompt(prompt: string): AgentDraft {
     vault_keys: unique([...template.draft.vault_keys, ...promptVaultKeys]),
     skill_ids: [...template.draft.skill_ids],
     sub_agents: promptSubAgents,
+    platform_mcp_ids: unique([...template.draft.platform_mcp_ids, ...promptPlatformMcps]),
   };
 }
 
@@ -405,6 +426,7 @@ export function stringifyAgentDraft(draft: AgentDraft): string {
   if (draft.rule_ids.length > 0) lines.push(`rule_ids: ${listBlock(draft.rule_ids)}`);
   if (draft.sub_agents.length > 0) lines.push(subAgentsBlock(draft.sub_agents));
   if (draft.mcp_server_ids.length > 0) lines.push(`mcp_servers: ${listBlock(draft.mcp_server_ids)}`);
+  if (draft.platform_mcp_ids.length > 0) lines.push(`platform_mcp_ids: ${listBlock(draft.platform_mcp_ids)}`);
   if (draft.max_runtime_minutes !== 30) lines.push(`max_runtime_minutes: ${draft.max_runtime_minutes}`);
   if (draft.on_failure !== DEFAULT_FAILURE) lines.push(`on_failure: ${scalar(draft.on_failure)}`);
   return lines.join("\n");
@@ -622,7 +644,13 @@ export function parseAgentDraftConfig(source: string): ParsedAgentDraft {
       continue;
     }
 
-    if (key === "vault_keys" || key === "skill_ids" || key === "rule_ids" || key === "mcp_servers") {
+    if (
+      key === "vault_keys" ||
+      key === "skill_ids" ||
+      key === "rule_ids" ||
+      key === "mcp_servers" ||
+      key === "platform_mcp_ids"
+    ) {
       const values = value ? inlineList(value) : [];
       if (!value) {
         i += 1;
@@ -643,6 +671,8 @@ export function parseAgentDraftConfig(source: string): ParsedAgentDraft {
       }
       if (key === "mcp_servers") {
         draft.mcp_server_ids = unique(values);
+      } else if (key === "platform_mcp_ids") {
+        draft.platform_mcp_ids = unique(values);
       } else {
         draft[key] = unique(values);
       }
@@ -676,7 +706,10 @@ export function createInputFromDraft(
   const mcpToolsets = resolvedMcpServers.map(({ id }) => ({ type: "mcp_toolset", mcp_server_name: id }));
   const allTools = [...baseTools, ...mcpToolsets];
   const subAgents = cleanSubAgents(draft.sub_agents);
-  const platformMcpIds = subAgents.length > 0 ? ["run_sub_agent"] : [];
+  const platformMcpIds = unique([
+    ...draft.platform_mcp_ids,
+    ...(subAgents.length > 0 ? ["list_sub_agents", "run_sub_agent"] : []),
+  ]);
 
   return {
     name: draft.name.trim(),
