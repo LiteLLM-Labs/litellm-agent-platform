@@ -1,9 +1,11 @@
 use serde_json::{json, Value};
 
-use super::{agent_runtime, can_start_session, incoming_message, GoogleChatEvent};
+use super::{agent_runtime, can_start_session, incoming_message};
 use crate::{
     db::managed_agents::registry::schema::ManagedAgentRow,
-    http::managed_agents::google_chat::types::{GoogleChatIncomingMessage, GoogleChatMessageMode},
+    http::managed_agents::google_chat::types::{
+        GoogleChatEvent, GoogleChatIncomingMessage, GoogleChatMessageMode,
+    },
     sdk::agents::CLAUDE_MANAGED_AGENTS,
 };
 
@@ -78,6 +80,24 @@ fn incoming_message_dm_uses_space_as_conversation_key() {
 }
 
 #[test]
+fn incoming_message_accepts_rest_direct_message_space_type() {
+    let result = incoming_message(event(json!({
+        "type": "MESSAGE",
+        "user": { "name": "users/human-1", "type": "HUMAN" },
+        "message": {
+            "name": "spaces/AAA/messages/msg-1",
+            "text": "hello",
+            "space": { "name": "spaces/AAA", "spaceType": "DIRECT_MESSAGE" }
+        },
+        "space": { "name": "spaces/AAA", "spaceType": "DIRECT_MESSAGE" }
+    })))
+    .unwrap();
+
+    assert_eq!(result.mode, GoogleChatMessageMode::DirectMessage);
+    assert_eq!(result.conversation_key, "spaces/AAA");
+}
+
+#[test]
 fn incoming_message_space_mention_uses_thread_as_conversation_key() {
     let result = incoming_message(event(json!({
         "type": "MESSAGE",
@@ -100,6 +120,32 @@ fn incoming_message_space_mention_uses_thread_as_conversation_key() {
     assert_eq!(
         result.thread_name.as_deref(),
         Some("spaces/ROOM/threads/thread-42")
+    );
+}
+
+#[test]
+fn incoming_message_uses_event_thread_when_message_thread_is_missing() {
+    let result = incoming_message(event(json!({
+        "type": "MESSAGE",
+        "user": { "name": "users/human-1", "type": "HUMAN" },
+        "message": {
+            "name": "spaces/ROOM/messages/msg-1",
+            "text": "@Bot do the thing",
+            "space": { "name": "spaces/ROOM", "spaceType": "SPACE" },
+            "annotations": [
+                { "type": "USER_MENTION" }
+            ]
+        },
+        "space": { "name": "spaces/ROOM", "spaceType": "SPACE" },
+        "thread": { "name": "spaces/ROOM/threads/thread-root" }
+    })))
+    .unwrap();
+
+    assert_eq!(result.mode, GoogleChatMessageMode::ChannelMention);
+    assert_eq!(result.conversation_key, "spaces/ROOM/threads/thread-root");
+    assert_eq!(
+        result.thread_name.as_deref(),
+        Some("spaces/ROOM/threads/thread-root")
     );
 }
 

@@ -15,6 +15,7 @@ pub(crate) struct GoogleChatEvent {
     pub event_type: Option<String>,
     pub message: Option<GoogleChatMessage>,
     pub space: Option<GoogleChatSpace>,
+    pub thread: Option<GoogleChatThread>,
     pub user: Option<GoogleChatUser>,
 }
 
@@ -31,7 +32,7 @@ pub(crate) struct GoogleChatMessage {
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct GoogleChatSpace {
     pub name: Option<String>,
-    #[serde(rename = "type")]
+    #[serde(rename = "spaceType", alias = "type")]
     pub space_type: Option<String>,
 }
 

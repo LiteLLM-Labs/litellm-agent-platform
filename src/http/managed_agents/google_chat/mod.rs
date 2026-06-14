@@ -1,5 +1,6 @@
 mod auth;
 mod config;
+mod event_message;
 mod events;
 mod reply;
 mod reply_events;
