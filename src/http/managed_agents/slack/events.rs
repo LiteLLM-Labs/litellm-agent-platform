@@ -7,20 +7,25 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use serde_json::Value;
+use tracing::warn;
 
 use crate::{
-    db::managed_agents::slack, errors::GatewayError,
-    http::sessions::create_runtime_session_for_agent, proxy::state::AppState,
+    db::managed_agents::registry::schema::ManagedAgentRow, db::managed_agents::slack,
+    errors::GatewayError, http::sessions::create_runtime_session_for_agent, proxy::state::AppState,
 };
 
 use super::{
-    config::{load_agent, load_secret, signing_secret_key, slack_config},
+    config::{bot_token_key, load_agent, load_secret, signing_secret_key, slack_config},
     message::{incoming_message, session_prompt},
     replies::spawn_slack_prompt,
     signature,
     types::{SlackAgentConfig, SlackIncomingMessage},
     user_ids::normalize_slack_user_id,
+    web_api,
 };
+
+const DM_ACCESS_DENIED_TEXT: &str =
+    "You do not have permission to DM this agent. Ask an admin to add your Slack user ID to this agent's Direct Message Access allowlist.";
 
 pub async fn events(
     State(state): State<Arc<AppState>>,
@@ -52,7 +57,7 @@ pub async fn events(
 async fn handle_event_callback(
     state: Arc<AppState>,
     pool: sqlx::PgPool,
-    agent: crate::db::managed_agents::registry::schema::ManagedAgentRow,
+    agent: ManagedAgentRow,
     config: SlackAgentConfig,
     payload: &Value,
 ) -> Result<(), GatewayError> {
@@ -61,11 +66,12 @@ async fn handle_event_callback(
     };
     let (agent, config) =
         super::dispatch::route_agent(&pool, agent, config, payload, &message).await?;
-    if !dm_user_allowed(&config, &message) {
-        return Ok(());
-    }
     let event_key = slack_event_key(payload, &message);
     if !slack::repository::record_event(&pool, &agent.id, &event_key).await? {
+        return Ok(());
+    }
+    if !dm_user_allowed(&config, &message) {
+        spawn_dm_access_denied(state, agent, config, message);
         return Ok(());
     }
     let (row, message) = match message.requires_existing_thread {
@@ -110,7 +116,40 @@ async fn handle_event_callback(
     Ok(())
 }
 
-fn agent_runtime(agent: &crate::db::managed_agents::registry::schema::ManagedAgentRow) -> String {
+fn spawn_dm_access_denied(
+    state: Arc<AppState>,
+    agent: ManagedAgentRow,
+    config: SlackAgentConfig,
+    message: SlackIncomingMessage,
+) {
+    tokio::spawn(async move {
+        if let Err(error) = post_dm_access_denied(&state, &agent, &config, &message).await {
+            warn!("slack dm access denied reply failed: {error}");
+        }
+    });
+}
+
+async fn post_dm_access_denied(
+    state: &AppState,
+    agent: &ManagedAgentRow,
+    config: &SlackAgentConfig,
+    message: &SlackIncomingMessage,
+) -> Result<(), GatewayError> {
+    let bot_token = load_secret(state, &bot_token_key(&agent.id, config)).await?;
+    web_api::post_message_as(
+        &state.http,
+        &state.config.slack.api_base_url,
+        &bot_token,
+        &message.channel,
+        &message.reply_thread_ts,
+        DM_ACCESS_DENIED_TEXT,
+        Some(&agent.name),
+    )
+    .await
+    .map(|_| ())
+}
+
+fn agent_runtime(agent: &ManagedAgentRow) -> String {
     agent
         .config
         .get("runtime")
