@@ -4,6 +4,8 @@ use crate::{db::managed_agents::now_ms, errors::GatewayError};
 
 use super::schema::GoogleChatSpaceSessionRow;
 
+const EVENT_PROCESSING_TIMEOUT_MS: i64 = 5 * 60 * 1000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventClaim {
     Claimed,
@@ -93,7 +95,11 @@ pub async fn claim_event(
             EventClaim::Claimed
         }
         Some((status, _)) if status == "completed" => EventClaim::Completed,
-        Some((status, _)) if status == "processing" => EventClaim::InProgress,
+        Some((status, updated_at))
+            if status == "processing" && now - updated_at < EVENT_PROCESSING_TIMEOUT_MS =>
+        {
+            EventClaim::InProgress
+        }
         Some(_) => {
             update_event_status(tx.as_mut(), agent_id, event_id, "processing", now).await?;
             EventClaim::Claimed
@@ -144,6 +150,28 @@ async fn update_event_status(
     .bind(status)
     .bind(now)
     .execute(conn)
+    .await
+    .map_err(GatewayError::Database)?;
+    Ok(())
+}
+
+pub async fn heartbeat_event(
+    pool: &PgPool,
+    agent_id: &str,
+    event_id: &str,
+) -> Result<(), GatewayError> {
+    let now = now_ms();
+    sqlx::query(
+        r#"
+        UPDATE "LiteLLM_ManagedAgentGoogleChatEventsTable"
+        SET updated_at = $3
+        WHERE agent_id = $1 AND event_id = $2 AND status = 'processing'
+        "#,
+    )
+    .bind(agent_id)
+    .bind(event_id)
+    .bind(now)
+    .execute(pool)
     .await
     .map_err(GatewayError::Database)?;
     Ok(())

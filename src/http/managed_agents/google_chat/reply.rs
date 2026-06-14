@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use sqlx::PgPool;
 use tracing::warn;
@@ -18,6 +18,8 @@ use super::{
     types::{GoogleChatAgentConfig, GoogleChatIncomingMessage},
     web_api,
 };
+
+const EVENT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
 pub(crate) fn spawn_google_chat_prompt(
     state: Arc<AppState>,
@@ -44,6 +46,11 @@ async fn run_google_chat_prompt(
     message: GoogleChatIncomingMessage,
     session_id: String,
 ) -> Result<(), GatewayError> {
+    let _heartbeat = GoogleChatEventHeartbeat::spawn(
+        pool.clone(),
+        agent.id.clone(),
+        message.message_name.clone(),
+    );
     let service_account_json = match load_service_account_json(&state, &agent.id, &config).await {
         Ok(value) => value,
         Err(error) => return fail_claim(&pool, &agent, &message, error).await,
@@ -83,11 +90,46 @@ async fn run_google_chat_prompt(
     {
         return fail_claim(&pool, &agent, &message, error).await;
     }
-    google_chat::repository::complete_event(&pool, &agent.id, &message.message_name).await?;
-    if let Some(stream) = runtime_stream {
+    let result = if let Some(stream) = runtime_stream {
         reply.run_runtime(stream).await
     } else {
         reply.run(event_stream.rx).await
+    };
+    match result {
+        Ok(()) => {
+            google_chat::repository::complete_event(&pool, &agent.id, &message.message_name)
+                .await?;
+            Ok(())
+        }
+        Err(error) => fail_claim(&pool, &agent, &message, error).await,
+    }
+}
+
+struct GoogleChatEventHeartbeat {
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl GoogleChatEventHeartbeat {
+    fn spawn(pool: PgPool, agent_id: String, event_id: String) -> Self {
+        let handle = tokio::spawn(async move {
+            let mut heartbeat = tokio::time::interval(EVENT_HEARTBEAT_INTERVAL);
+            heartbeat.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                heartbeat.tick().await;
+                if let Err(error) =
+                    google_chat::repository::heartbeat_event(&pool, &agent_id, &event_id).await
+                {
+                    warn!("google chat event heartbeat failed: {error}");
+                }
+            }
+        });
+        Self { handle }
+    }
+}
+
+impl Drop for GoogleChatEventHeartbeat {
+    fn drop(&mut self) {
+        self.handle.abort();
     }
 }
 
