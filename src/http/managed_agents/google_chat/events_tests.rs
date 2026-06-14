@@ -30,6 +30,21 @@ fn incoming_message_ignores_removed_from_space_event() {
 }
 
 #[test]
+fn incoming_message_ignores_card_clicked_event_with_message() {
+    let result = incoming_message(event(json!({
+        "type": "CARD_CLICKED",
+        "message": {
+            "name": "spaces/AAA/messages/msg-1",
+            "text": "button click",
+            "space": { "name": "spaces/AAA", "type": "DM" }
+        },
+        "space": { "name": "spaces/AAA", "type": "DM" }
+    })));
+
+    assert!(result.is_none());
+}
+
+#[test]
 fn incoming_message_ignores_bot_sender() {
     // Bot detected via event.user.type
     let via_event_user = incoming_message(event(json!({

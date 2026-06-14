@@ -7,9 +7,8 @@ pub(super) fn can_start_session(message: &GoogleChatIncomingMessage) -> bool {
 }
 
 pub(super) fn incoming_message(event: GoogleChatEvent) -> Option<GoogleChatIncomingMessage> {
-    match event.event_type.as_deref() {
-        Some("ADDED_TO_SPACE") | Some("REMOVED_FROM_SPACE") | None => return None,
-        _ => {}
+    if event.event_type.as_deref() != Some("MESSAGE") {
+        return None;
     }
     if sender_type(&event) == Some("BOT") {
         return None;
