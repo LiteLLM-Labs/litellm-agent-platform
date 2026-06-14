@@ -421,6 +421,15 @@ function HermesIcon(props: SVGProps<SVGSVGElement>) {
   );
 }
 
+function GoogleChatIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <path fill="#0F9D58" d="M45 16c0-5.5-4.5-10-10-10H13C7.5 6 3 10.5 3 16v12c0 5.5 4.5 10 10 10h7l4 8 4-8h7c5.5 0 10-4.5 10-10V16z"/>
+      <path fill="#fff" d="M14 20h20v2.5H14zm0 5h14v2.5H14z"/>
+    </svg>
+  );
+}
+
 function FallbackIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" {...props}>
@@ -444,6 +453,7 @@ const ICONS: Record<string, (p: SVGProps<SVGSVGElement>) => ReactNode> = {
   linear: LinearIcon,
   opencode: OpenCodeIcon,
   pylon: PylonIcon,
+  google_chat: GoogleChatIcon,
   slack: SlackIcon,
   teams: TeamsIcon,
 };

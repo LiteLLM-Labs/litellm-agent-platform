@@ -1,4 +1,5 @@
 pub mod files;
+pub mod google_chat;
 pub mod import;
 mod import_types;
 pub mod inbox;

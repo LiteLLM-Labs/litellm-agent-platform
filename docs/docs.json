@@ -99,7 +99,8 @@
               "channels/ui",
               "channels/api",
               "channels/slack",
-              "channels/teams"
+              "channels/teams",
+              "channels/google-chat"
             ]
           },
           {

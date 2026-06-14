@@ -1,4 +1,5 @@
 pub mod files;
+pub mod google_chat;
 pub mod harnesses;
 pub mod inbox;
 pub mod loops;

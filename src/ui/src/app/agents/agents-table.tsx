@@ -37,6 +37,7 @@ import {
   providerLabel,
   runtimeFromAgent,
 } from "./agent-row-utils";
+import { googleChatActionClass, googleChatActionLabel, googleChatConfig } from "./google-chat-app-flow";
 import { slackActionClass, slackActionLabel, slackConfig } from "./slack-app-flow";
 import { teamsActionClass, teamsActionLabel, teamsConfig } from "./teams-app-flow";
 
@@ -49,6 +50,7 @@ interface AgentsTableProps {
   onDelete: (agent: Agent) => void;
   onSlack: (agent: Agent) => void;
   onTeams: (agent: Agent) => void;
+  onGoogleChat: (agent: Agent) => void;
   onOpenDetail: (agent: Agent) => void;
 }
 
@@ -79,6 +81,7 @@ export function AgentsTable({
   onDelete,
   onSlack,
   onTeams,
+  onGoogleChat,
   onOpenDetail,
 }: AgentsTableProps) {
   const [globalFilter, setGlobalFilter] = useState("");
@@ -161,11 +164,12 @@ export function AgentsTable({
             onDelete={onDelete}
             onSlack={onSlack}
             onTeams={onTeams}
+            onGoogleChat={onGoogleChat}
           />
         ),
       },
     ],
-    [onDelete, onEdit, onOpenDetail, onRun, onSlack, onTeams],
+    [onDelete, onEdit, onOpenDetail, onRun, onSlack, onTeams, onGoogleChat],
   );
   // eslint-disable-next-line react-hooks/incompatible-library
   const table = useReactTable({
@@ -341,6 +345,7 @@ function ActionsCell({
   onDelete,
   onSlack,
   onTeams,
+  onGoogleChat,
 }: {
   agent: Agent;
   onRun: (agent: Agent) => void;
@@ -348,9 +353,11 @@ function ActionsCell({
   onDelete: (agent: Agent) => void;
   onSlack: (agent: Agent) => void;
   onTeams: (agent: Agent) => void;
+  onGoogleChat: (agent: Agent) => void;
 }) {
   const slack = slackConfig(agent);
   const teams = teamsConfig(agent);
+  const gChat = googleChatConfig(agent);
   return (
     <div className="flex justify-end gap-1.5">
       <Button size="sm" onClick={() => onRun(agent)}>
@@ -386,6 +393,15 @@ function ActionsCell({
         }
       >
         <BrandIcon id="teams" className="size-3.5" />
+      </Button>
+      <Button
+        size="icon-sm"
+        variant="outline"
+        className={googleChatActionClass(gChat)}
+        onClick={() => onGoogleChat(agent)}
+        aria-label={googleChatActionLabel(gChat)}
+      >
+        <BrandIcon id="google_chat" className="size-3.5" />
       </Button>
       <Button size="icon-sm" variant="outline" onClick={() => onEdit(agent)} aria-label="Edit agent">
         <Pencil className="size-3.5" />
