@@ -26,6 +26,7 @@ To start other runtimes and register them automatically:
 ```bash
 docker compose --profile deepagents up
 docker compose --profile hermes up
+docker compose --profile openclaw up
 docker compose --profile opencode --profile deepagents up
 ```
 
@@ -51,7 +52,7 @@ Select your agent and the runtime you want to run it on.
 
 <CardGroup cols={2}>
   <Card title="Runtimes" icon="server" href="/runtimes/claude-managed-agents">
-    Connect Claude Managed Agents, Gemini Antigravity, Cursor, OpenCode, DeepAgents, or Elastic.
+    Connect Claude Managed Agents, Gemini Antigravity, Cursor, OpenCode, DeepAgents, OpenClaw, or Elastic.
   </Card>
   <Card title="Channels" icon="comments" href="/channels/ui">
     Talk to your agents via UI, API, or Slack.
