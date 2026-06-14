@@ -4,8 +4,6 @@ use crate::{db::managed_agents::now_ms, errors::GatewayError};
 
 use super::schema::GoogleChatSpaceSessionRow;
 
-const EVENT_PROCESSING_TIMEOUT_MS: i64 = 5 * 60 * 1000;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventClaim {
     Claimed,
@@ -95,11 +93,7 @@ pub async fn claim_event(
             EventClaim::Claimed
         }
         Some((status, _)) if status == "completed" => EventClaim::Completed,
-        Some((status, updated_at))
-            if status == "processing" && now - updated_at < EVENT_PROCESSING_TIMEOUT_MS =>
-        {
-            EventClaim::InProgress
-        }
+        Some((status, _)) if status == "processing" => EventClaim::InProgress,
         Some(_) => {
             update_event_status(tx.as_mut(), agent_id, event_id, "processing", now).await?;
             EventClaim::Claimed

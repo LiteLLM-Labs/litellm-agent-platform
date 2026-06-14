@@ -108,7 +108,7 @@ fn incoming_message_space_mention_uses_thread_as_conversation_key() {
         "user": { "name": "users/human-1", "type": "HUMAN" },
         "message": {
             "name": "spaces/ROOM/messages/msg-1",
-            "text": "@Bot do the thing",
+            "text": "<users/app> do the thing",
             "space": { "name": "spaces/ROOM", "type": "ROOM" },
             "thread": { "name": "spaces/ROOM/threads/thread-42" },
             "annotations": [
@@ -122,6 +122,7 @@ fn incoming_message_space_mention_uses_thread_as_conversation_key() {
     .unwrap();
 
     assert_eq!(result.mode, GoogleChatMessageMode::ChannelMention);
+    assert_eq!(result.prompt, "do the thing");
     assert_eq!(result.conversation_key, "spaces/ROOM/threads/thread-42");
     assert_eq!(
         result.thread_name.as_deref(),

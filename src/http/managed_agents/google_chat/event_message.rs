@@ -162,11 +162,17 @@ fn conversation_key(
 fn clean_prompt(text: &str) -> String {
     let prompt = text
         .split_whitespace()
-        .filter(|part| !part.starts_with("<at>") && !part.ends_with("</at>"))
+        .filter(|part| !is_mention_token(part))
         .collect::<Vec<_>>()
         .join(" ");
     match prompt.trim() {
         "" => "Proceed with your task.".to_owned(),
         value => value.to_owned(),
     }
+}
+
+fn is_mention_token(part: &str) -> bool {
+    part.starts_with("<users/") && part.ends_with('>')
+        || part.starts_with("<at>")
+        || part.ends_with("</at>")
 }
